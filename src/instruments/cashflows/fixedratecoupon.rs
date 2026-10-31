@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
-    instruments::cashflows::{cashflow::Cashflow, coupons::LinearCoupon},
+    instruments::cashflows::{
+        cashflow::Cashflow,
+        coupons::{accrual_fraction, LinearCoupon},
+    },
     rates::interestrate::InterestRate,
     time::date::Date,
     utils::errors::Result,
@@ -87,7 +90,13 @@ impl Cashflow<f64> for FixedRateCoupon<f64> {
 
 impl LinearCoupon<f64> for FixedRateCoupon<f64> {
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<f64> {
-        let year_fraction = self.rate.day_counter().year_fraction(start_date, end_date);
+        let year_fraction = accrual_fraction(
+            self.rate.day_counter(),
+            self.accrual_start_date,
+            self.accrual_end_date,
+            start_date,
+            end_date,
+        )?;
         Ok(self.rate.rate() * (year_fraction * self.notional))
     }
 
@@ -120,7 +129,13 @@ impl Cashflow<DualFwd> for FixedRateCoupon<DualFwd> {
 
 impl LinearCoupon<DualFwd> for FixedRateCoupon<DualFwd> {
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<DualFwd> {
-        let year_fraction = self.rate.day_counter().year_fraction(start_date, end_date);
+        let year_fraction = accrual_fraction(
+            self.rate.day_counter(),
+            self.accrual_start_date,
+            self.accrual_end_date,
+            start_date,
+            end_date,
+        )?;
         Ok((self.rate.rate() * DualFwd::new(year_fraction * self.notional)).into())
     }
 

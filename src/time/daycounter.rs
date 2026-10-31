@@ -21,8 +21,8 @@ use crate::{
 /// - [`Self::Actual365`]: Counts the actual number of days between two dates and divides by 365.
 /// - [`Self::Thirty360`]: Assumes each month has 30 days and each year has 360 days.
 /// - [`Self::Thirty360US`]: Similar to Thirty360 but with specific rules for end-of-month dates.
-/// - [`Self::ActualActual`]: Calendar-year denominators; see [`ActualActual`]
-///   for the current long-span limitation.
+/// - [`Self::ActualActual`]: Split at calendar-year boundaries with each year's
+///   own denominator, including all complete intervening years.
 /// - [`Self::Business252`]: Brazil Settlement business days in `[start, end)`, divided by 252.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DayCounter {
@@ -34,7 +34,7 @@ pub enum DayCounter {
     Thirty360,
     /// Legacy US-style 30/360; see [`Thirty360US`] for exact February adjustments.
     Thirty360US,
-    /// Calendar-year Actual/Actual with the long-span limitation in [`ActualActual`].
+    /// Calendar-year Actual/Actual including complete intervening years.
     ActualActual,
     /// Brazil Settlement Business/252 day count convention.
     Business252,

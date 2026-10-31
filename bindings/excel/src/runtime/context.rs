@@ -515,6 +515,7 @@ pub fn scalar(results: &EvaluationResults, request: &Request) -> Result<f64, Str
     let value = match request {
         Request::Value => results.price(),
         Request::FairRate(_) => results.fair_rate(),
+        Request::AccruedAmount(_, _) => results.accrued_amount(),
         Request::YieldToMaturity => results.ytm(),
         Request::ModifiedDuration => results.modified_duration(),
         Request::ZSpread => results.z_spread(),

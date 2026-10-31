@@ -18,8 +18,8 @@ use crate::{
         pricerconfiguration::{InstrumentType, PricerConfiguration, PricerImplementation},
         pricerstate::PricerState,
         request::{
-            HandleCashflows, HandleFairRate, HandleSensitivities, HandleValue, LegsProvider,
-            Request,
+            HandleAccruedAmount, HandleCashflows, HandleFairRate, HandleSensitivities, HandleValue,
+            LegsProvider, Request,
         },
         trade::Trade,
     },
@@ -1169,6 +1169,8 @@ impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
     }
 }
 
+impl HandleAccruedAmount<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {}
+
 impl Pricer for LoanPricer {
     type Item = LoanTrade<DualFwd>;
     type Policy = dyn DiscountPolicy;
@@ -1198,6 +1200,17 @@ impl Pricer for LoanPricer {
                 }
                 Request::FairRate(target) => {
                     results.with_fair_rate(self.handle_fair_rate(trade, &mut state, *target)?)
+                }
+                Request::AccruedAmount(start, end) => {
+                    if *start < ctx.evaluation_date() {
+                        return Err(QSError::InvalidValueErr(
+                            "Loan accrual windows must start at or after evaluation".into(),
+                        ));
+                    }
+                    self.handle_value(trade, &mut state)?;
+                    results.with_accrued_amount(
+                        self.handle_accrued_amount(trade, &mut state, *start, *end)?,
+                    )
                 }
                 Request::Cashflows => {
                     self.handle_value(trade, &mut state)?;
@@ -2040,6 +2053,27 @@ mod tests {
                 "{label}: AD {derivative}, FD {fd}"
             );
         }
+        Ok(())
+    }
+    #[test]
+    fn accrued_request_uses_projected_prepayment_notional_once() -> Result<()> {
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let loan = default_loan_builder()
+            .with_repayment_structure(LoanRepaymentStructure::Bullet)
+            .with_prepayment_configuration(PrepaymentModelConfiguration::Cpr(0.12))
+            .build()?;
+        let trade = LoanTrade::new(loan, provider.date, Side::PayShort);
+        let start = Date::new(2026, 2, 1);
+        let end = Date::new(2026, 3, 1);
+        let result = estr_loan_pricer().evaluate(
+            &trade,
+            &[Request::AccruedAmount(start, end)],
+            &provider,
+        )?;
+        let principal = 100_000.0 * 0.88_f64.powf(1.0 / 12.0);
+        let expected = -principal * 0.06 * 28.0 / 360.0;
+        assert!((result.accrued_amount().unwrap_or_default() - expected).abs() < 1e-8);
+        assert!(result.price().is_none() && result.cashflows().is_none());
         Ok(())
     }
 }

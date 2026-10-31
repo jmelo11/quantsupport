@@ -74,6 +74,7 @@ impl<A: CashflowAggregator> MakePortfolioAccumulator<A> {
         let requests = self
             .requests
             .ok_or_else(|| QSError::ValueNotSetErr("Portfolio requests".into()))?;
+        Request::validate(&requests)?;
         Ok(PortfolioAccumulator::new(&requests, self.cashflows))
     }
 }

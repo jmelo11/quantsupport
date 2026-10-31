@@ -426,7 +426,7 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.OBJECT.REMOVE" => "TRUE when the current object is removed; FALSE when its identity is already absent from the thread's registry.",
         "QS.OBJECT.RESET" => "Current revisioned text handle of the cleared mutable store or configuration collection. An unchanged reset key reuses the handle; older revisions of the same identity are accepted.",
         "QS.DATE.ADVANCE" => "ISO date text (YYYY-MM-DD) advanced by the requested period, without business-day adjustment.",
-        "QS.YEAR.FRACTION" => "Numeric native year fraction. ActualActual omits one intervening year when endpoint years differ by at least two; Thirty360US independently adjusts February month-ends after its 31st-day rules and is not generally US/NASD/BondBasis-equivalent.",
+        "QS.YEAR.FRACTION" => "Numeric native year fraction. ActualActual splits at calendar-year boundaries and includes every complete intervening year; Thirty360US independently adjusts February month-ends after its 31st-day rules and is not generally US/NASD/BondBasis-equivalent.",
         "QS.SCHEDULE" => "One-column spill of unadjusted schedule dates as ISO text (YYYY-MM-DD), without a header row.",
         "QS.CALENDAR.IS.BUSINESS.DAY" => "TRUE if the date is a business day in the supplied calendar; otherwise FALSE.",
         "QS.CALENDAR.ADJUST" => "Business-day-adjusted date as ISO text (YYYY-MM-DD).",

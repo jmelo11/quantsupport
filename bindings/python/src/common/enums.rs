@@ -372,7 +372,7 @@ impl BusinessDayConvention {
     }
 }
 
-/// Evaluation request with an optional zero-based contractual target.
+/// Evaluation request with a contractual target or accrual date window.
 #[pyclass(module = "quantsupport", eq, frozen, hash, from_py_object)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Request {
@@ -431,6 +431,32 @@ impl Request {
         }
     }
 
+    /// Selects signed, undiscounted coupon interest earned between two dates.
+    #[staticmethod]
+    pub fn AccruedAmount(start: &Bound<'_, PyAny>, end: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let inner = QsRequest::AccruedAmount(extract_date(start)?, extract_date(end)?);
+        QsRequest::validate(&[inner]).map_err(qs_err)?;
+        Ok(Self { inner })
+    }
+
+    /// Start of the requested accrual window; None for other requests.
+    #[getter]
+    pub const fn start_date(&self) -> Option<crate::time::Date> {
+        match self.inner {
+            QsRequest::AccruedAmount(start, _) => Some(crate::time::Date { inner: start }),
+            _ => None,
+        }
+    }
+
+    /// End of the requested accrual window; None for other requests.
+    #[getter]
+    pub const fn end_date(&self) -> Option<crate::time::Date> {
+        match self.inner {
+            QsRequest::AccruedAmount(_, end) => Some(crate::time::Date { inner: end }),
+            _ => None,
+        }
+    }
+
     /// Zero-based contractual target for FairRate; None for other requests.
     #[getter]
     pub const fn index(&self) -> Option<usize> {
@@ -440,7 +466,7 @@ impl Request {
         }
     }
 
-    /// Parses a request, including FairRate(1). Bare FairRate selects target zero.
+    /// Parses a request, including FairRate(1) and AccruedAmount(ISO_start, ISO_end).
     #[staticmethod]
     pub fn parse(s: &str) -> PyResult<Self> {
         let name = s.trim().to_ascii_lowercase().replace('_', "");
@@ -462,18 +488,33 @@ impl Request {
                         return Ok(Self::FairRate(index));
                     }
                 }
+                if let Some(window) = name.strip_prefix("accruedamount(").and_then(|v| v.strip_suffix(')')) {
+                    if let Some((start, end)) = window.split_once(',') {
+                        let parse = |value: &str| quantsupport::prelude::Date::from_str(
+                            value.trim().trim_matches(['\'', '"']), "%Y-%m-%d").map_err(qs_err);
+                        let inner = QsRequest::AccruedAmount(parse(start)?, parse(end)?);
+                        QsRequest::validate(&[inner]).map_err(qs_err)?;
+                        return Ok(Self { inner });
+                    }
+                }
                 Err(crate::common::errors::invalid_value(format!(
-                    "invalid Request '{s}'; use FairRate(nonnegative_index) for a targeted quote"
+                    "invalid Request '{s}'; use FairRate(index) or AccruedAmount(YYYY-MM-DD,YYYY-MM-DD)"
                 )))
             }
         }
     }
 
     fn __str__(&self) -> String {
-        format!("{:?}", self.inner)
+        match self.inner {
+            QsRequest::AccruedAmount(start, end) => format!("AccruedAmount({start}, {end})"),
+            _ => format!("{:?}", self.inner),
+        }
     }
     fn __repr__(&self) -> String {
-        format!("Request.{:?}", self.inner)
+        match self.inner {
+            QsRequest::AccruedAmount(start, end) => format!("Request.AccruedAmount('{start}', '{end}')"),
+            _ => format!("Request.{:?}", self.inner),
+        }
     }
 }
 
