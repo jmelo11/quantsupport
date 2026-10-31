@@ -27,8 +27,8 @@ build because mdBook replaces its output tree.
 ## Validate changes
 
 ```sh
-python -m unittest discover -s book/tests -v
-RUSTUP_TOOLCHAIN=stable python book/test_rust.py
+python -m unittest discover -s tools/tests -p 'test_book.py' -v
+RUSTUP_TOOLCHAIN=stable python tools/book/check_rust.py
 mdbook build
 ```
 

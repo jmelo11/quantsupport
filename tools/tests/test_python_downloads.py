@@ -3,9 +3,12 @@
 import json
 from pathlib import Path
 import re
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/release"))
 
 import python_downloads as downloads
 

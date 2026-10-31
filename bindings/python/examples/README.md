@@ -26,7 +26,7 @@ small markets inline. The forecasting scope adds a Python orchestration layer.
 | `volatilitysurface` | [Volatility markets](volatilitysurface/README.md) | Curves, surfaces, and independent rate/volatility valuation shocks |
 | `hullwhite` | [Rate simulations](hullwhite/README.md) | Calibrated model setup and retrieving simulation results |
 | `sensitivity` | [Portfolio and risk](sensitivity/README.md) | Portfolio basics, valuation requests, aggregation, quote risk, and scenarios |
-| `forecasting` | [Net interest income](forecasting/README.md) | Accrued NII, prepayment, recursive rollover, new business and funding |
+| `nii_forecasting` | [Net interest income](nii_forecasting/README.md) | Accrued NII, prepayment, recursive rollover, new business and funding |
 | `scripting` | [Payoff events](scripting/README.md) | Dated payoff scripts and representation checks |
 | `cva` | [Exposure and XVA](cva/README.md) | Netting sets, credit/funding inputs, exposure profiles, and XVA |
 | Historical external benchmark | [ORE/CurveEngine comparison](../../../examples/sensitivity/bechmark/sensitivity.ipynb) | Recorded 2025-11-11 Rust curves/PVs versus independently rebuilt markets and correctly scaled quote risk |
@@ -49,7 +49,7 @@ small markets inline. The forecasting scope adds a Python orchestration layer.
 | 12 | [Callable stepped-coupon bond](valuation/bonds/stepped_coupon_bond.ipynb) | Typed terms, calibrated tree/Fourier engines, OAS and risk |
 | 13 | [Scripted cashflows](scripting/scripted_cashflows.ipynb) | Dated observations/payments and the native-versus-scripted bond check |
 | 14 | [Exposure and XVA](cva/xva.ipynb) | Netting sets, client terms, exposure profiles and adjustment risk |
-| 15 | [Net interest income](forecasting/nii_forecast.ipynb) | Monthly accrued income, prepayment, replacement cohorts, planned growth and funding scenarios |
+| 15 | [Net interest income](nii_forecasting/nii_forecast.ipynb) | Monthly accrued income, prepayment, replacement cohorts, planned growth and funding scenarios |
 
 Start with [How a portfolio works](sensitivity/portfolio.ipynb) for the
 `qs.Portfolio` workflow, position sizes, common currency and request rules.
@@ -207,7 +207,7 @@ The notebooks focus on native products and their existing Python entry points.
 | --- | --- |
 | `market_data.py` in each scope folder | Local loader imported directly by its notebooks; reads typed inputs/configurations without hidden pricing |
 | [stepped_cashflows.py](scripting/stepped_cashflows.py) | Translate this tutorial's six-year semiannual note into repetitive script events; no optimal issuer exercise |
-| [nii_forecast.py](forecasting/nii_forecast.py) | Example classes for production rules, recursive rollover and accrued portfolio income |
+| [nii_forecast.py](nii_forecasting/nii_forecast.py) | Example classes for production rules, recursive rollover and accrued portfolio income |
 | [valuation/bonds/data/bond_tree.json](valuation/bonds/data/bond_tree.json), [valuation/bonds/data/bond_fourier.json](valuation/bonds/data/bond_fourier.json) | Native pricer/model schema and numerical grids |
 | [hullwhite/data/simulation.json](hullwhite/data/simulation.json) | Calibrated Hull–White simulation settings |
 | [cva/data/xva.json](cva/data/xva.json) | Calibrated LGM exposure-engine settings |

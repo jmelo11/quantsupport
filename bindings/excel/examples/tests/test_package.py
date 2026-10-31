@@ -24,11 +24,11 @@ class DistributionTests(unittest.TestCase):
         release = (ROOT / ".github/workflows/release.yml").read_text()
         for name in (ARCHIVE, COMPANION, "quantsupport.xll", "quantsupport.intellisense.xml", "QuantSupport.Ribbon64.xll"):
             self.assertIn("bindings/excel/dist/" + name, bindings)
-            self.assertIn('"' + name + '"', (ROOT / ".github/scripts/excel_downloads.py").read_text())
+            self.assertIn('"' + name + '"', (ROOT / "tools/release/excel_downloads.py").read_text())
         self.assertIn('"$RUNNER_TEMP/excel_downloads.py" stage', pages)
         self.assertIn("gh release upload", release)
         self.assertIn("dist/*", release)
-        self.assertIn('"package.ps1"', (EXCEL / "scripts/build.ps1").read_text())
+        self.assertIn('"package.ps1"', (ROOT / "tools/excel/build.ps1").read_text())
 
 
 class PackageTests(unittest.TestCase):
@@ -56,7 +56,7 @@ class PackageTests(unittest.TestCase):
 
     def package(self, *arguments):
         return subprocess.run([self.powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                               str(EXCEL / "scripts/package.ps1"), "-Dist", str(self.dist), *map(str, arguments)],
+                               str(ROOT / "tools/excel/package.ps1"), "-Dist", str(self.dist), *map(str, arguments)],
                               text=True, capture_output=True, timeout=90)
 
     def test_bundle_downloads_and_preserves_all_addin_files_at_zip_root(self):

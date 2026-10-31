@@ -1,12 +1,12 @@
 [CmdletBinding()]
 param(
-    [string]$Dist = (Join-Path (Split-Path -Parent $PSScriptRoot) "dist"),
+    [string]$Dist = (Join-Path $PSScriptRoot "../../bindings/excel/dist"),
     [string]$IntelliSensePath
 )
 
 $ErrorActionPreference = "Stop"
-$excelRoot = Split-Path -Parent $PSScriptRoot
-$repositoryRoot = (Resolve-Path (Join-Path $excelRoot "../..")).Path
+$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
+$excelRoot = Join-Path $repositoryRoot "bindings/excel"
 $thirdParty = Join-Path $excelRoot "third-party"
 $dependency = Get-Content -LiteralPath (Join-Path $thirdParty "intellisense.json") -Raw | ConvertFrom-Json
 $companionName = "ExcelDna.IntelliSense64.xll"

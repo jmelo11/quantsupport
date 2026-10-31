@@ -33,7 +33,7 @@ jobs:
           python-version: '3.12'
       - name: Prepare signed version commit and tag
         id: version
-        run: python .github/scripts/release.py prepare
+        run: python tools/release/release.py prepare
         env:
           # A token allowed to bypass main's PR rule is needed on protected repositories.
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
@@ -66,7 +66,7 @@ jobs:
           python-version: '3.12'
       - name: Check whether this version is already published
         id: published
-        run: python .github/scripts/release.py published "$RELEASE_VERSION"
+        run: python tools/release/release.py published "$RELEASE_VERSION"
         env:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       - name: Authenticate with crates.io

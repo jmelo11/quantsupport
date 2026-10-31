@@ -7,7 +7,7 @@ from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
 NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/excel/examples"))
 from create_origination_example import generate
 
 

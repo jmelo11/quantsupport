@@ -15,8 +15,8 @@ if (-not [Environment]::Is64BitProcess) {
     throw "Build the QuantSupport XLL from a 64-bit PowerShell process."
 }
 
-$excelRoot = Split-Path -Parent $PSScriptRoot
-$repositoryRoot = (Resolve-Path (Join-Path $excelRoot "..\..")).Path
+$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
+$excelRoot = Join-Path $repositoryRoot "bindings/excel"
 $targetTriple = "x86_64-pc-windows-msvc"
 $cargoArguments = @(
     "build",

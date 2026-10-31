@@ -57,8 +57,8 @@ jobs:
           python -m mypy bindings/python/tests/typing_native_inputs.py --ignore-missing-imports
       - name: Package and test QuantSupport-only folder distribution
         run: |
-          python -m unittest discover -s bindings/python/scripts -p 'test_*.py' -v
-          python bindings/python/scripts/package_portable.py --wheel-directory dist --output dist
+          python -m unittest discover -s tools/tests -p 'test_package_portable.py' -v
+          python tools/python/package_portable.py --wheel-directory dist --output dist
       - uses: actions/upload-artifact@v6
         with:
           name: python-${{ matrix.platform.runner }}-${{ matrix.python }}
@@ -122,7 +122,7 @@ jobs:
           python -m unittest discover -s bindings/excel/examples/tests -p 'test_*.py' -v
       - name: Build and package XLL
         shell: pwsh
-        run: ./bindings/excel/scripts/build.ps1 -Profile release
+        run: ./tools/excel/build.ps1 -Profile release
       - uses: actions/upload-artifact@v6
         with:
           name: excel-windows-x64

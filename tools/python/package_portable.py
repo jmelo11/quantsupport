@@ -62,6 +62,36 @@ Extract the ZIP and add its site-packages directory before importing QuantSuppor
     import sys
     sys.path.insert(0, "/path/to/extracted-folder/site-packages")
     import quantsupport as qs
+
+Autocomplete, method hints and linting
+------------------------------------
+The package includes .pyi declarations and py.typed. Keep these beside the Python
+modules and native extension. sys.path.insert configures runtime imports only;
+configure the editor or static checker to find the extracted directory too.
+Select the same Python interpreter in your editor that runs your code.
+
+For VS Code/Pylance, merge this into your workspace's .vscode/settings.json:
+
+    {
+      "python.analysis.extraPaths": ["/path/to/extracted-folder/site-packages"]
+    }
+
+For command-line Pyright, set extraPaths in pyrightconfig.json to the same path.
+For mypy, add to your project's mypy.ini:
+
+    [mypy]
+    mypy_path = /path/to/extracted-folder/site-packages
+
+Optional typing dependencies (installed separately, not bundled):
+
+    python -m pip install pandas-stubs "typing-extensions>=4.15"
+
+Verify which package is loaded with print(qs.__file__). Inspect a method with
+help(qs.PricingContext.evaluate).
+
+Classes, methods and parameters:
+https://jmelo11.github.io/quantsupport/api/autoapi/quantsupport/index.html
+
 '''
 
 

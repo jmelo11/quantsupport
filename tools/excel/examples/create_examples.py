@@ -1,7 +1,7 @@
 """Generate the guided Excel studies.
 
 Install: python -m pip install -r bindings/excel/examples/requirements.txt
-Run: python bindings/excel/examples/scripts/create_examples.py
+Run: python tools/excel/examples/create_examples.py
 Windows Excel with the matching QuantSupport XLL calculates the formulas.
 Use --xll-path for optional live validation with pywin32.
 """
@@ -826,7 +826,7 @@ def publish_workbook(source, destination):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--example", choices=("all", "context", "swap", "historical", "loans", "bonds", "interpolation", "portfolio"), default="all")
-    parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parents[1] / "workbooks")
+    parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parents[3] / "bindings/excel/examples/workbooks")
     parser.add_argument("--xll-path", type=Path, help="Validate with native Windows Excel; requires pywin32")
     args = parser.parse_args()
     if args.xll_path:

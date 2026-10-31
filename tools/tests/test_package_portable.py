@@ -3,10 +3,13 @@
 import json
 import os
 from pathlib import Path
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/python"))
 
 import package_portable as portable
 

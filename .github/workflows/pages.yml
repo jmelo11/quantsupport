@@ -16,7 +16,7 @@ on:
         required: false
         type: string
       documentation_ref:
-        description: Optional commit or ref supplying docs and Python examples
+        description: Optional commit or ref supplying documentation, examples and tooling
         required: false
         type: string
 
@@ -43,27 +43,36 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test release download staging
-        run: python -m unittest discover -s .github/scripts -p 'test_*.py' -v
+        run: python -m unittest discover -s tools/tests -p 'test_*downloads.py' -v
       - name: Select published release
         id: release
         if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch')
         run: |
-          python .github/scripts/excel_downloads.py resolve --repository "$GITHUB_REPOSITORY" \
+          python tools/release/excel_downloads.py resolve --repository "$GITHUB_REPOSITORY" \
             --run-id "$RELEASE_RUN_ID" --tag "$RELEASE_TAG"
-          cp .github/scripts/excel_downloads.py "$RUNNER_TEMP/excel_downloads.py"
-          cp .github/scripts/python_downloads.py "$RUNNER_TEMP/python_downloads.py"
+          cp tools/release/excel_downloads.py "$RUNNER_TEMP/excel_downloads.py"
+          cp tools/release/python_downloads.py "$RUNNER_TEMP/python_downloads.py"
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
           RELEASE_TAG: ${{ inputs.release_tag }}
       - name: Check out released source
         if: steps.release.outputs.ref != ''
-        run: git checkout --detach "$RELEASE_REF"
+        run: |
+          git checkout --detach "$RELEASE_REF"
+          # Older releases kept their documentation tests beside the content.
+          git restore --source="$WORKFLOW_REF" -- tools
+          for suite in book docs; do
+            if [ -d "$suite/tests" ]; then
+              cp "$suite/tests/"test_*.py tools/tests/
+            fi
+          done
         env:
           RELEASE_REF: ${{ steps.release.outputs.ref }}
+          WORKFLOW_REF: ${{ github.sha }}
       - name: Restore requested documentation
         if: steps.release.outputs.ref != '' && github.event_name == 'workflow_dispatch' && inputs.documentation_ref != ''
-        run: git restore --source="$DOCUMENTATION_REF" -- docs bindings/python/examples
+        run: git restore --source="$DOCUMENTATION_REF" -- docs book bindings/python/examples tools
         env:
           DOCUMENTATION_REF: ${{ inputs.documentation_ref }}
       - name: Install Rust
@@ -76,9 +85,9 @@ jobs:
       - name: Test notebook kernel selection and execution
         run: python -m unittest discover -s bindings/python/examples -p test_run_notebooks.py -v
       - name: Test Book structure and navigation
-        run: python -m unittest discover -s book/tests -v
+        run: python -m unittest discover -s tools/tests -p 'test_book.py' -v
       - name: Test binding reference generation
-        run: python -m unittest discover -s docs/tests -v
+        run: python -m unittest discover -s tools/tests -p 'test_reference.py' -v
       - name: Install mdBook
         run: cargo install mdbook --version 0.5.2 --locked
       - name: Install mdBook Mermaid
@@ -88,7 +97,7 @@ jobs:
       - name: Build book
         run: mdbook build
       - name: Test Rust Book examples
-        run: python book/test_rust.py
+        run: python tools/book/check_rust.py
       - name: Check Rust API reference
         run: RUSTDOCFLAGS='-D warnings' cargo doc -p quantsupport --no-deps
       - name: Build API reference

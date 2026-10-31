@@ -27,7 +27,7 @@ source diagnostic; unchanged recalculation preserves contributions and results.
 Both matching XLLs must be loaded. Evaluation and market views return ``#N/A``
 while pending and update through RTD. In Manual mode use **Refresh Pricing**;
 F9 and Excel's calculation status do not await background jobs. Automation should
-use the explicit completion helper in ``bindings/excel/examples/scripts/async_excel.py``.
+use the explicit completion helper in ``tools/excel/examples/async_excel.py``.
 
 For an individual quote, specify identifier, value and level:
 

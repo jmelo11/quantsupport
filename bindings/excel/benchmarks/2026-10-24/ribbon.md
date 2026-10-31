@@ -52,7 +52,7 @@ To reproduce the desktop checks, build the native add-in and a probe companion
 into a separate directory, then run:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1 -Dist target/ribbon-check
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/excel/build.ps1 -Dist target/ribbon-check
 dotnet build bindings/excel/ribbon/QuantSupport.Ribbon.csproj -c Release -p:QuantSupportLiveTests=true
 Copy-Item bindings/excel/ribbon/bin/Release/net462/publish/QuantSupport.Ribbon64.xll target/ribbon-check -Force
 $env:QS_XLL_PATH = (Resolve-Path target/ribbon-check/quantsupport.xll).Path

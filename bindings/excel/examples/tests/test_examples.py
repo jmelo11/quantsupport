@@ -14,7 +14,7 @@ from uuid import uuid4
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/excel/examples"))
 
 
 from create_examples import EXAMPLES, LOAN_CASES, publish_workbook, validation_names

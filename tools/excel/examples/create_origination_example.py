@@ -36,7 +36,7 @@ def generate(path, count=10000, baseline=False, layout="rows"):
         (14, "Synthetic market", "All dates use the same six synthetic calibration rates in K2:L7. Each context independently bootstraps its own dated SOFR curve. These are illustrative rates, not historical observations."),
         (17, "Editable assumptions", "Blue cells hold dates, notionals, fixed rates and market rates. Swap effective dates are seven days after origination to avoid requiring past fixings. Origination remains the valuation date."),
         (20, "Background results", "Blank prices in an uncalculated file and #N/A while pending are expected. Green cells show completed prices. Context handles stay stable when market inputs change. Manual mode is retained; Refresh Pricing also updates dependent formulas."),
-        (23, "Benchmark this workbook", "Run examples/scripts/benchmark_async.py with --count 10000 and paths to the matching XLL and a JSON report. It measures cold and unchanged recalculation, context/curve builds, worksheet delivery, memory and COM responsiveness."),
+        (23, "Benchmark this workbook", "Run tools/excel/examples/benchmark_async.py from the repository root with --count 10000 and paths to the matching XLL and a JSON report. It measures cold and unchanged recalculation, context/curve builds, worksheet delivery, memory and COM responsiveness."),
     ]
     if layout == "batch" and not baseline:
         notes[2] = (11, "Follow one row", "A: valuation/origination date. C: dated context. D: owned curve contribution. E: swap. F: trade. G: PV. One QS.EVALUATE.RANGE formula in G2 pairs all C and F rows and spills the prices in row order; Rust distributes the dated markets across workers.")
@@ -104,6 +104,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--count", type=int, default=10000)
     parser.add_argument("--layout", choices=("rows", "batch"), default="rows")
-    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parents[1] / "workbooks/origination_10000_valuations.xlsx")
+    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parents[3] / "bindings/excel/examples/workbooks/origination_10000_valuations.xlsx")
     args = parser.parse_args()
     print(generate(args.output, args.count, layout=args.layout))

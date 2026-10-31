@@ -49,7 +49,7 @@ then run from the repository root:
 
 ```powershell
 rustup target add x86_64-pc-windows-msvc
-powershell -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1
+powershell -ExecutionPolicy Bypass -File tools/excel/build.ps1
 ```
 
 The build packages `bindings/excel/dist/quantsupport-excel-windows-x64.zip`

@@ -63,8 +63,8 @@ From the repository root:
 
 ```powershell
 python -m pip install -r bindings/excel/examples/requirements-live.txt
-powershell -NoProfile -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1 -Profile release -Dist target/excel-async-release
-python bindings/excel/examples/scripts/benchmark_async.py --xll target/excel-async-release/quantsupport.xll --count 10000 --workers 8 --layout batch --output target/excel-benchmarks/batch.json --reference bindings/excel/benchmarks/2026-10-24/pre-engine-rows.json
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/excel/build.ps1 -Profile release -Dist target/excel-async-release
+python tools/excel/examples/benchmark_async.py --xll target/excel-async-release/quantsupport.xll --count 10000 --workers 8 --layout batch --output target/excel-benchmarks/batch.json --reference bindings/excel/benchmarks/2026-10-24/pre-engine-rows.json
 ```
 
 Use `--layout rows` for individual formulas and `--workers 1` for the scaling
