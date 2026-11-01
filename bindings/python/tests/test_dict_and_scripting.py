@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import pandas as pd
 import quantsupport as qs
 
 
@@ -485,7 +486,7 @@ class DictAndScriptTests(unittest.TestCase):
                 bond, qs.BondPricingAnchor.z_spread(0.0)), ["Cashflows"]).cashflows
         dates = table.loc[table["type"] ==
                           "FixedRateCoupon", "payment_date"].tolist()
-        self.assertEqual(dates, ["2026-06-01", "2026-11-30", "2027-02-26"])
+        self.assertEqual(dates, pd.to_datetime(["2026-06-01", "2026-11-30", "2027-02-26"]).tolist())
 
     def test_csa_policy_and_fixed_income_policy_are_explicit(self):
         policy = qs.SingleCurveCSADiscountPolicy(

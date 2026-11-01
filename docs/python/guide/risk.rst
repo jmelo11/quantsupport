@@ -171,7 +171,7 @@ Native Rust pricers convert monetary results to the context base currency using
 its FX store, including FX sensitivities, before portfolio aggregation. Cashflow
 reports keep their original currencies.
 
-``result.coupons`` preserves coupon types, accrual dates, contractual and
+``result.cashflows`` preserves coupon types, accrual dates, contractual and
 effective fixing indices, signed notionals and compatible weighted rates or
 spreads. The two deposits combine to 400,000 at 5.5%, while SOFR and TermSOFR3m
 coupons and opposing directions remain separate. ``result.cashflow_summary``

@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 use quantsupport::prelude::EvaluationResults as QsEvaluationResults;
 use serde::Deserialize;
 
-use crate::common::conversion::{dataframe, extract_date, from_py};
+use crate::common::conversion::{dataframe, datetime_column, extract_date, from_py};
 
 /// A single cashflow row extracted from the Rust `CashflowsTable`.
 #[derive(Clone)]
@@ -353,11 +353,14 @@ impl EvaluationResults {
             &[
                 (
                     "payment_date",
-                    rows.iter()
-                        .map(|row| row.payment_date().to_string())
-                        .collect::<Vec<_>>()
-                        .into_pyobject(py)?
-                        .into_any(),
+                    datetime_column(
+                        py,
+                        rows.iter()
+                            .map(|row| row.payment_date().to_string())
+                            .collect::<Vec<_>>()
+                            .into_pyobject(py)?
+                            .into_any(),
+                    )?,
                 ),
                 (
                     "currency",
@@ -403,37 +406,88 @@ impl EvaluationResults {
         )?))
     }
 
-    /// Cashflows with contractual coupon type, fixing index, dates, signed
-    /// notional and compatible weighted quotes. Original conventions survive
-    /// portfolio aggregation and reconstruction of the standard results.
+    /// Cashflow table with contractual coupon terms, if `"Cashflows"` was requested.
+    /// Includes fixing indices, accrual dates, signed notionals, weighted quotes
+    /// and conventions preserved through portfolio aggregation.
     #[getter]
-    fn coupons<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
-        let Some(frame) = self.cashflows(py)? else {
-            return Ok(None);
-        };
+    fn cashflows<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
         let Some(rows) = &self.cashflows else {
             return Ok(None);
         };
+        let n = rows.len();
+        let mut payment_date = Vec::with_capacity(n);
+        let mut cashflow_type = Vec::with_capacity(n);
+        let mut amount = Vec::with_capacity(n);
+        let mut fixing = Vec::with_capacity(n);
+        let mut accrual_period = Vec::with_capacity(n);
+        let mut currency = Vec::with_capacity(n);
+        let mut caplet_strike = Vec::with_capacity(n);
+        let mut floorlet_strike = Vec::with_capacity(n);
+        let mut leg_index = Vec::with_capacity(n);
+        for r in rows {
+            payment_date.push(r.payment_date.clone());
+            cashflow_type.push(r.cashflow_type.clone());
+            amount.push(r.amount);
+            fixing.push(r.fixing);
+            accrual_period.push(r.accrual_period);
+            currency.push(r.currency.clone());
+            caplet_strike.push(r.caplet_strike);
+            floorlet_strike.push(r.floorlet_strike);
+            leg_index.push(r.leg_index);
+        }
+        let frame = dataframe(
+            py,
+            &[
+                (
+                    "payment_date",
+                    datetime_column(py, payment_date.into_pyobject(py)?.into_any())?,
+                ),
+                ("type", cashflow_type.into_pyobject(py)?.into_any()),
+                ("amount", amount.into_pyobject(py)?.into_any()),
+                ("fixing", fixing.into_pyobject(py)?.into_any()),
+                (
+                    "accrual_period",
+                    accrual_period.into_pyobject(py)?.into_any(),
+                ),
+                ("currency", currency.into_pyobject(py)?.into_any()),
+                ("caplet_strike", caplet_strike.into_pyobject(py)?.into_any()),
+                (
+                    "floorlet_strike",
+                    floorlet_strike.into_pyobject(py)?.into_any(),
+                ),
+                ("leg_index", leg_index.into_pyobject(py)?.into_any()),
+            ],
+        )?;
         let extra = pyo3::types::PyDict::new(py);
         extra.set_item(
             "accrual_start",
-            rows.iter()
-                .map(|row| {
-                    row.coupon_details
-                        .as_ref()
-                        .map(|terms| terms.accrual_start().to_string())
-                })
-                .collect::<Vec<_>>(),
+            datetime_column(
+                py,
+                rows.iter()
+                    .map(|row| {
+                        row.coupon_details
+                            .as_ref()
+                            .map(|terms| terms.accrual_start().to_string())
+                    })
+                    .collect::<Vec<_>>()
+                    .into_pyobject(py)?
+                    .into_any(),
+            )?,
         )?;
         extra.set_item(
             "accrual_end",
-            rows.iter()
-                .map(|row| {
-                    row.coupon_details
-                        .as_ref()
-                        .map(|terms| terms.accrual_end().to_string())
-                })
-                .collect::<Vec<_>>(),
+            datetime_column(
+                py,
+                rows.iter()
+                    .map(|row| {
+                        row.coupon_details
+                            .as_ref()
+                            .map(|terms| terms.accrual_end().to_string())
+                    })
+                    .collect::<Vec<_>>()
+                    .into_pyobject(py)?
+                    .into_any(),
+            )?,
         )?;
         extra.set_item(
             "market_index",
@@ -518,55 +572,6 @@ impl EvaluationResults {
                 .collect::<Vec<_>>(),
         )?;
         Ok(Some(frame.call_method("assign", (), Some(&extra))?))
-    }
-
-    /// Cashflow table as a DataFrame, if `"Cashflows"` was requested.
-    #[getter]
-    fn cashflows<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
-        let Some(rows) = &self.cashflows else {
-            return Ok(None);
-        };
-        let n = rows.len();
-        let mut payment_date = Vec::with_capacity(n);
-        let mut cashflow_type = Vec::with_capacity(n);
-        let mut amount = Vec::with_capacity(n);
-        let mut fixing = Vec::with_capacity(n);
-        let mut accrual_period = Vec::with_capacity(n);
-        let mut currency = Vec::with_capacity(n);
-        let mut caplet_strike = Vec::with_capacity(n);
-        let mut floorlet_strike = Vec::with_capacity(n);
-        let mut leg_index = Vec::with_capacity(n);
-        for r in rows {
-            payment_date.push(r.payment_date.clone());
-            cashflow_type.push(r.cashflow_type.clone());
-            amount.push(r.amount);
-            fixing.push(r.fixing);
-            accrual_period.push(r.accrual_period);
-            currency.push(r.currency.clone());
-            caplet_strike.push(r.caplet_strike);
-            floorlet_strike.push(r.floorlet_strike);
-            leg_index.push(r.leg_index);
-        }
-        Ok(Some(dataframe(
-            py,
-            &[
-                ("payment_date", payment_date.into_pyobject(py)?.into_any()),
-                ("type", cashflow_type.into_pyobject(py)?.into_any()),
-                ("amount", amount.into_pyobject(py)?.into_any()),
-                ("fixing", fixing.into_pyobject(py)?.into_any()),
-                (
-                    "accrual_period",
-                    accrual_period.into_pyobject(py)?.into_any(),
-                ),
-                ("currency", currency.into_pyobject(py)?.into_any()),
-                ("caplet_strike", caplet_strike.into_pyobject(py)?.into_any()),
-                (
-                    "floorlet_strike",
-                    floorlet_strike.into_pyobject(py)?.into_any(),
-                ),
-                ("leg_index", leg_index.into_pyobject(py)?.into_any()),
-            ],
-        )?))
     }
 
     fn __repr__(&self) -> String {

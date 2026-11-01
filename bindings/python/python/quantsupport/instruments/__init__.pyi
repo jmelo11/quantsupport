@@ -510,14 +510,15 @@ class Loan(Instrument):
         ...
 
     def coupon_fixing_requests(self) -> DataFrame:
-        """Return unique index/fixing-date rows with ISO fixing/start/end dates in a DataFrame.
+        """Return unique index/fixing-date rows with datetime fixing/start/end columns.
 
         Returns
         -------
         pandas.DataFrame
             Contractual observations in reset order, deduplicated by index and
             fixing date. Columns are market_index, fixing_date, start_date, and
-            end_date; dates are ISO strings. Fixed-rate loans have no rows.
+            end_date; dates have pandas datetime dtypes, with NaT for missing dates.
+            Fixed-rate loans have no rows, retaining the datetime column dtypes.
             The pricer decides which past fixings are needed at evaluation.
         """
         ...

@@ -102,8 +102,8 @@ class RiskReprojectionTests(unittest.TestCase):
                     records = []
                     labels = []
                     for row in range(1, len(factors)):
-                        date = str(factors.iloc[row]["date"])
-                        time = (datetime.date.fromisoformat(date) - datetime.date(2026, 1, 15)).days / 365
+                        date = factors.iloc[row]["date"].date()
+                        time = (date - datetime.date(2026, 1, 15)).days / 365
                         factor = float(factors.iloc[row]["discount_factor"])
                         if row == column + 1:
                             factor *= math.exp(-shift * time)

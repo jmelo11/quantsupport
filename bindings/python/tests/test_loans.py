@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import pandas as pd
 import quantsupport as qs
 
 from market_fixtures import append_quotes, zero_rate_quotes
@@ -42,7 +43,7 @@ def build_pricing_context(instrument=None, forward=0.04, reference=REFERENCE, in
     fixings = qs.FixingStore()
     if instrument is not None and include_fixings:
         for row in instrument.coupon_fixing_requests().itertuples(index=False):
-            if row.fixing_date < reference:
+            if row.fixing_date < pd.Timestamp(reference):
                 fixings.add(row.market_index, row.fixing_date, 0.04)
     return qs.PricingContext(quotes, curves, fixings=fixings,
         csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.EUR, qs.MarketIndex.ESTR))
@@ -329,7 +330,7 @@ class LoanWorkflowTests(unittest.TestCase):
         self.assertEqual(instrument.to_dict(), snapshot)
         requests = instrument.coupon_fixing_requests()
         self.assertEqual(len(requests), 2)
-        self.assertEqual(requests.start_date.tolist(), [REFERENCE, "2027-02-24"])
+        self.assertEqual(requests.start_date.tolist(), pd.to_datetime([REFERENCE, "2027-02-24"]).tolist())
 
     def test_missing_fixings_and_uninitialized_context_report_errors(self):
         instrument = build_floating_rate_loan()

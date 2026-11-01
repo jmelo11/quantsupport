@@ -183,16 +183,31 @@ fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     Ok(obj.clone())
 }
 
+fn pandas_module(py: Python<'_>) -> PyResult<Bound<'_, pyo3::types::PyModule>> {
+    py.import("pandas").map_err(|_| {
+        errors::native(&QSError::NotFoundErr(
+            "pandas is required for DataFrame results (pip install pandas)".into(),
+        ))
+    })
+}
+
+/// Converts ISO dates to a pandas datetime column, retaining missing dates as NaT.
+/// Empty and entirely missing columns also retain a datetime dtype.
+pub fn datetime_column<'py>(
+    py: Python<'py>,
+    values: Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("format", "%Y-%m-%d")?;
+    pandas_module(py)?.call_method("to_datetime", (values,), Some(&kwargs))
+}
+
 /// Builds a `pandas.DataFrame` from named columns.
 pub fn dataframe<'py>(
     py: Python<'py>,
     columns: &[(&str, Bound<'py, PyAny>)],
 ) -> PyResult<Bound<'py, PyAny>> {
-    let pandas = py.import("pandas").map_err(|_| {
-        errors::native(&QSError::NotFoundErr(
-            "pandas is required for DataFrame results (pip install pandas)".into(),
-        ))
-    })?;
+    let pandas = pandas_module(py)?;
     let data = PyDict::new(py);
     for (name, col) in columns {
         data.set_item(*name, col)?;

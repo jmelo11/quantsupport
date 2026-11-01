@@ -9,7 +9,9 @@
 //!   pandas DataFrames.
 
 use crate::{
-    common::conversion::{dataframe, extract_currency, extract_market_index, from_py, qs_err},
+    common::conversion::{
+        dataframe, datetime_column, extract_currency, extract_market_index, from_py, qs_err,
+    },
     instruments::products::{
         BasisSwap, CrossCurrencySwap, FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit,
         FloatingRateNote, Swap,
@@ -316,7 +318,10 @@ impl ExposureProfile {
         dataframe(
             py,
             &[
-                ("date", self.dates.clone().into_pyobject(py)?.into_any()),
+                (
+                    "date",
+                    datetime_column(py, self.dates.clone().into_pyobject(py)?.into_any())?,
+                ),
                 ("epe", self.epe.clone().into_pyobject(py)?.into_any()),
                 ("ene", self.ene.clone().into_pyobject(py)?.into_any()),
                 ("ee", self.ee.clone().into_pyobject(py)?.into_any()),

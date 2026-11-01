@@ -746,7 +746,7 @@ class FixingStore:
         Returns
         -------
         pandas.DataFrame
-            ``date`` contains ISO observation-date strings; ``value`` contains
+            ``date`` has a pandas datetime dtype; ``value`` contains
             fixings in the index's native units, sorted chronologically.
             No interpolation is performed; a missing index raises an error.
         """
@@ -1715,7 +1715,7 @@ class DiscountCurve:
         Returns
         -------
         pandas.DataFrame
-            ``date`` contains ISO node-date strings; ``discount_factor`` is the
+            ``date`` has a pandas datetime dtype; ``discount_factor`` is the
             dimensionless factor from the curve reference date to that node.
             Empty with these columns when the underlying curve exposes no nodes.
         """
