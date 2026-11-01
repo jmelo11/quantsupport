@@ -18,8 +18,8 @@ use xll_rs::types::{XllError, XLOPER12};
 pub fn qs_portfolio_create(name: &str, trades: *const XLOPER12) -> Result<String, XllError> {
     let trades = string_values(trades, "trades")?;
     let key = input_key(&trades)?;
-    let portfolio =
-        with_registry(|registry| portfolios::create(registry, name.to_owned(), trades)).map_err(value_error)?;
+    let portfolio = with_registry(|registry| portfolios::create(registry, name.to_owned(), trades))
+        .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Portfolio(Box::new(portfolio)), key)
     })

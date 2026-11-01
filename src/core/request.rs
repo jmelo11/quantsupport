@@ -1,7 +1,7 @@
 use crate::ad::{dual::DualFwd, scalar::Scalar};
 use crate::core::collateral::Discountable;
+use crate::core::marketdatahandling::marketdata::MarketData;
 use crate::core::{cashflowaggregation::CouponDetails, evaluationresults::CashflowKind};
-use crate::core::{marketdatahandling::marketdata::MarketData, pricerstate::PricerState};
 use crate::instruments::cashflows::coupons::{LinearCoupon, NonLinearCoupon};
 use crate::math::compensatedsum::CompensatedSum;
 use crate::rates::interestrate::InterestRate;
@@ -15,8 +15,8 @@ use crate::{
 /// A requested instrument result.
 ///
 /// Each variant selects an output measure, not a market-data dependency.
-/// Availability is specific to the pricer. Unsupported variants may produce an
-/// error or leave the corresponding [`EvaluationResults`](crate::core::evaluationresults::EvaluationResults)
+/// Availability is specific to the pricer. Unsupported variants leave the
+/// corresponding [`EvaluationResults`](crate::core::evaluationresults::EvaluationResults)
 /// field absent; requesting a variant does not guarantee support.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[allow(clippy::upper_case_acronyms)]
@@ -52,7 +52,9 @@ pub enum Request {
 }
 
 impl Request {
-    /// Validates date ordering and the scalar target/window selected by an evaluation.
+    /// Validates parameters of the requests supported by a selected pricer.
+    ///
+    /// The caller filters unsupported measures before invoking this check.
     ///
     /// # Errors
     /// Rejects reversed accrual dates or multiple fair-rate/accrual requests;
@@ -165,14 +167,12 @@ pub trait HandleAccruedAmount<T, S> {
 /// Rejects invalid windows, unresolved coupons, nonfinite amounts or missing FX.
 pub fn accrued_amount(
     legs: &[Leg<f64>],
-    state: &impl PricerState,
+    market_data: Option<&MarketData>,
     start: Date,
     end: Date,
 ) -> Result<f64> {
     Request::validate(&[Request::AccruedAmount(start, end)])?;
-    let base = state
-        .get_market_data_reponse()
-        .and_then(MarketData::base_currency);
+    let base = market_data.and_then(MarketData::base_currency);
     let mut currency = None;
     let mut total = CompensatedSum::default();
     for leg in legs {
@@ -191,10 +191,11 @@ pub fn accrued_amount(
             continue;
         }
         let fx = if let Some(target) = base.filter(|target| *target != leg.currency()) {
-            state
-                .get_fx_store()
+            market_data
+                .and_then(MarketData::fx_store)
                 .ok_or_else(|| QSError::NotFoundErr("FxStore not available".into()))?
-                .get_fx_rate_as::<f64>(leg.currency(), target)?
+                .get_fx_rate(leg.currency(), target)?
+                .value()
         } else {
             if base.is_none() && currency.is_some_and(|value| value != leg.currency()) {
                 return Err(QSError::InvalidValueErr(
@@ -945,14 +946,6 @@ mod tests {
         assert_eq!(table.currencies()[0], Currency::USD);
         assert_eq!(table.currencies()[1], Currency::GBP);
     }
-    impl PricerState for MockState {
-        fn get_market_data_reponse(&self) -> Option<&MarketData> {
-            None
-        }
-        fn get_market_data_reponse_mut(&mut self) -> Option<&mut MarketData> {
-            None
-        }
-    }
     #[test]
     fn accrual_request_applies_side_once_and_excludes_principal() -> Result<()> {
         let start = Date::new(2026, 1, 1);
@@ -983,7 +976,7 @@ mod tests {
             .cloned()
             .map(Into::into)
             .collect::<Vec<_>>();
-        let value = accrued_amount(&legs, &state, start, end)?;
+        let value = accrued_amount(&legs, None, start, end)?;
         assert!((value + 1_000.0 * 0.05 * 31.0 / 360.0).abs() < 1e-12);
         Ok(())
     }

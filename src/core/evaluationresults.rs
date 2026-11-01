@@ -322,8 +322,8 @@ impl SensitivityMap {
 ///
 /// A field is populated only when the selected pricer supplies that measure.
 /// `None` is not a zero result: the measure may not have been requested or may
-/// not be supported. Some pricers reject unsupported requests; others leave the
-/// field absent, so callers should check the relevant accessor.
+/// not be supported. Pricers leave unsupported result fields absent, so callers
+/// should check the relevant accessor.
 ///
 /// Value currency, quotation units, and supported measures are pricer-specific.
 /// The result does not itself carry a reporting currency. Built-in position

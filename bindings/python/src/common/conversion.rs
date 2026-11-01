@@ -398,7 +398,6 @@ pub fn extract_requests(reqs: &[Bound<'_, PyAny>]) -> PyResult<Vec<Request>> {
             ))
         })
         .collect::<PyResult<Vec<Request>>>()?;
-    Request::validate(&requests).map_err(qs_err)?;
     Ok(requests)
 }
 

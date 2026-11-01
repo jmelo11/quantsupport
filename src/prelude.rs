@@ -60,6 +60,7 @@ pub use crate::{
             HandleAccruedAmount, HandleCashflows, HandleFairRate, HandleModifiedDuration,
             HandleSensitivities, HandleValue, HandleYieldToMaturity, LegsProvider, Request,
         },
+        riskcontext::{RiskContext, ZeroRateRisk},
         snapshotselector::{SnapshotSelectionRule, SnapshotSelector},
         trade::{Side, Trade},
         visitable::{Visitable, Visitor},
@@ -95,6 +96,7 @@ pub use crate::{
         },
         fixedincome::{
             bondpricinganchor::BondPricingAnchor,
+            bondterms::BondTerms,
             callschedule::CallScheduleEntry,
             fixedratebond::{FixedRateBond, FixedRateBondTrade},
             fixedratedeposit::{FixedRateDeposit, FixedRateDepositTrade},

@@ -1,6 +1,6 @@
 """Market scenarios, collateral agreements, exposures, and XVA."""
 from datetime import date as PythonDate
-from typing import Any, ClassVar, Mapping, Sequence, final, overload
+from typing import Any, Final, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
 from ..market import _CurrencyLike, _IndexLike
@@ -38,8 +38,8 @@ QuantSupportError
     If s is not a recognized scenario-type name.
 """
         ...
-    Absolute: ClassVar[ScenarioType]
-    Relative: ClassVar[ScenarioType]
+    Absolute: Final[ScenarioType]
+    Relative: Final[ScenarioType]
 
 
 @final

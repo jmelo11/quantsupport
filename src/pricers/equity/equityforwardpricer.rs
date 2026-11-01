@@ -224,7 +224,24 @@ impl Pricer for EquityForwardPricer {
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
+        let supported: Vec<Request> = requests
+            .iter()
+            .copied()
+            .filter(|request| {
+                matches!(
+                    request,
+                    Request::Value | Request::Sensitivities | Request::FairRate(_)
+                )
+            })
+            .collect();
+        let requests = supported.as_slice();
         Request::validate(requests)?;
+        if requests.is_empty() {
+            return Ok(EvaluationResults::new(
+                ctx.evaluation_date(),
+                trade.instrument().identifier(),
+            ));
+        }
         let eval_date = ctx.evaluation_date();
         if !trade.notional().is_finite()
             || trade.notional() < 0.0
@@ -496,13 +513,19 @@ mod tests {
             .evaluate(&position, &[Request::Value], &missing)
             .is_err());
         assert!(!Tape::<f64>::is_active());
-        assert!(pricer()
-            .evaluate(
-                &position,
-                &[Request::ModifiedDuration],
-                &provider(100.0, 0.05, None, 0.03)
-            )
-            .is_err());
+        let unsupported = pricer().evaluate(
+            &position,
+            &[
+                Request::ModifiedDuration,
+                Request::AccruedAmount(Date::new(2026, 4, 1), Date::new(2026, 3, 1)),
+            ],
+            &missing,
+        )?;
+        assert!(
+            unsupported.modified_duration().is_none()
+                && unsupported.accrued_amount().is_none()
+                && unsupported.price().is_none()
+        );
         Ok(())
     }
 }

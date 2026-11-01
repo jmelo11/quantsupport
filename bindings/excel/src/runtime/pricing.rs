@@ -285,7 +285,6 @@ pub fn parse_requests(names: &[String]) -> Result<Vec<Request>, String> {
         return Err("at least one request is required".into());
     }
     let mut requests = Vec::with_capacity(names.len());
-    let mut fair_rate = false;
     for name in names {
         let normalized = name.trim().to_ascii_lowercase().replace('_', "");
         let request = match normalized.as_str() {
@@ -297,26 +296,27 @@ pub fn parse_requests(names: &[String]) -> Result<Vec<Request>, String> {
             "sensitivities" => Request::Sensitivities,
             "cashflows" => Request::Cashflows,
             _ if normalized.starts_with("accruedamount(") => {
-                let window = normalized.strip_prefix("accruedamount(").and_then(|s| s.strip_suffix(')'))
+                let window = normalized
+                    .strip_prefix("accruedamount(")
+                    .and_then(|s| s.strip_suffix(')'))
                     .and_then(|s| s.split_once(','))
                     .ok_or_else(|| "use AccruedAmount(YYYY-MM-DD,YYYY-MM-DD)".to_owned())?;
-                let parse = |s: &str| Date::from_str(s.trim().trim_matches(['\'', '"']), "%Y-%m-%d").map_err(|e| e.to_string());
+                let parse = |s: &str| {
+                    Date::from_str(s.trim().trim_matches(['\'', '"']), "%Y-%m-%d")
+                        .map_err(|e| e.to_string())
+                };
                 Request::AccruedAmount(parse(window.0)?, parse(window.1)?)
             }
             _ => {
                 let index = normalized.strip_prefix("fairrate(").and_then(|s| s.strip_suffix(')'))
                     .and_then(|s| s.trim().parse::<usize>().ok())
                     .ok_or_else(|| format!("unknown request '{name}'; use FairRate(index) or QS.REQUEST.FAIR.RATE(index)"))?;
-                if fair_rate {
-                    return Err("request one fair-rate target per evaluation".into());
-                }
-                fair_rate = true;
                 Request::FairRate(index)
             }
         };
+        Request::validate(&[request]).map_err(|e| e.to_string())?;
         requests.push(request);
     }
-    Request::validate(&requests).map_err(|e| e.to_string())?;
     Ok(requests)
 }
 
@@ -693,7 +693,10 @@ mod tests {
         for request in ["FairRate", "FairRate(-1)", "FairRate(1.5)", "Missing"] {
             assert!(parse_requests(&[request.into()]).is_err());
         }
-        assert!(parse_requests(&["FairRate(0)".into(), "FairRate(1)".into()]).is_err());
+        assert_eq!(
+            parse_requests(&["FairRate(0)".into(), "FairRate(1)".into()]).unwrap(),
+            vec![Request::FairRate(0), Request::FairRate(1)]
+        );
         let collateral = fixed_income_policy(
             &vec![vec![
                 Cell::Text("EUR".into()),
@@ -823,14 +826,22 @@ mod tests {
         );
     }
     #[test]
-    fn parses_accrual_window_and_rejects_reversed_or_multiple_windows() {
+    fn parses_accrual_windows_and_rejects_invalid_payloads() {
         let start = Date::new(2026, 3, 1);
         let end = Date::new(2026, 4, 1);
-        assert_eq!(parse_requests(&["AccruedAmount(2026-03-01,2026-04-01)".into()]).unwrap(),
-                   vec![Request::AccruedAmount(start, end)]);
+        assert_eq!(
+            parse_requests(&["AccruedAmount(2026-03-01,2026-04-01)".into()]).unwrap(),
+            vec![Request::AccruedAmount(start, end)]
+        );
         assert!(parse_requests(&["AccruedAmount(2026-04-01,2026-03-01)".into()]).is_err());
-        assert!(parse_requests(&["AccruedAmount(2026-03-01,2026-04-01)".into(),
-                                 "AccruedAmount(2026-04-01,2026-05-01)".into()]).is_err());
+        assert_eq!(
+            parse_requests(&[
+                "AccruedAmount(2026-03-01,2026-04-01)".into(),
+                "AccruedAmount(2026-04-01,2026-05-01)".into()
+            ])
+            .unwrap()
+            .len(),
+            2
+        );
     }
-
 }

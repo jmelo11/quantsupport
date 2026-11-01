@@ -8,12 +8,26 @@ short-rate model and an exercise calculation.
 
 | Instrument | Pricer | Supported analytics |
 | --- | --- | --- |
-| `FixedRateBond` | `BondPricer` | value, cashflows, yield to maturity, modified duration, Z-spread, sensitivities |
-| `SteppedCouponBond` | `TreeBasedBondPricer` or `BackwardFourierEvolutionBondPricer` | value, cashflows, OAS, sensitivities |
+| `FixedRateBond` | `BondPricer` | value, cashflows, yield to maturity, modified duration, Z-spread, sensitivities, accrued amount |
+| `SteppedCouponBond` | `TreeBasedBondPricer` or `BackwardFourierEvolutionBondPricer` | value, cashflows, OAS, sensitivities, accrued amount |
 
 Stepped-coupon bonds use price or spread anchors. Their supported analytics
-are value, cashflows, OAS and sensitivities; yield-to-maturity and
-modified-duration requests return an error.
+are value, cashflows, OAS, sensitivities and accrued amount; yield-to-maturity and
+modified-duration requests leave those result fields absent.
+
+## Contractual accrued amount
+
+We use `Request::AccruedAmount(start, end)` to request signed coupon interest
+between two dates. The result is an undiscounted currency amount in
+`EvaluationResults::accrued_amount()`, using the context base currency when
+configured. Principal is excluded, and the requested dates are clipped to each
+coupon period. Adjacent windows reconcile to the complete coupon.
+
+The request uses numeric coupon accrual without solving a spread, normalizing a
+clean or dirty quote, or recording a differentiation tape. A callable bond
+reports contractual interest assuming its scheduled coupons continue; this
+measure does not include future exercise-probability weighting. Accrual alone
+requires no tree or Fourier valuation model.
 
 ## Pricing anchors
 

@@ -257,7 +257,24 @@ impl Pricer for CdsPricer {
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
+        let supported: Vec<Request> = requests
+            .iter()
+            .copied()
+            .filter(|request| {
+                matches!(
+                    request,
+                    Request::Value | Request::Sensitivities | Request::FairRate(_)
+                )
+            })
+            .collect();
+        let requests = supported.as_slice();
         Request::validate(requests)?;
+        if requests.is_empty() {
+            return Ok(EvaluationResults::new(
+                ctx.evaluation_date(),
+                trade.instrument().identifier(),
+            ));
+        }
         let eval_date = ctx.evaluation_date();
         let identifier = trade.instrument().identifier();
 

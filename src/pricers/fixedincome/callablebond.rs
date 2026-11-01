@@ -1,6 +1,7 @@
 //! Common model preparation for bond engines with issuer exercise.
-use super::bondanalytics::{contractual_market_request, BondTerms, BondValuation};
 use super::bondevents::{bond_event_grid, BondEventGrid};
+use super::bondpricer::{contractual_market_request, BondValuation};
+use crate::instruments::fixedincome::bondterms::BondTerms;
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::{
@@ -8,7 +9,7 @@ use crate::{
             constructedelementrequest::ConstructedElementRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
-        pricerconfiguration::{PricerConfiguration, TimeGridConfiguration},
+        pricerconfiguration::{InstrumentType, PricerConfiguration, TimeGridConfiguration},
     },
     indices::marketindex::MarketIndex,
     models::hullwhite::parameters::HullWhiteParameters,
@@ -43,21 +44,19 @@ impl<T: Scalar> CallableBondModel<T> {
 }
 /// Loads and validates the context pricer configuration for the bond family.
 pub fn pricer_configuration(
-    trade: &impl BondTerms,
+    instrument_type: InstrumentType,
     context: &impl MarketDataProvider,
 ) -> Result<PricerConfiguration> {
     let market = context.handle_request(
-        &MarketDataRequest::default()
-            .with_pricer_configuration_request(vec![trade.instrument_type()]),
+        &MarketDataRequest::default().with_pricer_configuration_request(vec![instrument_type]),
     )?;
     let configuration = market
         .pricer_configurations()
-        .get(&trade.instrument_type())
+        .get(&instrument_type)
         .cloned()
         .ok_or_else(|| {
             QSError::NotFoundErr(format!(
-                "Pricer configuration not found for {:?}",
-                trade.instrument_type()
+                "Pricer configuration not found for {instrument_type:?}"
             ))
         })?;
     configuration.validate()?;
@@ -65,7 +64,7 @@ pub fn pricer_configuration(
 }
 /// Loads contractual and calibration data, resolves Hull-White parameters and aligns the time grid.
 pub fn prepare_callable_bond(
-    trade: &impl BondTerms,
+    trade: &impl BondTerms<DualFwd>,
     index: &MarketIndex,
     context: &impl MarketDataProvider,
     configuration: &PricerConfiguration,
@@ -75,8 +74,14 @@ pub fn prepare_callable_bond(
         QSError::NotFoundErr(format!("Bond pricing model not found for index {index}"))
     })?;
     let mut parameters = HullWhiteParameters::new(model)?;
-    let mut request = contractual_market_request(trade, index, context.evaluation_date())
-        .with_pricer_configuration_request(vec![trade.instrument_type()]);
+    let mut request = contractual_market_request(
+        trade,
+        Some(index),
+        context.evaluation_date(),
+        context.anchor_fixings(),
+        None,
+    )?
+    .with_pricer_configuration_request(vec![configuration.instrument_type()]);
     if let Some(calibration) = parameters.calibration_request() {
         let mut elements = request
             .constructed_elements_request()

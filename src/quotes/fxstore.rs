@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::dual::DualFwd,
     core::pillars::Pillars,
     currencies::currency::Currency,
     utils::errors::{QSError, Result},
@@ -14,11 +14,37 @@ use crate::{
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct FxRateRecord {
     /// Base currency.
-    pub base: Currency,
+    base: Currency,
     /// Quote currency.
-    pub quote: Currency,
+    quote: Currency,
     /// 1 unit of base = `rate` units of quote.
-    pub rate: f64,
+    rate: f64,
+}
+
+impl FxRateRecord {
+    /// Creates a spot observation: one unit of base equals rate units of quote.
+    #[must_use]
+    pub const fn new(base: Currency, quote: Currency, rate: f64) -> Self {
+        Self { base, quote, rate }
+    }
+
+    /// Returns the base currency.
+    #[must_use]
+    pub const fn base(&self) -> Currency {
+        self.base
+    }
+
+    /// Returns the quote currency.
+    #[must_use]
+    pub const fn quote(&self) -> Currency {
+        self.quote
+    }
+
+    /// Returns units of quote currency per unit of base currency.
+    #[must_use]
+    pub const fn rate(&self) -> f64 {
+        self.rate
+    }
 }
 
 /// Stores FX spot rates as [`DualFwd`] values so that sensitivities to exchange
@@ -115,44 +141,32 @@ impl FxStore {
     /// # Errors
     /// Returns an error if no path between the two currencies can be found.
     pub fn get_fx_rate(&self, base: Currency, quote: Currency) -> Result<DualFwd> {
-        self.get_fx_rate_as(base, quote)
-    }
-
-    /// Composes spot observations using the requested arithmetic scalar.
-    ///
-    /// # Errors
-    /// Returns an error if no path between the two currencies can be found.
-    pub fn get_fx_rate_as<T: Scalar + From<DualFwd>>(
-        &self,
-        base: Currency,
-        quote: Currency,
-    ) -> Result<T> {
         if base == quote {
-            return Ok(T::one());
+            return Ok(DualFwd::one());
         }
 
         // Direct lookup
         if let Some(&rate) = self.exchange_rate_map.get(&(base, quote)) {
-            return Ok(T::from(rate));
+            return Ok(rate);
         }
 
         // BFS triangulation
-        let mut queue: VecDeque<(Currency, T)> = VecDeque::new();
+        let mut queue: VecDeque<(Currency, DualFwd)> = VecDeque::new();
         let mut visited: HashSet<Currency> = HashSet::new();
-        queue.push_back((base, T::one()));
+        queue.push_back((base, DualFwd::one()));
         visited.insert(base);
 
         while let Some((current, accumulated)) = queue.pop_front() {
             for (&(src, dst), &map_rate) in &self.exchange_rate_map {
                 if src == current && !visited.contains(&dst) {
-                    let composed = accumulated.mul_val(T::from(map_rate));
+                    let composed: DualFwd = (accumulated * map_rate).into();
                     if dst == quote {
                         return Ok(composed);
                     }
                     visited.insert(dst);
                     queue.push_back((dst, composed));
                 } else if dst == current && !visited.contains(&src) {
-                    let composed = accumulated.div_val(T::from(map_rate));
+                    let composed: DualFwd = (accumulated / map_rate).into();
                     if src == quote {
                         return Ok(composed);
                     }

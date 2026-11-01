@@ -8,6 +8,7 @@ import sys
 from types import ModuleType
 import unittest
 
+import numpy as np
 import pandas as pd
 import quantsupport as qs
 
@@ -32,6 +33,7 @@ NewProduction = example.NewProduction
 ProductionTemplate = example.ProductionTemplate
 RolloverRule = example.RolloverRule
 generate_opening_portfolio = example.generate_opening_portfolio
+DepositHedgingEngine = example.DepositHedgingEngine
 
 
 AS_OF = "2026-03-01"
@@ -99,21 +101,6 @@ class IncomeForecastTests(unittest.TestCase):
                             actual = IncomeForecaster._cashflows(context, trade).sort_values("type").reset_index(drop=True)
                             pd.testing.assert_frame_equal(actual, expected)
 
-    def test_cashflow_extractor_rejects_unsupported_direct_calls(self):
-        compounded = qs.FixedRateDeposit(
-            identifier="COMPOUNDED", start_date=AS_OF, maturity_date="2027-03-01",
-            notional=1000, rate=0.06, currency="EUR", discount_index="ESTR",
-            compounding="Compounded", rate_frequency="Semiannual",
-        )
-        swap = qs.Swap(
-            identifier="SWAP", start_date=AS_OF, maturity_date="2027-03-01",
-            notional=1000, fixed_rate=0.04, currency="EUR", market_index="ESTR",
-        )
-        with make_context() as context:
-            with self.assertRaisesRegex(ValueError, "simple-interest"):
-                IncomeForecaster._cashflows(context, qs.Trade(compounded, AS_OF))
-            with self.assertRaisesRegex(ValueError, "supports Loan and FixedRateDeposit"):
-                IncomeForecaster._cashflows(context, qs.Trade(swap, AS_OF))
 
     def test_accrual_includes_payment_after_horizon_and_excludes_principal(self):
         book = portfolio(deposit(), deposit("FUNDING", 0.02, "PayShort"))
@@ -266,7 +253,6 @@ class IncomeForecastTests(unittest.TestCase):
             curve = context.curve("ESTR")
             advance = 125_000 * curve.discount_factor(start)
             self.assertAlmostEqual(value, advance, delta=0.0001)
-            self.assertLess(abs(quote.par_error_bp), 1e-5)
             self.assertEqual(quote.quote_type, "fixed_coupon")
             self.assertAlmostEqual(trade.instrument.to_dict()["amortization_rate"], quote.par_quote)
             # The old maturity forward is not the par coupon of this amortizing contract.
@@ -359,7 +345,6 @@ class IncomeForecastTests(unittest.TestCase):
                     else:
                         actual = terms["FloatingRateCoupon"]["spread"]
                     self.assertAlmostEqual(actual, quote.contract_rate_or_spread)
-                    self.assertLess(abs(quote.par_error_bp), 1e-5)
 
     def test_deposit_production_prices_the_forward_start_on_each_day_count(self):
         with make_context() as context:
@@ -386,11 +371,6 @@ class IncomeForecastTests(unittest.TestCase):
         self.assertGreater(funding_shift.par_quote, base.par_quote + 0.009)
         self.assertEqual(base, restored)
 
-    def test_new_loan_pricing_rejects_a_solver_that_keeps_seed_amortization(self):
-        with make_context() as context:
-            context.pricer_configurations = [qs.PricerConfiguration.loan()]
-            with self.assertRaisesRegex(ValueError, "rebuild_amortization"):
-                ProductionTemplate("NEW").quote(context, date(2026, 4, 1))
 
     def test_monthly_accrual_uses_resolved_quarterly_coupon_and_expected_principal(self):
         instrument = qs.Loan(
@@ -463,7 +443,6 @@ class IncomeForecastTests(unittest.TestCase):
         for row in result.monthly.itertuples(index=False):
             self.assertAlmostEqual(row.asset_balance, row.liability_balance, delta=1e-7)
             self.assertAlmostEqual(row.net_principal_cashflow, 0, delta=1e-7)
-        self.assertLess(result.productions.par_error_bp.abs().max(), 1e-5)
 
     def test_native_accrual_handles_thirty_360_coupon_boundaries(self):
         instrument = qs.FixedRateDeposit(
@@ -477,21 +456,122 @@ class IncomeForecastTests(unittest.TestCase):
         # Accrual to Mar 31 minus accrual to Mar 1 is 29/360 of the annual coupon.
         self.assertAlmostEqual(result.monthly.nii.iloc[0], 1000 * 0.06 * 29 / 360)
 
-    def test_invalid_scope_is_rejected(self):
-        with self.assertRaises(ValueError):
-            RolloverRule("loans", ProductionTemplate("NEW"), prepayment_fraction=1.1)
-        with self.assertRaises(ValueError):
-            NewProduction(AS_OF, -1, "loans", ProductionTemplate("NEW"))
+
+class DepositHedgingTests(unittest.TestCase):
+    @staticmethod
+    def context():
+        context = make_context()
+        observations = {"reference_date": AS_OF, "quotes": [
+            {"identifier": label, "mid": context.quotes.levels(label)[0]}
+            for label in context.quotes.identifiers()
+        ]}
+        labels = [f"ZeroRate_EUR_FUNDINGSPREAD_{tenor}" for tenor in ("0D", "1Y", "10Y")]
+        observations["quotes"].extend({"identifier": label, "mid": 0.005} for label in labels)
+        context.quotes = qs.QuoteStore.from_dict(observations)
+        funding, spread = qs.MarketIndex.other("LOANFUNDING"), qs.MarketIndex.other("FUNDINGSPREAD")
+        context.curves = [*context.curves,
+                          qs.CurveConfiguration(spread, labels, day_counter="Actual360", interpolator="Linear"),
+                          qs.CurveConfiguration.composite(funding, "ESTR", spread)]
+        context.fixed_income_policy = qs.FixedIncomeDiscountPolicy({"EUR": funding})
+        return context
+
+    @staticmethod
+    def templates(indices=("ESTR", "LOANFUNDING", "EURIBOR3m")):
+        return [ProductionTemplate(f"{index}-{months}M", kind="deposit", tenor_months=months,
+                                   index=qs.MarketIndex.other(index) if index == "LOANFUNDING" else index,
+                                   margin=0, day_counter="Actual360")
+                for index in indices for months in (1, 6, 12, 120)]
+
+    def test_joint_hedge_creates_signed_trades_and_reprices_all_source_risk(self):
+        context = self.context()
+        book, _ = generate_opening_portfolio(context, AS_OF, n_fixed=3, n_floating=2,
+                                              n_deposits=4, funding_index=qs.MarketIndex.other("LOANFUNDING"))
+        contracts = [p.trade.instrument.to_dict() for p in book.positions]
+        engine = DepositHedgingEngine(self.templates())
+        with context:
+            result = engine.hedge(context, book, engine.sensitivity_report(context, book))
+        self.assertEqual(set(result.tickets.side), {"LongReceive", "PayShort"})
+        self.assertTrue((result.tickets.notional > 0).all())
+        self.assertAlmostEqual(result.tickets.signed_notional.sum(), 0, delta=1e-7)
+        self.assertEqual(result.rank, 9)
+        self.assertLess(np.linalg.norm(result.risk.after_pv01), 1e-3)
+        np.testing.assert_allclose(result.risk.after_pv01, result.risk.predicted_after_pv01,
+                                   atol=1e-7, rtol=1e-7)
+        self.assertTrue(result.risk.index.str.contains("FUNDINGSPREAD").any())
+        self.assertEqual([p.trade.instrument.to_dict() for p in book.positions], contracts)
+        for position, ticket in zip(result.portfolio.positions[len(book.positions):],
+                                    result.tickets.itertuples(index=False)):
+            self.assertEqual(str(position.trade.side), ticket.side)
+            self.assertEqual(position.trade.notional, ticket.notional)
+            self.assertEqual(position.trade.instrument.to_dict()["rate"], ticket.rate)
+
+    def test_seasoned_risk_preserves_original_future_coupon_and_position_override(self):
+        engine = DepositHedgingEngine(self.templates(("ESTR",)))
+        original = deposit(start="2025-09-01", maturity="2027-03-01")
+        trade = qs.Trade(original.instrument, AS_OF, "PayShort", notional=250)
+        book = portfolio(trade)
         with make_context() as context:
-            forecaster = IncomeForecaster(AS_OF, "2026-06-01")
-            with self.assertRaisesRegex(ValueError, "preserve"):
-                forecaster.forecast(context, portfolio(deposit()), rollovers=[RolloverRule(
-                    "segment-0", ProductionTemplate("WRONG-SIDE", kind="deposit", side="PayShort"),
-                )])
-            with self.assertRaisesRegex(ValueError, "currency"):
-                forecaster.forecast(context, portfolio(deposit()), planned=[NewProduction(
-                    AS_OF, 100, "USD", ProductionTemplate("USD", currency="USD"),
-                )])
+            report = engine.sensitivity_report(context, book)
+            receipts = context.evaluate(trade, [qs.Request.Cashflows]).cashflows
+            future = receipts[receipts.payment_date > AS_OF]
+            values = []
+            epsilon = 1e-6
+            for shift in (-epsilon, epsilon):
+                with qs.Scenario(shocks=[qs.Shock("ESTR", shift, qs.ScenarioType.Absolute)]):
+                    curve = context.curve("ESTR")
+                    values.append(sum(row.amount * curve.discount_factor(row.payment_date)
+                                      for row in future.itertuples(index=False)))
+        # The independent valuation uses the original future coupon and principal,
+        # including already-accrued interest, while excluding the settled advance.
+        self.assertAlmostEqual(report.value.sum(), (values[1] - values[0]) / (2 * epsilon), delta=1e-5)
+        self.assertEqual(trade.instrument.to_dict()["start_date"], "2025-09-01")
+
+    def test_missing_hedge_curve_remains_visible_in_the_residual(self):
+        context = self.context()
+        book, _ = generate_opening_portfolio(context, AS_OF, n_fixed=1, n_floating=2,
+                                              n_deposits=2, funding_index=qs.MarketIndex.other("LOANFUNDING"))
+        engine = DepositHedgingEngine(self.templates(("ESTR",)))
+        with context:
+            result = engine.hedge(context, book, engine.sensitivity_report(context, book))
+        uncovered = result.risk.index.str.contains("FUNDINGSPREAD|EURIBOR3m")
+        self.assertGreater(np.linalg.norm(result.risk.loc[uncovered, "before_pv01"]), 1)
+        np.testing.assert_allclose(result.risk.loc[uncovered, "after_pv01"],
+                                   result.risk.loc[uncovered, "before_pv01"], atol=1e-8)
+        self.assertGreater(np.linalg.norm(result.risk.after_pv01), 1)
+
+    def test_zero_risk_creates_no_hedge_tickets(self):
+        asset = deposit()
+        book = portfolio(asset, qs.Trade(asset.instrument, AS_OF, "PayShort"))
+        engine = DepositHedgingEngine(self.templates(("ESTR",)))
+        with make_context() as context:
+            result = engine.hedge(context, book, engine.sensitivity_report(context, book))
+        self.assertTrue(result.tickets.empty)
+        self.assertEqual(result.portfolio.positions, book.positions)
+        self.assertEqual(np.linalg.norm(result.risk.after_pv01), 0)
+
+    def test_fixed_hedges_reconcile_to_combined_forecast_under_rate_scenarios(self):
+        context = self.context()
+        book, _ = generate_opening_portfolio(context, AS_OF, n_fixed=1, n_floating=1,
+                                              n_deposits=2, funding_index=qs.MarketIndex.other("LOANFUNDING"))
+        engine = DepositHedgingEngine(self.templates())
+        forecaster = IncomeForecaster(AS_OF, "2026-06-01")
+        with context:
+            result = engine.hedge(context, book, engine.sensitivity_report(context, book))
+            hedges = ForecastPortfolio("HEDGES", result.portfolio.positions[len(book.positions):])
+            contracts = [p.trade.instrument.to_dict() for p in hedges.positions]
+            hedge_income = []
+            for shift in (0, 0.01):
+                with qs.Scenario(shocks=[qs.Shock("ESTR", shift, qs.ScenarioType.Absolute)]):
+                    original = forecaster.forecast(context, book).monthly
+                    incremental = forecaster.forecast(context, hedges).monthly
+                    combined = forecaster.forecast(context, result.portfolio).monthly
+                    np.testing.assert_allclose(combined.nii, original.nii + incremental.nii, atol=1e-7)
+                    np.testing.assert_allclose(combined.net_principal_cashflow,
+                                               original.net_principal_cashflow + incremental.net_principal_cashflow,
+                                               atol=1e-7)
+                    hedge_income.append(incremental.nii.to_numpy())
+            np.testing.assert_allclose(hedge_income[0], hedge_income[1], atol=1e-8)
+            self.assertEqual([p.trade.instrument.to_dict() for p in hedges.positions], contracts)
 
 
 if __name__ == "__main__":

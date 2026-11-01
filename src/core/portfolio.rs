@@ -171,7 +171,6 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
     /// Rejects inconsistent dates and nonfinite values.
     /// Discard the accumulator after an error; no partial result should be published.
     pub fn accumulate_trade_result(&mut self, result: &EvaluationResults) -> Result<()> {
-        Request::validate(&self.requests)?;
         if self
             .evaluation_date
             .is_some_and(|date| date != result.evaluation_date())
@@ -235,6 +234,7 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
     /// # Errors
     /// Rejects an empty accumulator or failure of the injected cashflow strategy.
     pub fn into_evaluation_results(self, identifier: String) -> Result<EvaluationResults> {
+        Request::validate(&self.requests)?;
         let date = self
             .evaluation_date
             .ok_or_else(|| QSError::ValueNotSetErr("Portfolio evaluation date".into()))?;
@@ -588,6 +588,15 @@ mod tests {
         assert!(message.contains("aggregating portfolio member 1"));
         Ok(())
     }
+    #[test]
+    fn portfolio_filters_unsupported_scalar_targets_before_validation() -> Result<()> {
+        let accumulator = MakePortfolioAccumulator::default()
+            .with_requests(&[Request::Value, Request::FairRate(0), Request::FairRate(1)])
+            .build()?;
+        assert_eq!(accumulator.requests(), &[Request::Value]);
+        Ok(())
+    }
+
     #[test]
     fn aggregates_accrued_amount_and_propagates_missing_members() -> Result<()> {
         let start = Date::new(2026, 1, 1);

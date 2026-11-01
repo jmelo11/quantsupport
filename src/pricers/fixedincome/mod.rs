@@ -2,9 +2,9 @@
 //!
 //! Unlike a generic discounted-cashflow pricer, a quoted bond pricer must
 //! understand settlement, accrued interest, price normalization, yield, and
-//! market spread anchors. Shared internal analytics provide those semantics
-//! using the anchor and settlement terms stored on the trade. Each public
-//! pricer module implements its own valuation engine.
+//! market spread anchors. Contract and trade terms live with the instruments;
+//! the bond pricers share quote handling and numerical analytics. Each public
+//! pricer implements the standard pricing interface and its valuation engine.
 
 /// Fixed-rate bond pricing from clean-price, dirty-price, or spread anchors.
 pub mod bondpricer;

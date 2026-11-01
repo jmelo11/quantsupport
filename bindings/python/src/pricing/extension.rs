@@ -428,6 +428,20 @@ pub struct PricerRegistry {
 }
 
 impl PricerRegistry {
+    /// Copies registrations while retaining the same Python pricer instances.
+    pub fn clone_ref(&self, py: Python<'_>) -> Self {
+        Self {
+            registrations: self
+                .registrations
+                .iter()
+                .map(|registration| Registration {
+                    trade_type: registration.trade_type.clone_ref(py),
+                    pricer: registration.pricer.clone_ref(py),
+                })
+                .collect(),
+        }
+    }
+
     /// Registers or replaces the pricer associated with an exact Python type.
     pub fn register(
         &mut self,

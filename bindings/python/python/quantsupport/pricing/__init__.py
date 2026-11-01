@@ -7,6 +7,8 @@ from ..quantsupport import (
     FixedIncomeDiscountPolicy as FixedIncomeDiscountPolicy,
     BondPricingAnchor as BondPricingAnchor,
     PricingContext as PricingContext,
+    RiskContext as RiskContext,
+    ZeroRateRisk as ZeroRateRisk,
     Trade as Trade,
     Pricer as Pricer,
     MarketDataProvider as MarketDataProvider,
@@ -16,4 +18,4 @@ from ..quantsupport import (
 )
 
 __all__ = ['Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor',
-           'PricingContext', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'Portfolio', 'EvaluationResults']
+           'PricingContext', 'RiskContext', 'ZeroRateRisk', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'Portfolio', 'EvaluationResults']

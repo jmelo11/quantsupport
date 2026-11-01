@@ -1,5 +1,18 @@
 # Sensitivity and portfolio requests
 
+For curve-risk transformations, run the self-contained
+[risk_reprojection.py](risk_reprojection.py) example:
+
+```sh
+python bindings/python/examples/sensitivity/risk_reprojection.py
+```
+
+It bootstraps an ESTR curve from deposit quotes and reports one EUR swap's
+sensitivities against deposits, implied OIS quotes, and post-bootstrap zero
+rates. It verifies that the NPV is identical in all three bases. The new
+`RiskContext` snapshots retain the usual `evaluate()` and portfolio API and
+can be used after the original context scope closes.
+
 Start with [How a portfolio works](portfolio.ipynb) for a step-by-step
 introduction to `qs.Portfolio`. It builds a deposit and two opposing swap
 positions, explains the context and request lifecycle, and checks the aggregate
