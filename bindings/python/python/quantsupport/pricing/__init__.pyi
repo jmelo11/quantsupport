@@ -1012,11 +1012,13 @@ trade : Trade or Portfolio
     evaluates its members individually and combines their numeric results.
 requests : sequence of Request or str, optional
     Requested outputs: Value, YieldToMaturity, ModifiedDuration, Sensitivities,
-    ZSpread, OAS, Cashflows, or FairRate, as enums or case-insensitive names.
+    ZSpread, OAS, Cashflows, FairRate, or a date-window AccruedAmount, as
+    Request values or case-insensitive names accepted by Request.parse().
     None, the default, requests only Value. An explicit empty sequence is not
     replaced by Value. Supported requests depend on the instrument and pricer.
-    Portfolios aggregate only Value, Sensitivities and Cashflows; other requests
-    are ignored. A measure omitted by any member stays absent from the total.
+    Portfolios aggregate Value, Sensitivities, Cashflows and AccruedAmount;
+    other requests are ignored. A measure omitted by any member stays absent
+    from the total.
 
 Returns
 -------
@@ -1897,11 +1899,17 @@ Returns
 -------
 pandas.DataFrame or None
     Columns ``payment_date``, ``type``, ``amount``, ``fixing``, ``accrual_period``,
-    ``currency``, ``caplet_strike``, ``floorlet_strike``, and ``leg_index``.
-    Dates and currency codes are strings; amounts use the row currency, rates
+    ``currency``, ``caplet_strike``, ``floorlet_strike``, ``leg_index``,
+    ``accrual_start``, ``accrual_end``, ``market_index``, ``notional``,
+    ``fixing_index``, ``rate``, ``spread``, ``day_counter``, ``rate_definition``,
+    ``overnight_conventions``, and ``payoff``. Contractual coupon terms retain
+    signed notionals and compatible weighted rates/spreads after portfolio
+    aggregation.
+    Date columns have pandas datetime dtypes, with NaT for missing dates.
+    Currency codes are strings; amounts use the row currency, rates
     use decimal units, and accrual_period is a year fraction. Optional observations
-    may be missing. Row order is preserved. None means no cashflow output;
-    supplied empty rows produce an empty frame with the same columns.
+    and contractual terms may be missing. Row order is preserved. None means no
+    cashflow output; supplied empty rows produce an empty frame with the same columns.
 
 Raises
 ------
@@ -1916,13 +1924,8 @@ QuantSupportError
         ...
 
     @property
-    def coupons(self) -> DataFrame | None:
-        """Cashflows plus dates, index, signed notional, rate/spread and contractual conventions."""
-        ...
-
-    @property
     def cashflow_summary(self) -> DataFrame | None:
-        """Payments grouped by date and currency, with interest, capital, other and total."""
+        """Payments grouped by datetime payment_date and currency, with interest, capital, other and total."""
         ...
 
     @property

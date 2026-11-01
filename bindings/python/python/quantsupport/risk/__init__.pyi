@@ -520,7 +520,7 @@ date, before any variation-margin adjustment, not discounted XVA measures.
 Returns
 -------
 pandas.DataFrame
-    Columns ``date`` (native date strings), ``epe`` (expected positive
+    Columns ``date`` (pandas datetime dtype), ``epe`` (expected positive
     exposure), ``ene`` (expected negative exposure), and ``ee`` (expected
     exposure). Values are in the engine's base currency, as of each simulation
     date and before variation margin. ENE is non-positive; EE is the unconditional

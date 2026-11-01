@@ -403,7 +403,13 @@ impl FixingStore {
         crate::common::conversion::dataframe(
             py,
             &[
-                ("date", dates.into_pyobject(py)?.into_any()),
+                (
+                    "date",
+                    crate::common::conversion::datetime_column(
+                        py,
+                        dates.into_pyobject(py)?.into_any(),
+                    )?,
+                ),
                 ("value", values.into_pyobject(py)?.into_any()),
             ],
         )

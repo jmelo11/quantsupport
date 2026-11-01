@@ -3,8 +3,9 @@
 use crate::{
     common::{
         conversion::{
-            dataframe, extract_business_day_convention, extract_calendar, extract_currency,
-            extract_date, extract_frequency, extract_market_index, extract_period, from_py, qs_err,
+            dataframe, datetime_column, extract_business_day_convention, extract_calendar,
+            extract_currency, extract_date, extract_frequency, extract_market_index,
+            extract_period, from_py, qs_err,
         },
         enums::Currency,
     },
@@ -251,7 +252,8 @@ impl Loan {
     /// Returns unique coupon index observations as a pandas DataFrame.
     ///
     /// Columns are ``market_index``, ``fixing_date``, ``start_date``, and
-    /// ``end_date``; dates are ISO strings. Rows retain contractual reset order
+    /// ``end_date``; dates have pandas datetime dtypes, with NaT for missing dates.
+    /// Rows retain contractual reset order
     /// and are deduplicated by index/fixing date. A fixed loan has no rows.
     /// This lists contractual resets; the pricer determines which past fixings
     /// are required for unpaid coupons at a particular evaluation date.
@@ -284,9 +286,18 @@ impl Loan {
             py,
             &[
                 ("market_index", market_index.into_pyobject(py)?.into_any()),
-                ("fixing_date", fixing_date.into_pyobject(py)?.into_any()),
-                ("start_date", start_date.into_pyobject(py)?.into_any()),
-                ("end_date", end_date.into_pyobject(py)?.into_any()),
+                (
+                    "fixing_date",
+                    datetime_column(py, fixing_date.into_pyobject(py)?.into_any())?,
+                ),
+                (
+                    "start_date",
+                    datetime_column(py, start_date.into_pyobject(py)?.into_any())?,
+                ),
+                (
+                    "end_date",
+                    datetime_column(py, end_date.into_pyobject(py)?.into_any())?,
+                ),
             ],
         )
     }

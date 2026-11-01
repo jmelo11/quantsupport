@@ -1,6 +1,7 @@
 # The native quantsupport binding must also be built into this environment.
 numpy>=1.26
 pandas>=2
+python-dateutil>=2.8
 matplotlib>=3.7
 jupyterlab>=4
 ipykernel>=6

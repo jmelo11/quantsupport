@@ -53,12 +53,12 @@ short swap keeps its opposing coupon directions.
 
 The notebook checks PV, every raw sensitivity and payment totals against
 independent position evaluations, then displays positions, position PVs, detailed
-coupons, the interest/capital summary and sensitivities. It also plots interest
+cashflows, the interest/capital summary and sensitivities. It also plots interest
 and principal payments separately. Set `EXPORT_CSV = True` in its final code
-cell to export five tables. Edit notionals, rates or spreads in `POSITIONS`
-to explore weighting; changes to the book's structure may require adapting the
-demonstration assertions. The summary uses payment dates, without accrual NII
-allocation. Built-in pricers differentiate one trade at a time.
+cell to export five tables, including `cashflows.csv`. Edit notionals, rates or
+spreads in `POSITIONS` to explore weighting; changes to the book's structure may
+require adapting the demonstration assertions. The summary uses payment dates,
+without accrual NII allocation. Built-in pricers differentiate one trade at a time.
 Sensitivities are raw derivatives per unit zero-rate input; multiply by `0.0001`
 to estimate a +1 bp PV change for these decimal-rate pillars.
 

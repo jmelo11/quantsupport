@@ -58,6 +58,7 @@ class DirectCurveQuoteTests(unittest.TestCase):
             with self.subTest(level=level), context(observations, quote_level=level) as ctx:
                 curve = ctx.curve("ESTR")
                 self.assertEqual(curve.discount_factor(REFERENCE), 1.0)
+                self.assertTrue((curve.nodes().date.dt.year >= 2026).all())
                 self.assertAlmostEqual(curve.discount_factor("2027-02-24"), expected)
                 weight = qs.DayCounter.Actual365.year_fraction(REFERENCE, "2026-08-25")
                 self.assertAlmostEqual(curve.discount_factor("2026-08-25"), 1 + weight * (expected - 1))

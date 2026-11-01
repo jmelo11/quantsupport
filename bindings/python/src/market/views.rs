@@ -9,7 +9,8 @@ use quantsupport::prelude::{
 };
 
 use crate::common::conversion::{
-    dataframe, extract_compounding, extract_date, extract_frequency, extract_period, qs_err,
+    dataframe, datetime_column, extract_compounding, extract_date, extract_frequency,
+    extract_period, qs_err,
 };
 use crate::common::enums::{DayCounter, MarketIndex, SmileType, VolatilityType};
 use crate::time::Date;
@@ -89,7 +90,10 @@ impl DiscountCurve {
         dataframe(
             py,
             &[
-                ("date", dates.into_pyobject(py)?.into_any()),
+                (
+                    "date",
+                    datetime_column(py, dates.into_pyobject(py)?.into_any())?,
+                ),
                 ("discount_factor", dfs.into_pyobject(py)?.into_any()),
             ],
         )

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import unittest
 
+import pandas as pd
 import quantsupport as qs
 
 
@@ -31,7 +32,10 @@ class TradeInstrumentTests(unittest.TestCase):
             self.assertAlmostEqual(summary.capital.sum(), 0.0)
             self.assertGreater(summary.interest.sum(), 0.0)
             self.assertEqual(set(result.cashflows.type), {"FixedRateCoupon", "Redemption", "Disbursement"})
-            coupons = result.coupons[result.coupons.type == "FixedRateCoupon"]
+            coupons = result.cashflows[result.cashflows.type == "FixedRateCoupon"]
+            for column in ["payment_date", "accrual_start", "accrual_end"]:
+                self.assertTrue(pd.api.types.is_datetime64_any_dtype(result.cashflows[column]))
+            self.assertEqual(coupons.accrual_start.dt.year.tolist(), [2026, 2026])
             self.assertEqual(len(coupons), 2)  # Pay and receive directions remain separate.
             for rate in coupons.rate:
                 self.assertAlmostEqual(rate, 0.04, places=14)
@@ -370,6 +374,7 @@ class TradeInstrumentTests(unittest.TestCase):
             for _ in range(2):
                 result = context.run_xva(config, [netting_set])
                 profile = result.exposures[0].to_dataframe()
+                self.assertTrue(pd.api.types.is_datetime64_any_dtype(profile["date"]))
                 self.assertLess(profile["epe"].abs().max(), 1e-8)
                 self.assertLess(profile["ene"].abs().max(), 1e-8)
 

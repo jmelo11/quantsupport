@@ -36,14 +36,14 @@ generate_opening_portfolio = example.generate_opening_portfolio
 DepositHedgingEngine = example.DepositHedgingEngine
 
 
-AS_OF = "2026-03-01"
+AS_OF = date(2026, 3, 1)
 
 
 def make_context(shift=0.0, reference=AS_OF):
     indices = [("ESTR", 0.025), ("EURIBOR3m", 0.03)]
     pillars = ["0D", "1Y", "10Y"]
     context = qs.PricingContext(
-        quotes=qs.QuoteStore.from_dict({"reference_date": reference, "quotes": [
+        quotes=qs.QuoteStore.from_dict({"reference_date": reference.isoformat(), "quotes": [
             {"identifier": f"ZeroRate_EUR_{index}_{tenor}", "mid": rate + shift}
             for index, rate in indices for tenor in pillars
         ]}),
@@ -62,7 +62,7 @@ def make_context(shift=0.0, reference=AS_OF):
 
 
 def deposit(name="DEPOSIT", rate=0.06, side="LongReceive", start=AS_OF,
-            maturity="2027-03-01", notional=1000):
+            maturity=date(2027, 3, 1), notional=1000):
     return qs.Trade(qs.FixedRateDeposit(
         identifier=name, start_date=start, maturity_date=maturity, notional=notional,
         rate=rate, currency="EUR", discount_index="ESTR", day_counter="Actual365",
@@ -72,7 +72,7 @@ def deposit(name="DEPOSIT", rate=0.06, side="LongReceive", start=AS_OF,
 
 def loan(repayment="Bullet", cpr=0.12):
     return qs.Trade(qs.Loan(
-        identifier="LOAN", start_date=AS_OF, maturity_date="2027-03-01", notional=1000,
+        identifier="LOAN", start_date=AS_OF, maturity_date=date(2027, 3, 1), notional=1000,
         coupons=[qs.FixedRateCoupon(rate=qs.InterestRate(
             rate=0.06, day_counter="Actual365", compounding="Simple",
         ))], currency="EUR", repayment=repayment, payment_frequency="Monthly",
@@ -96,16 +96,18 @@ class IncomeForecastTests(unittest.TestCase):
                         with self.subTest(side=side, amount=amount, rate=rate):
                             original = deposit(rate=rate)
                             trade = qs.Trade(original.instrument, AS_OF, side, notional=amount)
-                            native = context.evaluate(trade, [qs.Request.Cashflows]).coupons
+                            native = context.evaluate(trade, [qs.Request.Cashflows]).cashflows
                             expected = native[native.type != "Disbursement"].sort_values("type").reset_index(drop=True)
-                            actual = IncomeForecaster._cashflows(context, trade).sort_values("type").reset_index(drop=True)
+                            for column in ("payment_date", "accrual_start", "accrual_end"):
+                                expected[column] = pd.to_datetime(expected[column]).dt.date
+                            actual = IncomeForecaster.read_cashflows(context, trade).sort_values("type").reset_index(drop=True)
                             pd.testing.assert_frame_equal(actual, expected)
 
 
     def test_accrual_includes_payment_after_horizon_and_excludes_principal(self):
         book = portfolio(deposit(), deposit("FUNDING", 0.02, "PayShort"))
         with make_context() as context:
-            result = IncomeForecaster(AS_OF, "2026-06-01").forecast(context, book)
+            result = IncomeForecaster(AS_OF, date(2026, 6, 1)).forecast(context, book)
         # Neither annual coupon has paid, but three months of interest are earned.
         expected_days = [31, 30, 31]
         for row, days in zip(result.monthly.itertuples(), expected_days):
@@ -115,16 +117,16 @@ class IncomeForecastTests(unittest.TestCase):
         self.assertAlmostEqual(result.monthly.net_principal_cashflow.sum(), 0)
 
     def test_seasoned_coupon_and_partial_final_month(self):
-        book = portfolio(deposit(start="2025-12-01"))
+        book = portfolio(deposit(start=date(2025, 12, 1)))
         with make_context() as context:
-            result = IncomeForecaster(AS_OF, "2026-05-15").forecast(context, book)
+            result = IncomeForecaster(AS_OF, date(2026, 5, 15)).forecast(context, book)
         days = (date(2026, 5, 15) - date(2026, 3, 1)).days
         self.assertAlmostEqual(result.monthly.nii.sum(), 1000 * 0.06 * days / 365)
         self.assertEqual(result.monthly.period_end.iloc[-1], date(2026, 5, 15))
 
     def test_forecast_start_in_the_middle_of_a_month(self):
-        with make_context(reference="2026-03-15") as context:
-            result = IncomeForecaster("2026-03-15", "2026-04-10").forecast(
+        with make_context(reference=date(2026, 3, 15)) as context:
+            result = IncomeForecaster(date(2026, 3, 15), date(2026, 4, 10)).forecast(
                 context, portfolio(deposit()),
             )
         self.assertEqual(result.monthly.period_start.tolist(), [date(2026, 3, 15), date(2026, 4, 1)])
@@ -134,7 +136,7 @@ class IncomeForecastTests(unittest.TestCase):
     def test_prepayment_reduces_future_interest_once_and_conserves_principal(self):
         book = portfolio(loan())
         with make_context() as context:
-            result = IncomeForecaster(AS_OF, "2026-05-01").forecast(context, book)
+            result = IncomeForecaster(AS_OF, date(2026, 5, 1)).forecast(context, book)
         remaining = 1000 * 0.88 ** (1 / 12)
         self.assertAlmostEqual(result.monthly.nii.iloc[0], 1000 * 0.06 * 31 / 365)
         self.assertAlmostEqual(result.monthly.nii.iloc[1], remaining * 0.06 * 30 / 365)
@@ -147,7 +149,7 @@ class IncomeForecastTests(unittest.TestCase):
         template = ProductionTemplate("LOANS", tenor_months=12,
                                       prepayment=qs.PrepaymentModelConfiguration.constant_annual_cpr(0.12))
         with make_context() as context:
-            result = IncomeForecaster(AS_OF, "2027-03-01").forecast(
+            result = IncomeForecaster(AS_OF, date(2027, 3, 1)).forecast(
                 context, portfolio(trade), rollovers=[RolloverRule("segment-0", template)],
             )
         self.assertTrue((abs(result.monthly.asset_balance - 1000) < 1e-8).all())
@@ -160,7 +162,7 @@ class IncomeForecastTests(unittest.TestCase):
     def test_scheduled_and_prepayment_replacement_fractions_are_distinct(self):
         template = ProductionTemplate("LOANS", tenor_months=12)
         with make_context() as context:
-            result = IncomeForecaster(AS_OF, "2026-04-01").forecast(
+            result = IncomeForecaster(AS_OF, date(2026, 4, 1)).forecast(
                 context, portfolio(loan()),
                 rollovers=[RolloverRule("segment-0", template, scheduled_fraction=0, prepayment_fraction=0.5)],
             )
@@ -170,11 +172,11 @@ class IncomeForecastTests(unittest.TestCase):
 
     def test_renewal_lag_and_horizon_boundary(self):
         template = ProductionTemplate("DEPOSITS", kind="deposit", tenor_months=1, index="ESTR")
-        book = portfolio(deposit(maturity="2026-04-01"))
+        book = portfolio(deposit(maturity=date(2026, 4, 1)))
         rule = RolloverRule("segment-0", template, lag_days=15)
         with make_context() as context:
-            short = IncomeForecaster(AS_OF, "2026-04-01").forecast(context, book, rollovers=[rule])
-            longer = IncomeForecaster(AS_OF, "2026-05-01").forecast(context, book, rollovers=[rule])
+            short = IncomeForecaster(AS_OF, date(2026, 4, 1)).forecast(context, book, rollovers=[rule])
+            longer = IncomeForecaster(AS_OF, date(2026, 5, 1)).forecast(context, book, rollovers=[rule])
         self.assertTrue(short.productions.empty)
         self.assertAlmostEqual(short.monthly.asset_balance.iloc[-1], 0)
         self.assertEqual(longer.productions.date.tolist(), [date(2026, 4, 16)])
@@ -185,10 +187,10 @@ class IncomeForecastTests(unittest.TestCase):
     def test_planned_growth_and_funding_start_on_their_actual_date(self):
         assets = ProductionTemplate("ASSETS", tenor_months=12)
         funding = ProductionTemplate("FUNDING", kind="deposit", side="PayShort", index="ESTR", margin=-0.005)
-        plan = [NewProduction("2026-04-15", 200, "growth-assets", assets),
-                NewProduction("2026-04-15", 200, "growth-funding", funding)]
+        plan = [NewProduction(date(2026, 4, 15), 200, "growth-assets", assets),
+                NewProduction(date(2026, 4, 15), 200, "growth-funding", funding)]
         with make_context() as context:
-            result = IncomeForecaster(AS_OF, "2026-05-01").forecast(context, portfolio(deposit()), planned=plan)
+            result = IncomeForecaster(AS_OF, date(2026, 5, 1)).forecast(context, portfolio(deposit()), planned=plan)
         self.assertEqual(set(result.productions.origin), {"planned"})
         self.assertFalse((result.income_detail.query("origin == 'planned'").period_start < date(2026, 4, 1)).any())
         self.assertAlmostEqual(result.monthly.asset_balance.iloc[-1], 1200)
@@ -200,15 +202,15 @@ class IncomeForecastTests(unittest.TestCase):
         half_funding = qs.Trade(asset.instrument, AS_OF, "PayShort", notional=500)
         book = portfolio(asset, half_funding)
         with make_context() as context:
-            result = IncomeForecaster(AS_OF, "2027-03-01").forecast(context, book)
+            result = IncomeForecaster(AS_OF, date(2027, 3, 1)).forecast(context, book)
             native = context.evaluate(book.native, [qs.Request.Cashflows]).cashflows
         self.assertAlmostEqual(result.monthly.nii.sum(), 500 * 0.06)
         self.assertAlmostEqual(result.monthly.nii.sum(), native.query("type == 'FixedRateCoupon'").amount.sum())
 
     def test_independent_scenario_runs_reprice_production_and_preserve_prior_result(self):
         template = ProductionTemplate("NEW", kind="deposit", tenor_months=1, index="ESTR")
-        book = portfolio(deposit(maturity="2026-04-01"))
-        forecaster = IncomeForecaster(AS_OF, "2026-06-01")
+        book = portfolio(deposit(maturity=date(2026, 4, 1)))
+        forecaster = IncomeForecaster(AS_OF, date(2026, 6, 1))
         rule = [RolloverRule("segment-0", template)]
         with make_context() as context:
             base = forecaster.forecast(context, book, rollovers=rule)
@@ -223,7 +225,7 @@ class IncomeForecastTests(unittest.TestCase):
 
     def test_floating_resets_keep_a_known_historical_observation(self):
         floating = qs.Loan(
-            identifier="FLOAT", start_date=AS_OF, maturity_date="2027-03-01",
+            identifier="FLOAT", start_date=AS_OF, maturity_date=date(2027, 3, 1),
             notional=1000, currency="EUR", repayment="Bullet", payment_frequency="Monthly",
             coupons=[qs.FloatingRateCoupon(index="EURIBOR3m", spread=0.01, day_counter="Actual360")],
             fixing_frequency="Quarterly", index_tenor="3M", fixing_lag=2,
@@ -231,10 +233,10 @@ class IncomeForecastTests(unittest.TestCase):
         book = portfolio(qs.Trade(floating, AS_OF))
         context = make_context()
         fixings = qs.FixingStore()
-        fixings.add("EURIBOR3m", "2026-02-27", 0.025)
+        fixings.add("EURIBOR3m", date(2026, 2, 27), 0.025)
         context.fixings = fixings
         with context:
-            forecaster = IncomeForecaster(AS_OF, "2026-09-01")
+            forecaster = IncomeForecaster(AS_OF, date(2026, 9, 1))
             base = forecaster.forecast(context, book)
             with qs.Scenario(shocks=[qs.Shock("EURIBOR3m", 0.01, qs.ScenarioType.Absolute)]):
                 shocked = forecaster.forecast(context, book)
@@ -272,14 +274,14 @@ class IncomeForecastTests(unittest.TestCase):
             self.assertAlmostEqual(result.price, expected_advance, delta=0.0001)
             self.assertEqual(quote.quote_type, "floating_spread")
             self.assertLess(quote.par_quote, 0)  # 3% index versus 2.5% discounting.
-            first = result.coupons.query("type == 'FloatingRateCoupon'").iloc[0]
+            first = result.cashflows.query("type == 'FloatingRateCoupon'").iloc[0]
             self.assertAlmostEqual(first.spread, quote.par_quote)
             self.assertAlmostEqual(quote.initial_rate, first.fixing + first.spread)
             self.assertAlmostEqual(trade.instrument.to_dict()["amortization_rate"], quote.initial_rate)
             # EURIBOR quotes on Actual/360 even though this loan accrues on Actual/365.
             index_tau = qs.DayCounter.Actual360.year_fraction(start, date(2026, 9, 17))
             curve = context.curve("EURIBOR3m")
-            native_fixing = (curve.discount_factor(start) / curve.discount_factor("2026-09-17") - 1) / index_tau
+            native_fixing = (curve.discount_factor(start) / curve.discount_factor(date(2026, 9, 17)) - 1) / index_tau
             self.assertAlmostEqual(first.fixing, native_fixing)
 
     def test_french_par_coupon_matches_an_independent_annuity_valuation(self):
@@ -374,7 +376,7 @@ class IncomeForecastTests(unittest.TestCase):
 
     def test_monthly_accrual_uses_resolved_quarterly_coupon_and_expected_principal(self):
         instrument = qs.Loan(
-            identifier="SEASONED-FLOAT", start_date="2026-01-15", maturity_date="2026-07-15",
+            identifier="SEASONED-FLOAT", start_date=date(2026, 1, 15), maturity_date=date(2026, 7, 15),
             notional=1200, currency="EUR", repayment="Bullet", payment_frequency="Quarterly",
             fixing_frequency="Quarterly", fixing_lag=0, index_tenor="3M",
             coupons=[qs.FloatingRateCoupon(index="EURIBOR3m", spread=0.012, day_counter="Actual360")],
@@ -382,10 +384,10 @@ class IncomeForecastTests(unittest.TestCase):
         )
         context = make_context()
         fixings = qs.FixingStore()
-        fixings.add("EURIBOR3m", "2026-01-15", 0.03)
+        fixings.add("EURIBOR3m", date(2026, 1, 15), 0.03)
         context.fixings = fixings
         with context:
-            result = IncomeForecaster(AS_OF, "2026-04-01").forecast(
+            result = IncomeForecaster(AS_OF, date(2026, 4, 1)).forecast(
                 context, portfolio(qs.Trade(instrument, AS_OF)))
         self.assertAlmostEqual(result.monthly.nii.iloc[0], 4.34)
         detail = result.income_detail.iloc[0]
@@ -400,7 +402,7 @@ class IncomeForecastTests(unittest.TestCase):
             for rate, expected in ((0.0, 0.0), (-0.02, -0.4246575342465753)):
                 for side, sign in (("LongReceive", 1), ("PayShort", -1)):
                     trade = qs.Trade(deposit(rate=rate).instrument, AS_OF, side, notional=250)
-                    result = IncomeForecaster(AS_OF, "2026-04-01").forecast(context, portfolio(trade))
+                    result = IncomeForecaster(AS_OF, date(2026, 4, 1)).forecast(context, portfolio(trade))
                     self.assertAlmostEqual(result.monthly.nii.iloc[0], sign * expected)
                     self.assertAlmostEqual(result.cashflows.query("type == 'FixedRateCoupon'").notional.iloc[0], sign * 250)
 
@@ -415,15 +417,71 @@ class IncomeForecastTests(unittest.TestCase):
         self.assertGreater(inventory.start_date.nunique(), 20)
         self.assertGreater(inventory.maturity_date.nunique(), 20)
         self.assertEqual(set(inventory.repayment), {"French", "Bullet", "Balloon"})
-        self.assertEqual(set(inventory.day_counter), {"Actual360", "Actual365"})
+        self.assertEqual(set(inventory.day_counter), {qs.DayCounter.Actual360, qs.DayCounter.Actual365})
         assets = inventory.query("segment != 'Term funding'")
         funding = inventory.query("segment == 'Term funding'")
         self.assertAlmostEqual(assets.current_principal.sum(), funding.current_principal.sum(), delta=1e-7)
         self.assertLess(assets.current_principal.sum(), assets.original_notional.sum())
         with context:
-            result = IncomeForecaster(AS_OF, "2026-05-01").forecast(context, book)
-        self.assertGreater(result.income_detail.position.nunique(), 200)
+            result = IncomeForecaster(AS_OF, date(2026, 5, 1)).forecast(context, book)
+        self.assertEqual(result.income_detail.position.nunique(), 3)
         self.assertEqual(set(result.cashflows.origin), {"existing"})
+
+    def test_forecast_evaluation_calls_scale_with_portfolio_groups(self):
+        context = make_context()
+        book, _ = generate_opening_portfolio(
+            context, AS_OF, n_fixed=40, n_floating=30, n_deposits=30)
+        calls = []
+
+        class CountedContext:
+            def evaluate(self, item, requests):
+                calls.append((item, requests))
+                return context.evaluate(item, requests)
+
+        with context:
+            IncomeForecaster(AS_OF, date(2028, 3, 1)).forecast(CountedContext(), book)
+
+        self.assertTrue(all(isinstance(item, qs.Portfolio) for item, _ in calls))
+        cashflow_groups = [item for item, requests in calls
+                           if requests == [qs.Request.Cashflows]]
+        self.assertEqual(sorted(map(len, cashflow_groups)), [30, 30, 40])
+        self.assertLessEqual(len(calls), 3 * (1 + 24))
+
+    def test_grouped_forecast_matches_position_audit_with_rollover_growth_and_shocks(self):
+        book = ForecastPortfolio("MIXED", [
+            ForecastPosition("bullet", "Retail", loan()),
+            ForecastPosition("amortizing", "Retail", loan("French")),
+            # A deposit and loans share a business segment and balance-sheet side.
+            ForecastPosition("deposit", "Retail", deposit(maturity=date(2026, 6, 1))),
+            ForecastPosition("funding", "Funding", deposit(rate=0.025, side="PayShort")),
+        ])
+        lending = ProductionTemplate("NEW-LOANS", tenor_months=6,
+                                     prepayment=qs.PrepaymentModelConfiguration.constant_annual_cpr(0.12))
+        funding = ProductionTemplate("NEW-FUNDING", kind="deposit", tenor_months=3,
+                                     index="ESTR", side="PayShort")
+        rules = [RolloverRule("Retail", lending), RolloverRule("Funding", funding)]
+        planned = [NewProduction(date(2026, 4, 15), 200, "Retail", lending),
+                   NewProduction(date(2026, 4, 15), 200, "Funding", funding)]
+        forecaster = IncomeForecaster(AS_OF, date(2027, 3, 1))
+        with make_context() as context:
+            for shift in (0, 0.01):
+                with self.subTest(shift=shift), qs.Scenario(shocks=[
+                    qs.Shock("ESTR", shift, qs.ScenarioType.Absolute),
+                    qs.Shock("EURIBOR3m", shift, qs.ScenarioType.Absolute),
+                ]):
+                    grouped = forecaster.forecast(context, book, rollovers=rules, planned=planned)
+                    detailed = forecaster.forecast(
+                        context, book, rollovers=rules, planned=planned, position_detail=True)
+                    pd.testing.assert_frame_equal(grouped.monthly, detailed.monthly,
+                                                  rtol=1e-10, atol=1e-8)
+                    pd.testing.assert_frame_equal(grouped.balances, detailed.balances,
+                                                  rtol=1e-10, atol=1e-8)
+                    keys = ["payment_date", "type", "leg_index", "segment", "origin"]
+                    pd.testing.assert_series_equal(
+                        grouped.cashflows.groupby(keys).amount.sum(),
+                        detailed.cashflows.groupby(keys).amount.sum(), rtol=1e-10, atol=1e-8)
+                    audited = detailed.income_detail.query("origin == 'existing'")
+                    self.assertEqual(set(audited.position), {p.name for p in book.positions})
 
     def test_generated_contracts_are_reproducible_and_replacement_keeps_funding_matched(self):
         first = make_context()
@@ -435,23 +493,46 @@ class IncomeForecastTests(unittest.TestCase):
         pd.testing.assert_frame_equal(inventory, again)
         self.assertEqual([p.trade.instrument.to_dict() for p in book.positions],
                          [p.trade.instrument.to_dict() for p in repeated.positions])
-        rules = [RolloverRule("Fixed loans", ProductionTemplate("FIXED")),
-                 RolloverRule("Floating loans", ProductionTemplate("FLOAT", rate_type="floating")),
-                 RolloverRule("Term funding", ProductionTemplate("FUNDS", kind="deposit", side="PayShort", index="ESTR"))]
+        rules = [RolloverRule.constant_balance(example.Segment.FIXED_LOANS, ProductionTemplate("FIXED")),
+                 RolloverRule.constant_balance(example.Segment.FLOATING_LOANS,
+                     ProductionTemplate("FLOAT", rate_type=example.RateType.FLOATING)),
+                 RolloverRule.constant_balance(example.Segment.TERM_FUNDING,
+                     ProductionTemplate("FUNDS", kind=example.ProductKind.DEPOSIT,
+                                        side=qs.Side.PayShort, index=qs.MarketIndex.ESTR))]
         with first:
-            result = IncomeForecaster(AS_OF, "2026-07-01").forecast(first, book, rollovers=rules)
+            result = IncomeForecaster(AS_OF, date(2026, 7, 1)).forecast(first, book, rollovers=rules)
         for row in result.monthly.itertuples(index=False):
             self.assertAlmostEqual(row.asset_balance, row.liability_balance, delta=1e-7)
             self.assertAlmostEqual(row.net_principal_cashflow, 0, delta=1e-7)
+        summary = example.ForecastTables.constant_balance_table(result)
+        np.testing.assert_allclose(summary.minimum_closing, summary.initial_balance, rtol=0, atol=1e-7)
+        np.testing.assert_allclose(summary.maximum_closing, summary.initial_balance, rtol=0, atol=1e-7)
+
+    def test_forecast_reports_use_python_dates(self):
+        template = ProductionTemplate("GROWTH", kind=example.ProductKind.DEPOSIT,
+                                      index=qs.MarketIndex.ESTR)
+        with make_context() as context:
+            result = IncomeForecaster(AS_OF, date(2026, 6, 1)).forecast(
+                context, portfolio(deposit()),
+                planned=[NewProduction(date(2026, 4, 15), 200, example.Segment.FIXED_LOANS, template)])
+        for table, columns in (
+            (result.monthly, ("period_start", "period_end")),
+            (result.balances, ("period_start", "period_end")),
+            (result.productions, ("date", "maturity_date")),
+            (result.cashflows, ("payment_date", "accrual_start", "accrual_end")),
+        ):
+            for column in columns:
+                with self.subTest(column=column):
+                    self.assertTrue(all(type(value) is date for value in table[column].dropna()))
 
     def test_native_accrual_handles_thirty_360_coupon_boundaries(self):
         instrument = qs.FixedRateDeposit(
-            identifier="THIRTY360", start_date="2026-01-31", maturity_date="2026-03-31",
+            identifier="THIRTY360", start_date=date(2026, 1, 31), maturity_date=date(2026, 3, 31),
             notional=1000, rate=0.06, currency="EUR", discount_index="ESTR",
             day_counter="Thirty360", compounding="Simple",
         )
         with make_context() as context:
-            result = IncomeForecaster(AS_OF, "2026-04-01").forecast(
+            result = IncomeForecaster(AS_OF, date(2026, 4, 1)).forecast(
                 context, portfolio(qs.Trade(instrument, AS_OF)))
         # Accrual to Mar 31 minus accrual to Mar 1 is 29/360 of the annual coupon.
         self.assertAlmostEqual(result.monthly.nii.iloc[0], 1000 * 0.06 * 29 / 360)
@@ -461,7 +542,7 @@ class DepositHedgingTests(unittest.TestCase):
     @staticmethod
     def context():
         context = make_context()
-        observations = {"reference_date": AS_OF, "quotes": [
+        observations = {"reference_date": AS_OF.isoformat(), "quotes": [
             {"identifier": label, "mid": context.quotes.levels(label)[0]}
             for label in context.quotes.identifiers()
         ]}
@@ -490,7 +571,7 @@ class DepositHedgingTests(unittest.TestCase):
         engine = DepositHedgingEngine(self.templates())
         with context:
             result = engine.hedge(context, book, engine.sensitivity_report(context, book))
-        self.assertEqual(set(result.tickets.side), {"LongReceive", "PayShort"})
+        self.assertEqual(set(result.tickets.side), {qs.Side.LongReceive, qs.Side.PayShort})
         self.assertTrue((result.tickets.notional > 0).all())
         self.assertAlmostEqual(result.tickets.signed_notional.sum(), 0, delta=1e-7)
         self.assertEqual(result.rank, 9)
@@ -501,18 +582,19 @@ class DepositHedgingTests(unittest.TestCase):
         self.assertEqual([p.trade.instrument.to_dict() for p in book.positions], contracts)
         for position, ticket in zip(result.portfolio.positions[len(book.positions):],
                                     result.tickets.itertuples(index=False)):
-            self.assertEqual(str(position.trade.side), ticket.side)
+            self.assertEqual(position.trade.side, ticket.side)
             self.assertEqual(position.trade.notional, ticket.notional)
             self.assertEqual(position.trade.instrument.to_dict()["rate"], ticket.rate)
 
     def test_seasoned_risk_preserves_original_future_coupon_and_position_override(self):
         engine = DepositHedgingEngine(self.templates(("ESTR",)))
-        original = deposit(start="2025-09-01", maturity="2027-03-01")
+        original = deposit(start=date(2025, 9, 1), maturity=date(2027, 3, 1))
         trade = qs.Trade(original.instrument, AS_OF, "PayShort", notional=250)
         book = portfolio(trade)
         with make_context() as context:
             report = engine.sensitivity_report(context, book)
             receipts = context.evaluate(trade, [qs.Request.Cashflows]).cashflows
+            receipts["payment_date"] = pd.to_datetime(receipts.payment_date).dt.date
             future = receipts[receipts.payment_date > AS_OF]
             values = []
             epsilon = 1e-6
@@ -554,7 +636,7 @@ class DepositHedgingTests(unittest.TestCase):
         book, _ = generate_opening_portfolio(context, AS_OF, n_fixed=1, n_floating=1,
                                               n_deposits=2, funding_index=qs.MarketIndex.other("LOANFUNDING"))
         engine = DepositHedgingEngine(self.templates())
-        forecaster = IncomeForecaster(AS_OF, "2026-06-01")
+        forecaster = IncomeForecaster(AS_OF, date(2026, 6, 1))
         with context:
             result = engine.hedge(context, book, engine.sensitivity_report(context, book))
             hedges = ForecastPortfolio("HEDGES", result.portfolio.positions[len(book.positions):])

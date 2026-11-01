@@ -107,7 +107,7 @@ with context:
     )
     print(result.price)
     print(result.sensitivities)
-    print(result.coupons)  # type, market_index, fixing_index, dates, notional, rate/spread, conventions
+    print(result.cashflows)  # type, market_index, fixing_index, dates, notional, rate/spread, conventions
     print(result.cashflow_summary)  # payment_date, currency, interest, capital, other, total
 ```
 
@@ -132,8 +132,9 @@ accrual dates, day counts, overnight conventions and payoffs.
 Compatible fixed coupons use notional-weighted rates; compatible linear floating
 coupons use notional-weighted spreads. Pay and receive directions remain separate;
 daily-compounded spreads and different option payoffs are kept distinct. Coupons
-without contractual metadata remain individual rows. `result.coupons` exposes
-these contractual terms; historical payments are retained. The separate summary
+without contractual metadata remain individual rows. `result.cashflows` exposes
+these contractual terms; historical payments are retained. Date columns use pandas
+datetime dtypes, with `NaT` for missing dates. The separate summary
 view separates net coupon interest from signed redemptions and
 advances, leaving unknown payment types in Other. It does not allocate accrual NII.
 
