@@ -523,7 +523,12 @@ impl CashflowCompressor {
             if let Some(details) = &mut group.details {
                 details.notional = group.notional.total();
                 if details.notional == 0.0 {
-                    group.details = None;
+                    // Gross zero positions still have known coupon dates and
+                    // conventions. Net cancellation cannot retain an equivalent
+                    // quote when its principal vanishes.
+                    if group.identity.direction.is_none() || amount != 0.0 {
+                        group.details = None;
+                    }
                 } else if group.equivalent_rate || group.equivalent_spread {
                     let accrual = details
                         .day_counter
@@ -617,6 +622,34 @@ mod tests {
             0,
         );
         flows.set_last_coupon_details(details);
+        Ok(())
+    }
+
+    #[test]
+    fn gross_zero_notional_coupons_retain_their_accrual_terms() -> Result<()> {
+        let mut flows = CashflowsTable::new();
+        add(&mut flows, terms(None, 0.0, 0.04), None)?;
+        add(
+            &mut flows,
+            terms(Some(MarketIndex::SOFR), 0.0, 0.001),
+            Some(0.03),
+        )?;
+        let mut aggregator = GrossCashflowAggregator::default();
+        aggregator.accumulate_cashflows(&flows)?;
+        let result = aggregator.into_cashflows_table()?;
+        assert_eq!(result.amounts(), &[0.0, 0.0]);
+        for terms in result.coupon_details() {
+            let terms = terms
+                .as_ref()
+                .ok_or_else(|| QSError::ValueNotSetErr("coupon terms".into()))?;
+            assert_eq!(terms.notional(), 0.0);
+            assert_eq!(terms.accrual_start(), Date::new(2026, 1, 15));
+            assert_eq!(terms.accrual_end(), Date::new(2027, 1, 15));
+        }
+        assert_eq!(
+            result.accrued_amounts(&[(Date::new(2026, 3, 1), Date::new(2026, 4, 1))])?,
+            vec![0.0]
+        );
         Ok(())
     }
 
