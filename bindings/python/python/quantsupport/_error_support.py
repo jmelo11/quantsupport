@@ -6,11 +6,30 @@ and the public Python packages the same exception identities.
 
 import functools as _functools
 import inspect as _inspect
+import textwrap as _textwrap
+import traceback as _traceback
 import types as _types
 
 
 def _initialize(QuantSupportError):
     """Initialize error support using the native exception base."""
+    def _user_traceback(traceback, notebook=False):
+        """Remove embedded boundary frames while retaining the caller's stack."""
+        frames = []
+        while traceback is not None:
+            frame = traceback.tb_frame
+            internal = (frame.f_globals is _initialize.__globals__
+                        and frame.f_code.co_filename == "<string>")
+            shell = notebook and frame.f_globals.get("__name__", "").startswith("IPython.")
+            if not internal and not shell:
+                frames.append(traceback)
+            traceback = traceback.tb_next
+        result = None
+        for frame in reversed(frames):
+            result = _types.TracebackType(result, frame.tb_frame, frame.tb_lasti, frame.tb_lineno)
+        return result
+
+
     def _error_init(self, message, code="unexpected", operation=None, path=None,
                     expected=None, actual=None, contexts=(), details=None, native_type=None):
         Exception.__init__(self, str(message))
@@ -37,6 +56,105 @@ def _initialize(QuantSupportError):
                 f"operation={self.operation!r}, path={self.path!r})")
 
 
+    def _error_panel(self, formatter, traceback_lines=()):
+        """Connect the calling code and structured diagnostics in one panel."""
+        theme = None
+        if formatter is not None and hasattr(formatter, "_theme_name"):
+            from IPython.utils.PyColorize import theme_table
+            from pygments.token import Token
+            theme = theme_table[formatter._theme_name]
+
+        def paint(role, value):
+            if theme is None:
+                return value
+            return theme.format([(getattr(Token, role), value)]).rstrip("\n")
+
+        rail = paint("Topline", "│")
+        lines = []
+        if traceback_lines:
+            lines.append(paint("Topline", "╭─ ")
+                         + paint("NormalEm", "Traceback (most recent call last):"))
+            lines.extend(rail + "  " + line for line in traceback_lines)
+            lines.append(rail)
+        heading = "├─ " if traceback_lines else "╭─ "
+        lines.append(paint("Topline", heading) + paint("ExcName", type(self).__name__)
+                     + " " + paint("NormalEm", f"[{self.code}]"))
+
+        def row(value, label="", role="Text"):
+            first_prefix = f"  {label:<9} " if label else "  "
+            next_prefix = " " * len(first_prefix)
+            for paragraph in str(value).split("\n"):
+                for part in (_textwrap.wrap(paragraph, width=88 - len(first_prefix),
+                                           break_long_words=False, break_on_hyphens=False) or [""]):
+                    if label:
+                        prefix = "  " + paint("VName", f"{label:<9}") + " "
+                    else:
+                        prefix = next_prefix
+                    lines.append(rail + prefix + paint(role, part))
+                    label = ""
+
+        message = self.message
+        if (self.code == "invalid_type" and self.expected is not None and self.actual is not None
+                and message == f"Invalid type error: expected {self.expected}, got {self.actual}"):
+            message = "Invalid input type."
+        lines.append(rail)
+        row(message)
+        fields = [("Operation", self.operation, "NormalEm"), ("Input", self.path, "NormalEm"),
+                  ("Expected", self.expected, "ValEm"), ("Received", self.actual, "ExcName")]
+        if any(value is not None for _, value, _ in fields):
+            lines.append(rail)
+            for label, value, role in fields:
+                if value is not None:
+                    row(value, label, role)
+        if self.contexts:
+            lines.append(rail)
+            for context in self.contexts:
+                row(context, "Context")
+        for note in getattr(self, "__notes__", ()):
+            row(note, "Note")
+        lines.append(paint("Topline", "╰" + "─" * 57))
+        return lines
+
+
+    def _error_render_traceback(self):
+        """Show the caller's stack followed by its failure in one continuous panel."""
+        try:
+            from IPython import get_ipython
+        except ImportError:
+            shell = None
+        else:
+            shell = get_ipython()
+        formatter = shell.InteractiveTB if shell is not None else None
+        traceback_lines = []
+        traceback = _user_traceback(self.__traceback__, notebook=True)
+        if traceback is not None:
+            if formatter is None:
+                frames = _traceback.format_tb(traceback)
+            elif hasattr(formatter, "get_records"):
+                records = formatter.get_records(traceback, context=3, tb_offset=0)
+                if (hasattr(formatter, "_theme_name")
+                        and any(record._sd is None for record in records)):
+                    # Notebook source lives in linecache rather than real files.
+                    # IPython's file fallback cuts multiline statements; let its
+                    # source parser recover the complete calls from the cache.
+                    import stack_data
+                    from IPython.core.tbtools import FrameInfo
+                    from IPython.utils.PyColorize import theme_table
+                    from pygments.formatters import Terminal256Formatter
+
+                    options = stack_data.Options(before=1, after=1)
+                    if formatter.has_colors:
+                        style = theme_table[formatter._theme_name].as_pygments_style()
+                        options.pygments_formatter = Terminal256Formatter(style=style)
+                    records = [FrameInfo._from_stack_data_FrameInfo(record) for record in
+                               stack_data.FrameInfo.stack_data(traceback, options=options)]
+                frames = [formatter.format_record(record) for record in records]
+            else:
+                frames = formatter._format_list(_traceback.extract_tb(traceback))
+            traceback_lines = "".join(frames).strip("\n").splitlines()
+        return _error_panel(self, formatter, traceback_lines)
+
+
     def _error_to_dict(self):
         def serialize(error, seen):
             if id(error) in seen:
@@ -57,6 +175,7 @@ def _initialize(QuantSupportError):
     QuantSupportError.__init__ = _error_init
     QuantSupportError.__str__ = _error_str
     QuantSupportError.__repr__ = _error_repr
+    QuantSupportError._render_traceback_ = _error_render_traceback
     QuantSupportError.to_dict = _error_to_dict
 
 
@@ -112,12 +231,14 @@ def _initialize(QuantSupportError):
 
     def _with_context(error, operation=None, path=None, expected=None, actual=None):
         if isinstance(error, QuantSupportError):
-            contexts = error.contexts
-            if error.operation and error.operation != operation:
-                contexts = (error.operation, *contexts)
-            return _make_error(error.message, error.code, operation or error.operation,
-                               path or error.path, expected or error.expected, actual or error.actual,
-                               contexts, error.details, error.native_type)
+            if operation is not None and operation != error.operation:
+                if error.operation:
+                    error.contexts = (error.operation, *error.contexts)
+                error.operation = operation
+            for name, value in (("path", path), ("expected", expected), ("actual", actual)):
+                if value is not None:
+                    setattr(error, name, value)
+            return error
         if isinstance(error, NotImplementedError):
             code, native_type = "not_implemented", "NotImplementedErr"
         elif isinstance(error, TypeError):
@@ -142,15 +263,19 @@ def _initialize(QuantSupportError):
         @_functools.wraps(function)
         def guarded(*args, **kwargs):
             try:
-                return function(*args, **kwargs)
-            except QuantSupportError as error:
-                if error.operation == operation:
+                try:
+                    return function(*args, **kwargs)
+                except QuantSupportError as error:
+                    _with_context(error, operation)
                     raise
-                raise _with_context(error, operation) from error
-            except StopIteration:
+                except StopIteration:
+                    raise
+                except Exception as error:
+                    error.__traceback__ = _user_traceback(error.__traceback__)
+                    raise _with_context(error, operation) from error
+            except QuantSupportError as error:
+                error.__traceback__ = _user_traceback(error.__traceback__)
                 raise
-            except Exception as error:
-                raise _with_context(error, operation) from error
         guarded._quantsupport_guard = True
         return guarded
 
@@ -186,7 +311,11 @@ def _initialize(QuantSupportError):
     def _constructor(allocator, original):
         @_functools.wraps(original)
         def construct(cls, *args, **kwargs):
-            return allocator(cls, *args, **kwargs)
+            try:
+                return allocator(cls, *args, **kwargs)
+            except QuantSupportError as error:
+                error.__traceback__ = _user_traceback(error.__traceback__)
+                raise
         return construct
 
 
