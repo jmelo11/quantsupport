@@ -47,10 +47,9 @@ floating loans solve for a spread over their index. The configured
 `context` resolves the initial floating observation and builds amortization
 from the initial all-in coupon.
 
-The zero-margin contract is rebuilt and repriced before applying the commercial
-margin. Loan receipt PV must match the discounted advance; deposit net PV must
-be zero. `par_error_bp` records the residual. The final offer adds the margin
-once to the solved coupon or spread. Quotes are cached only within one forecast,
+The native solve supplies the par coupon or spread. The final offer adds the
+commercial margin once and rebuilds the contract at that offer rate.
+Quotes are cached only within one forecast,
 for the same template and origination date; scenarios have separate caches.
 
 ## Income and balances
@@ -86,8 +85,13 @@ We supply a native `pillar`/`value` sensitivity report to
 fixed before evaluating its sensitivity. We align all source quote labels and
 solve the joint PV01 matrix with singular-value decomposition. Positive signed
 notionals create `LongReceive` deposits; negative amounts create `PayShort`
-deposits with positive absolute notionals. The default solution has zero net
-initial principal cash. Actual rounded trades are repriced to report residual
+deposits with positive absolute notionals. With `cash_neutral=True`, lending
+and borrowing amounts are equal at inception, so no additional net principal
+cash is needed to enter the hedge. This is an optional funding constraint.
+The minimization chooses all deposit sizes jointly to reduce squared residual
+PV01 across quote buckets; each deposit may affect several buckets. An exact
+cancellation has zero residual. Otherwise, the remaining exposure is reported.
+Actual rounded trades are repriced to report residual
 risk, including risk outside the available hedge directions.
 
 The example uses ESTR, composite LOANFUNDING and EURIBOR3m deposits at 1, 3, 6,

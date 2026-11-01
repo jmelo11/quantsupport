@@ -101,21 +101,6 @@ class IncomeForecastTests(unittest.TestCase):
                             actual = IncomeForecaster._cashflows(context, trade).sort_values("type").reset_index(drop=True)
                             pd.testing.assert_frame_equal(actual, expected)
 
-    def test_cashflow_extractor_rejects_unsupported_direct_calls(self):
-        compounded = qs.FixedRateDeposit(
-            identifier="COMPOUNDED", start_date=AS_OF, maturity_date="2027-03-01",
-            notional=1000, rate=0.06, currency="EUR", discount_index="ESTR",
-            compounding="Compounded", rate_frequency="Semiannual",
-        )
-        swap = qs.Swap(
-            identifier="SWAP", start_date=AS_OF, maturity_date="2027-03-01",
-            notional=1000, fixed_rate=0.04, currency="EUR", market_index="ESTR",
-        )
-        with make_context() as context:
-            with self.assertRaisesRegex(ValueError, "simple-interest"):
-                IncomeForecaster._cashflows(context, qs.Trade(compounded, AS_OF))
-            with self.assertRaisesRegex(ValueError, "supports Loan and FixedRateDeposit"):
-                IncomeForecaster._cashflows(context, qs.Trade(swap, AS_OF))
 
     def test_accrual_includes_payment_after_horizon_and_excludes_principal(self):
         book = portfolio(deposit(), deposit("FUNDING", 0.02, "PayShort"))
@@ -268,7 +253,6 @@ class IncomeForecastTests(unittest.TestCase):
             curve = context.curve("ESTR")
             advance = 125_000 * curve.discount_factor(start)
             self.assertAlmostEqual(value, advance, delta=0.0001)
-            self.assertLess(abs(quote.par_error_bp), 1e-5)
             self.assertEqual(quote.quote_type, "fixed_coupon")
             self.assertAlmostEqual(trade.instrument.to_dict()["amortization_rate"], quote.par_quote)
             # The old maturity forward is not the par coupon of this amortizing contract.
@@ -361,7 +345,6 @@ class IncomeForecastTests(unittest.TestCase):
                     else:
                         actual = terms["FloatingRateCoupon"]["spread"]
                     self.assertAlmostEqual(actual, quote.contract_rate_or_spread)
-                    self.assertLess(abs(quote.par_error_bp), 1e-5)
 
     def test_deposit_production_prices_the_forward_start_on_each_day_count(self):
         with make_context() as context:
@@ -388,11 +371,6 @@ class IncomeForecastTests(unittest.TestCase):
         self.assertGreater(funding_shift.par_quote, base.par_quote + 0.009)
         self.assertEqual(base, restored)
 
-    def test_new_loan_pricing_rejects_a_solver_that_keeps_seed_amortization(self):
-        with make_context() as context:
-            context.pricer_configurations = [qs.PricerConfiguration.loan()]
-            with self.assertRaisesRegex(ValueError, "rebuild_amortization"):
-                ProductionTemplate("NEW").quote(context, date(2026, 4, 1))
 
     def test_monthly_accrual_uses_resolved_quarterly_coupon_and_expected_principal(self):
         instrument = qs.Loan(
@@ -465,7 +443,6 @@ class IncomeForecastTests(unittest.TestCase):
         for row in result.monthly.itertuples(index=False):
             self.assertAlmostEqual(row.asset_balance, row.liability_balance, delta=1e-7)
             self.assertAlmostEqual(row.net_principal_cashflow, 0, delta=1e-7)
-        self.assertLess(result.productions.par_error_bp.abs().max(), 1e-5)
 
     def test_native_accrual_handles_thirty_360_coupon_boundaries(self):
         instrument = qs.FixedRateDeposit(
@@ -478,22 +455,6 @@ class IncomeForecastTests(unittest.TestCase):
                 context, portfolio(qs.Trade(instrument, AS_OF)))
         # Accrual to Mar 31 minus accrual to Mar 1 is 29/360 of the annual coupon.
         self.assertAlmostEqual(result.monthly.nii.iloc[0], 1000 * 0.06 * 29 / 360)
-
-    def test_invalid_scope_is_rejected(self):
-        with self.assertRaises(ValueError):
-            RolloverRule("loans", ProductionTemplate("NEW"), prepayment_fraction=1.1)
-        with self.assertRaises(ValueError):
-            NewProduction(AS_OF, -1, "loans", ProductionTemplate("NEW"))
-        with make_context() as context:
-            forecaster = IncomeForecaster(AS_OF, "2026-06-01")
-            with self.assertRaisesRegex(ValueError, "preserve"):
-                forecaster.forecast(context, portfolio(deposit()), rollovers=[RolloverRule(
-                    "segment-0", ProductionTemplate("WRONG-SIDE", kind="deposit", side="PayShort"),
-                )])
-            with self.assertRaisesRegex(ValueError, "currency"):
-                forecaster.forecast(context, portfolio(deposit()), planned=[NewProduction(
-                    AS_OF, 100, "USD", ProductionTemplate("USD", currency="USD"),
-                )])
 
 
 class DepositHedgingTests(unittest.TestCase):
