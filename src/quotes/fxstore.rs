@@ -119,6 +119,9 @@ impl FxStore {
     }
 
     /// Composes spot observations using the requested arithmetic scalar.
+    ///
+    /// # Errors
+    /// Returns an error if no path between the two currencies can be found.
     pub fn get_fx_rate_as<T: Scalar + From<DualFwd>>(
         &self,
         base: Currency,
