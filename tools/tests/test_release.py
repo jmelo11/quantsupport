@@ -1,7 +1,8 @@
-"""Checks for version reservation, release retries and registry lookups."""
+"""Checks for release triggers, version reservation, retries and registry lookups."""
 
 import io
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,53 @@ import release
 
 
 manifest = '[workspace.package]\nversion = "0.1.8"\n\n[dependencies]\nx = "0.1.8"\n'
+
+
+class ReleaseTriggerTests(unittest.TestCase):
+    @staticmethod
+    def should_release(message):
+        workflow = (
+            Path(__file__).resolve().parents[2] / ".github/workflows/release.yml"
+        ).read_text()
+        condition = re.search(r"(?m)^    if: \$\{\{ (.+) \}\}$", workflow)[1]
+        # Evaluate the workflow's actual gate using GitHub's case-insensitive
+        # contains semantics. Commit text is reduced to booleans before eval.
+        condition = re.sub(
+            r"contains\(github\.event\.head_commit\.message, '([^']+)'\)",
+            lambda match: str(match[1].casefold() in message.casefold()),
+            condition,
+        )
+        condition = condition.replace("||", " or ").replace("!", " not ").strip()
+        return eval(condition, {"__builtins__": {}})
+
+    def test_merge_modes_request_a_release(self):
+        messages = {
+            "merge": (
+                "Merge pull request #151 from jmelo11/accrued-amount\n\n"
+                "Add accrual and curve risk support [release]"
+            ),
+            "squash": (
+                "Add accrual and curve risk support [release] (#151)\n\n"
+                "* feat: add accrued amount request\n"
+                "* docs: simplify NII example [skip release]"
+            ),
+            "rebase": "ci: enable release on merge [release]",
+            "ordinary feature": "feat: add accrued amount request",
+            "case insensitive override": "Feature [RELEASE]\n\nDocs [SKIP RELEASE]",
+        }
+        for mode, message in messages.items():
+            with self.subTest(mode=mode):
+                self.assertTrue(self.should_release(message))
+
+    def test_documentation_and_version_commits_still_skip_release(self):
+        for message in (
+            "docs: simplify NII example [skip release]",
+            "Docs [SKIP RELEASE]",
+            "Documentation (#152)\n\n* docs: update guide [skip release]",
+            "chore(release): v0.1.20 [skip release]\n\nRelease-Run-ID: 42",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(self.should_release(message))
 
 
 class ReleaseTests(unittest.TestCase):
@@ -119,6 +167,12 @@ class ReleaseTests(unittest.TestCase):
             if endpoint != "graphql":
                 return {}
             state["attempts"] += 1
+            message = payload["variables"]["input"]["message"]
+            self.assertFalse(
+                ReleaseTriggerTests.should_release(
+                    message["headline"] + "\n\n" + message["body"]
+                )
+            )
             expected = payload["variables"]["input"]["expectedHeadOid"]
             if state["attempts"] == 1:
                 self.assertEqual(expected, "first-commit")
