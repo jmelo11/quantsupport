@@ -79,6 +79,78 @@ assume every implementation removes zero rows or includes every conceivable
 model parameter. Bond Z-spread/OAS anchors, for example, appear as explicitly
 independent spread factors rather than being re-solved under every curve move.
 
+## Changing the curve risk basis
+
+`PricingContext` provides two transformations that return a `RiskContext`
+implementing `MarketDataProvider`. Pass the resulting view to the same pricer
+and request `Request::Sensitivities` as usual. Both transformations preserve the
+original curve values and interpolation, including prices between nodes.
+
+The complete runnable example is
+[`risk-reprojection.rs`](../../../examples/sensitivity/src/bin/risk-reprojection.rs).
+Run `cargo run -p sensitivity --bin risk-reprojection` from the repository root
+to compare deposit, OIS and post-bootstrap zero-rate sensitivities for the same
+swap. The example verifies that all three NPVs are identical.
+
+This fragment reports sensitivities to zero rates implied from bootstrapped
+discount factors:
+
+```rust,ignore
+let convention = RateDefinition::new(
+    DayCounter::Actual365,
+    Compounding::Continuous,
+    Frequency::Annual,
+);
+let zero_context = context.with_zero_rate_risk(&[
+    ZeroRateRisk::new(MarketIndex::SOFR, convention),
+    ZeroRateRisk::new(MarketIndex::TermSOFR3m, convention),
+])?;
+let result = pricer.evaluate(
+    &trade,
+    &[Request::Value, Request::Sensitivities],
+    &zero_context,
+)?;
+```
+
+Each grid defaults to that curve's future nodes. Add
+`.with_dates(vec![date_1, date_2, ...])` to select another grid; curves without
+nodes, such as composites, require explicit dates. Labels include the curve,
+date and rate convention. Exposures are derivatives per unit of annual decimal
+zero rate; multiply by `1e-4` for a first-order +1 bp change. Selected curves'
+parent quote dependencies enter the transformation jointly. Other curve quotes
+retain their original coordinates.
+
+This fragment reports curve risk against another set of calibration instruments:
+
+```rust,ignore
+let instruments: Vec<QuoteDetails> = [
+    "OIS_USD_SOFR_1Y",
+    "OIS_USD_SOFR_2Y",
+    "Swap_USD_TermSOFR3m_1Y",
+    "Swap_USD_TermSOFR3m_2Y",
+].iter().map(|label| label.parse()).collect::<Result<_>>()?;
+let projected_context = context.reproject_risk(&instruments)?;
+let result = pricer.evaluate(&trade, &[Request::Sensitivities], &projected_context)?;
+```
+
+The target contracts need not have observations in the quote store. Their
+implied quotes are solved against the original curves. The view exposes
+`target_labels()` and `target_values()` for inspection. The target basket must
+span all native discount/forward curve pillars in the context; the example
+assumes two pillars on each of its two curves. Instrument reprojection requires
+configuration-driven curves. Supplied runtime curves support zero-rate risk.
+
+For target quotes `x` and original curve quotes `q`, reprojection computes
+`J = dx/dq` and reports `dV/dx = dV/dq * J⁺`. Zero-rate Jacobians use AD;
+instrument Jacobians use central differences of reconstructed source curves.
+Insufficient or singular bases return an error. With more target factors than
+source factors, the pseudoinverse chooses minimum Euclidean-norm exposures in
+the supplied quote units. These transformations are local and first order;
+construct a fresh view when market inputs change. FX spots, volatility and
+other independent factors are held fixed in the curve basis calculation and
+keep their native reported risk. This does not add model recalibration or
+simulation-path dependencies omitted by the original pricer.
+
 ## Validation and numerical accuracy
 
 AD differentiates the active implemented program. Branches use their selected

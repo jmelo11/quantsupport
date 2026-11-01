@@ -61,8 +61,13 @@ impl FixedIncomeDiscountPolicy {
 
     /// Adds or replaces the discount-curve index selected for a currency.
     #[must_use]
-    pub fn with_discount_curve_index(mut self, currency: Currency, market_index: MarketIndex) -> Self {
-        self.discount_curve_by_currency.insert(currency, market_index);
+    pub fn with_discount_curve_index(
+        mut self,
+        currency: Currency,
+        market_index: MarketIndex,
+    ) -> Self {
+        self.discount_curve_by_currency
+            .insert(currency, market_index);
         self
     }
 
@@ -141,7 +146,10 @@ impl DiscountPolicy for SingleCurveCSADiscountPolicy {
         if target.currency() == self.base_currency {
             Ok(self.discount_index.clone())
         } else {
-            Ok(MarketIndex::Collateral(target.currency(), self.base_currency))
+            Ok(MarketIndex::Collateral(
+                target.currency(),
+                self.base_currency,
+            ))
         }
     }
 

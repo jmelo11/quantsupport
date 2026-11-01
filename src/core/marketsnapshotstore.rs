@@ -144,11 +144,11 @@ mod tests {
         ));
         let context = PricingContext::new()
             .with_quote_store(quotes)
-            .with_fx_store(FxStore::from_records([FxRateRecord {
-                base: Currency::EUR,
-                quote: Currency::USD,
-                rate: 1.1,
-            }]))
+            .with_fx_store(FxStore::from_records([FxRateRecord::new(
+                Currency::EUR,
+                Currency::USD,
+                1.1,
+            )]))
             .with_curve_configurations(vec![serde_json::from_value(serde_json::json!({
                 "market_index": "SOFR", "quotes": ["FixedRateDeposit_USD_SOFR_6M"]
             }))?]);

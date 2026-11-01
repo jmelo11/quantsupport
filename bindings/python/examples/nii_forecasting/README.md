@@ -9,6 +9,8 @@ outstanding principal after contractual amortization.
 The notebook compares runoff, recursive replacement and replacement plus planned
 growth over two years. Scenarios shift interest rates or the funding premium.
 Market inputs and historical observations are illustrative and reproducible.
+We also size long and short deposits from the opening book's sensitivity
+report, reprice the residual PV01 and forecast the hedge coupons.
 
 All implementation and explanations are in the notebook:
 
@@ -19,7 +21,8 @@ All implementation and explanations are in the notebook:
 | `ProductionTemplate` / `ProductionQuote` | Solve native par coupons or spreads, add a commercial margin and record the quote audit |
 | `RolloverRule` / `NewProduction` | Separate scheduled/prepaid principal replacement from additional business |
 | `IncomeForecaster` | Project each cohort, process recursive production events and calculate earned interest |
-| `ForecastResult` | Return monthly NII, coupon-level accrual, segment balances, production quotes and receipts |
+| `ForecastResult` | Return monthly NII, cohort-level accrual, segment balances, production quotes and receipts |
+| `DepositHedgingEngine` / `DepositHedgeResult` | Fit native quote PV01 with signed deposit notionals, create executable trades and reprice the combined book |
 
 Follow the [shared setup](../README.md#install-and-run), then run from the
 repository root in an environment containing the checkout-built binding:
@@ -32,7 +35,8 @@ python -m unittest discover -s tools/tests -p 'test_nii_forecast.py' -v
 The focused tests execute the notebook's definition cells directly. They check
 native par pricing, floating-index conventions, margins, accrual, principal
 conservation, reproducible generation, recursive replacement, delayed renewal,
-position overrides and independent scenario runs.
+position overrides, independent scenario runs and the hedge engine's risk,
+cash and income integration.
 
 ## Pricing new positions
 
@@ -43,19 +47,25 @@ floating loans solve for a spread over their index. The configured
 `context` resolves the initial floating observation and builds amortization
 from the initial all-in coupon.
 
-The zero-margin contract is rebuilt and repriced before applying the commercial
-margin. Loan receipt PV must match the discounted advance; deposit net PV must
-be zero. `par_error_bp` records the residual. The final offer adds the margin
-once to the solved coupon or spread. Quotes are cached only within one forecast,
+The native solve supplies the par coupon or spread. The final offer adds the
+commercial margin once and rebuilds the contract at that offer rate.
+Quotes are cached only within one forecast,
 for the same template and origination date; scenarios have separate caches.
 
 ## Income and balances
 
-Interest is signed expected principal times the resolved annual coupon times the
-coupon's Actual/360 or Actual/365 year fraction for its overlap with the reporting
-month. Floating coupons use `fixing + spread`. Native loan receipt notionals
-already include projected prepayments and position signs. Accrual detail retains
-the inputs to each interest amount, including coupons paid beyond the horizon.
+Monthly interest comes from `Request.AccruedAmount(start, end)` and the returned
+`EvaluationResults.accrued_amount`. Rust clips each reporting window to the
+coupon period and computes the difference in cumulative coupon accrual, using
+native day-count conventions. Floating observations and projected prepayment
+notionals are resolved by the pricer. Signs and currency conversion are applied
+once; the forecast requires its reporting currency to match the context base.
+Accrual uses plain `f64` values and does not compute PV or record an AD tape.
+
+The income detail records each cohort's native monthly result. The separate
+cashflow table retains coupon dates, signed expected principal, fixed rates,
+fixings and spreads for inspection. Coupons paid beyond the reporting horizon
+still contribute the interest earned inside it.
 
 Principal never enters NII. Balance movements belong to `(period_start,
 period_end]`; interest uses `[period_start, period_end)`. Production on the forecast
@@ -68,10 +78,44 @@ reductions. The generated portfolio assumes no historical prepayments and derive
 current balances from remaining contractual principal; future CPR does not infer
 past prepayments.
 
+## Deposit hedging
+
+We supply a native `pillar`/`value` sensitivity report to
+`DepositHedgingEngine.hedge`. Each reference deposit has a native par coupon,
+fixed before evaluating its sensitivity. We align all source quote labels and
+solve the joint PV01 matrix with singular-value decomposition. Positive signed
+notionals create `LongReceive` deposits; negative amounts create `PayShort`
+deposits with positive absolute notionals. With `cash_neutral=True`, lending
+and borrowing amounts are equal at inception, so no additional net principal
+cash is needed to enter the hedge. This is an optional funding constraint.
+The minimization chooses all deposit sizes jointly to reduce squared residual
+PV01 across quote buckets; each deposit may affect several buckets. An exact
+cancellation has zero residual. Otherwise, the remaining exposure is reported.
+Actual rounded trades are repriced to report residual
+risk, including risk outside the available hedge directions.
+
+The example uses ESTR, composite LOANFUNDING and EURIBOR3m deposits at 1, 3, 6,
+12, 24, 60 and 120 months. Funding deposits carry both base-curve and
+funding-premium risk; we fit their source sensitivities together. Both trading
+directions are assumed available at the model par rate.
+
+For seasoned deposits, we represent the remaining maturity payment with a
+spot-starting risk deposit. Its adjusted coupon preserves the full amount
+still due at maturity, including past accrual. Its initial advance has zero
+rate sensitivity, while the original advance is settled. The income forecast
+uses the original contractual accrual dates.
+
+This is a hedge of today's PV01 on the existing book. We keep the hedge coupons
+fixed across scenarios and show their NII and principal-cash effects separately.
+Fixed coupons do not automatically offset floating-rate income changes.
+Replacement, planned production, transaction costs and future hedge rebalancing
+are outside the sizing target. Hedge positions run off without replacement;
+later principal funding needs remain explicit in the cash ledger.
+
 ## Scope
 
 The example uses one currency, fixed/floating loans without default, simple-interest
-term deposits and Actual/360 or Actual/365 accrual. New contracts use unadjusted
+term deposits. The generated contracts use Actual/360 or Actual/365 accrual. New contracts use unadjusted
 dates and zero fixing lag. Native refinancing CPR compares coupons with its index
 benchmark, excluding replacement commercial margins, fees and transaction costs.
 
@@ -79,4 +123,6 @@ Residual principal cash is explicit and earns zero. Negative cumulative cash
 requires additional funding whose cost must be represented by treasury trades.
 The replacement and growth cases match lending with funding. Credit/default,
 effective-interest fee amortization, non-maturity deposits, early deposit
-withdrawal, overnight compounding and FX require additional models.
+withdrawal, partial overnight accrual and FX require additional models.
+Loan accrual requests start at or after the context evaluation date; they do
+not reconstruct historical prepayments or already-paid loan coupons.

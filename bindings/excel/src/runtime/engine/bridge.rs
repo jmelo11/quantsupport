@@ -616,6 +616,7 @@ impl State {
                 Some(
                     Request::Value
                         | Request::FairRate(_)
+                        | Request::AccruedAmount(_, _)
                         | Request::YieldToMaturity
                         | Request::ModifiedDuration
                         | Request::ZSpread

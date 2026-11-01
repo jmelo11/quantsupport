@@ -173,11 +173,10 @@ supplies that adjustment. ``Schedule`` supports iteration and indexing and
 returns copied dates and regularity flags; coupon accrual conventions are
 separate from schedule generation.
 
-The examples use Actual360 or Actual365. Two other day counters have current
-implementation restrictions: ``ActualActual.year_fraction`` omits one complete
-intervening year when endpoint years differ by at least two, and
+The examples use Actual360 or Actual365. ``ActualActual.year_fraction`` splits
+at calendar-year boundaries and includes every complete intervening year.
 ``Thirty360US`` adjusts February month-ends independently after adjusting 31sts.
-The latter ordering differs from common US/NASD/BondBasis rules. Validate
+This ordering differs from common US/NASD/BondBasis rules. Validate
 these conventions against the required contractual dates before using them.
 
 Timestamps are different: ``DateTime`` requires offset-aware input, normalizes

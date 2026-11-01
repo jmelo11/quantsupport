@@ -365,10 +365,10 @@ pub fn prepare(
             }
             InputData::Fx(records) => {
                 for record in records {
-                    if !fx_pairs.insert((record.base, record.quote)) {
+                    if !fx_pairs.insert((record.base(), record.quote())) {
                         return Err("duplicate context FX pair".into());
                     }
-                    fx.add_fx_rate(record.base, record.quote, DualFwd::from(record.rate));
+                    fx.add_fx_rate(record.base(), record.quote(), DualFwd::from(record.rate()));
                 }
             }
             InputData::Credit { configuration, .. } => credit.push(configuration.clone()),
@@ -435,7 +435,6 @@ pub fn evaluate_requests(
     pricer: Option<&str>,
     policy: Option<&str>,
 ) -> Result<EvaluationResults, String> {
-    Request::validate(requests).map_err(|e| e.to_string())?;
     if pricer.is_some() && policy.is_some() {
         return Err(
             "the explicit pricer already owns its discount policy; leave policy blank".into(),
@@ -515,6 +514,7 @@ pub fn scalar(results: &EvaluationResults, request: &Request) -> Result<f64, Str
     let value = match request {
         Request::Value => results.price(),
         Request::FairRate(_) => results.fair_rate(),
+        Request::AccruedAmount(_, _) => results.accrued_amount(),
         Request::YieldToMaturity => results.ytm(),
         Request::ModifiedDuration => results.modified_duration(),
         Request::ZSpread => results.z_spread(),

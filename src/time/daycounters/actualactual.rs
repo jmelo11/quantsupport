@@ -7,14 +7,9 @@ use crate::time::date::Date;
 ///
 /// Actual/Actual day count convention.
 ///
-/// Same-year fractions use that year's 365/366-day denominator; adjacent-year
-/// intervals split at January 1.
-///
-/// # Limitation
-/// When endpoint years differ by at least two, the current implementation
-/// omits one complete intervening calendar year. It therefore undercounts
-/// the magnitude by one versus a full calendar-year split; it is not a
-/// general long-span Actual/Actual implementation.
+/// Same-year fractions use that year's 365/366-day denominator. Longer
+/// intervals split at January 1 and include every complete intervening year.
+/// Reversed dates return the negative of the forward fraction.
 ///
 /// ## Example
 /// ```
@@ -60,7 +55,7 @@ impl DayCount for ActualActual {
                 let start_days = i32::try_from(Date::new(y1 + 1, 1, 1) - start)
                     .unwrap_or_else(|_| panic!("day count should fit in i32"));
                 sum += f64::from(start_days) / f64::from(days_in_year(y1));
-                for _year in y1 + 1..y2 - 1 {
+                for _year in y1 + 1..y2 {
                     sum += 1.0;
                 }
                 let end_days = i32::try_from(end - Date::new(y2, 1, 1))
@@ -74,7 +69,7 @@ impl DayCount for ActualActual {
                 let end_days = i32::try_from(Date::new(y2 + 1, 1, 1) - end)
                     .unwrap_or_else(|_| panic!("day count should fit in i32"));
                 sum -= f64::from(end_days) / f64::from(days_in_year(y2));
-                for _year in y2 + 1..y1 - 1 {
+                for _year in y2 + 1..y1 {
                     sum -= 1.0;
                 }
                 let start_days = i32::try_from(start - Date::new(y1, 1, 1))

@@ -46,9 +46,8 @@ Day counters include ACT/360, ACT/365, 30/360 variants, Actual/Actual and
 Business/252. The day counter measures the accrual fraction between dates,
 while the calendar determines any business-day adjustment to those dates.
 
-Two implementations have restrictions relevant to contractual accrual.
-`ActualActual` handles same-year and adjacent-year intervals but omits one
-complete intervening year over longer spans. `Thirty360US` adjusts February
+`ActualActual` splits at calendar-year boundaries and includes every complete
+intervening year. `Thirty360US` adjusts February
 month-ends after its 31st-day adjustments, differing from common US/NASD rules.
 Validate these conventions against the required dates; their API references
 describe the implemented rules. The examples here use ACT/360 or ACT/365.

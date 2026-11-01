@@ -6,7 +6,10 @@ use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     indices::marketindex::MarketIndex,
     instruments::{
-        cashflows::{cashflow::Cashflow, coupons::LinearCoupon},
+        cashflows::{
+            cashflow::Cashflow,
+            coupons::{accrual_fraction, LinearCoupon},
+        },
         rates::oisconventions::{OvernightAveraging, OvernightCouponConventions},
     },
     rates::interestrate::InterestRate,
@@ -613,10 +616,26 @@ impl Cashflow<f64> for FloatingRateCoupon<f64> {
 #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
 impl LinearCoupon<f64> for FloatingRateCoupon<f64> {
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<f64> {
+        let year_fraction = accrual_fraction(
+            self.day_counter,
+            self.start_date,
+            self.end_date,
+            start_date,
+            end_date,
+        )?;
+        if year_fraction == 0.0 {
+            return Ok(0.0);
+        }
+        if self.overnight_conventions().is_some()
+            && (start_date > self.start_date || end_date < self.end_date)
+        {
+            return Err(QSError::InvalidValueErr(
+                "Partial overnight accrual requires daily observation amounts".into(),
+            ));
+        }
         let fixing = self
             .fixing()
             .ok_or_else(|| QSError::InvalidValueErr("Fixing not set".into()))?;
-        let year_fraction = self.day_counter.year_fraction(start_date, end_date);
         Ok((fixing + self.spread) * (year_fraction * self.notional))
     }
 
@@ -655,12 +674,28 @@ impl Cashflow<DualFwd> for FloatingRateCoupon<DualFwd> {
 #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
 impl LinearCoupon<DualFwd> for FloatingRateCoupon<DualFwd> {
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<DualFwd> {
+        let year_fraction = accrual_fraction(
+            self.day_counter,
+            self.start_date,
+            self.end_date,
+            start_date,
+            end_date,
+        )?;
+        if year_fraction == 0.0 {
+            return Ok(DualFwd::zero());
+        }
+        if self.overnight_conventions().is_some()
+            && (start_date > self.start_date || end_date < self.end_date)
+        {
+            return Err(QSError::InvalidValueErr(
+                "Partial overnight accrual requires daily observation amounts".into(),
+            ));
+        }
         let fixing = self
             .fixing
             .read()
             .unwrap()
             .ok_or_else(|| QSError::InvalidValueErr("Fixing not set".into()))?;
-        let year_fraction = self.day_counter.year_fraction(start_date, end_date);
         Ok(((fixing + self.spread) * DualFwd::new(year_fraction * self.notional)).into())
     }
 

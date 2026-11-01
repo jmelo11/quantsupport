@@ -9,9 +9,12 @@ use crate::common::enums::{
 use crate::time::Date;
 use pyo3::prelude::*;
 use quantsupport::instruments::cashflows::{
-    cashflow::Cashflow, fixedratecoupon::FixedRateCoupon as QsFixed,
+    cashflow::Cashflow,
+    coupons::{LinearCoupon, NonLinearCoupon},
+    fixedratecoupon::FixedRateCoupon as QsFixed,
     floatingratecoupon::FloatingRateCoupon as QsFloating,
-    optionembeddedcoupon::OptionEmbeddedCoupon as QsOption, payoffops::PayoffOps as QsPayoff,
+    optionembeddedcoupon::OptionEmbeddedCoupon as QsOption,
+    payoffops::PayoffOps as QsPayoff,
 };
 use quantsupport::prelude::{
     CashflowType, Compounding, Date as QsDate, DayCounter, Frequency, InterestRate as QsRate,
@@ -531,6 +534,17 @@ macro_rules! coupon_methods {
             }
             fn amount(&self) -> PyResult<f64> {
                 self.inner.amount().map_err(qs_err)
+            }
+            /// Earned interest in the clipped contractual overlap; reversed dates error.
+            /// Resolved floating observations are required for nonzero accrual.
+            fn accrued_amount(
+                &self,
+                start: &Bound<'_, PyAny>,
+                end: &Bound<'_, PyAny>,
+            ) -> PyResult<f64> {
+                self.inner
+                    .accrued_amount(extract_date(start)?, extract_date(end)?)
+                    .map_err(qs_err)
             }
             fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
                 pythonize::pythonize(

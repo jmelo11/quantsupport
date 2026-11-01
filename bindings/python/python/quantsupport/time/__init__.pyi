@@ -1,6 +1,6 @@
 """Dates, tenors, calendars, and accrual conventions."""
 from datetime import date as PythonDate, datetime as PythonDateTime
-from typing import Any, ClassVar, Iterator, Mapping, Sequence, final, overload
+from typing import Any, Final, Iterator, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
 
@@ -153,11 +153,11 @@ class Compounding:
             Matching convention.
         """
         ...
-    Simple: ClassVar[Compounding]
-    Compounded: ClassVar[Compounding]
-    Continuous: ClassVar[Compounding]
-    SimpleThenCompounded: ClassVar[Compounding]
-    CompoundedThenSimple: ClassVar[Compounding]
+    Simple: Final[Compounding]
+    Compounded: Final[Compounding]
+    Continuous: Final[Compounding]
+    SimpleThenCompounded: Final[Compounding]
+    CompoundedThenSimple: Final[Compounding]
 
 @final
 class Frequency:
@@ -186,19 +186,19 @@ class Frequency:
             and ``NoFrequency`` when explicitly named.
         """
         ...
-    NoFrequency: ClassVar[Frequency]
-    Once: ClassVar[Frequency]
-    Annual: ClassVar[Frequency]
-    Semiannual: ClassVar[Frequency]
-    EveryFourthMonth: ClassVar[Frequency]
-    Quarterly: ClassVar[Frequency]
-    Bimonthly: ClassVar[Frequency]
-    Monthly: ClassVar[Frequency]
-    EveryFourthWeek: ClassVar[Frequency]
-    Biweekly: ClassVar[Frequency]
-    Weekly: ClassVar[Frequency]
-    Daily: ClassVar[Frequency]
-    OtherFrequency: ClassVar[Frequency]
+    NoFrequency: Final[Frequency]
+    Once: Final[Frequency]
+    Annual: Final[Frequency]
+    Semiannual: Final[Frequency]
+    EveryFourthMonth: Final[Frequency]
+    Quarterly: Final[Frequency]
+    Bimonthly: Final[Frequency]
+    Monthly: Final[Frequency]
+    EveryFourthWeek: Final[Frequency]
+    Biweekly: Final[Frequency]
+    Weekly: Final[Frequency]
+    Daily: Final[Frequency]
+    OtherFrequency: Final[Frequency]
 
 @final
 class DayCounter:
@@ -206,9 +206,8 @@ class DayCounter:
 
     Notes
     -----
-    ActualActual year fractions split same/adjacent calendar years, but omit
-    one complete intervening year when endpoint years differ by at least two.
-    Do not treat this as a general long-span ISDA Actual/Actual implementation.
+    ActualActual year fractions split at calendar-year boundaries, use each
+    year's 365/366-day denominator and include every complete intervening year.
 
     Thirty360US first adjusts a starting 31st to 30, then an ending 31st when
     the adjusted starting day is at least 30, then independently changes each
@@ -239,7 +238,7 @@ class DayCounter:
         """
         ...
 
-    def day_count(self, start: _DateLike, end: _DateLike) -> Any:
+    def day_count(self, start: _DateLike, end: _DateLike) -> int:
         """Count days according to this convention.
 
         Parameters
@@ -270,16 +269,16 @@ class DayCounter:
         Returns
         -------
         float
-            Native year fraction, subject to the ActualActual long-span and
-            Thirty360US February restrictions documented on DayCounter.
+            Native year fraction, subject to the Thirty360US February restrictions
+            documented on DayCounter.
         """
         ...
-    Actual360: ClassVar[DayCounter]
-    Actual365: ClassVar[DayCounter]
-    Thirty360: ClassVar[DayCounter]
-    Thirty360US: ClassVar[DayCounter]
-    ActualActual: ClassVar[DayCounter]
-    Business252: ClassVar[DayCounter]
+    Actual360: Final[DayCounter]
+    Actual365: Final[DayCounter]
+    Thirty360: Final[DayCounter]
+    Thirty360US: Final[DayCounter]
+    ActualActual: Final[DayCounter]
+    Business252: Final[DayCounter]
 
 @final
 class TimeUnit:
@@ -306,10 +305,10 @@ class TimeUnit:
             Matching unit, rather than a duration in seconds.
         """
         ...
-    Days: ClassVar[TimeUnit]
-    Weeks: ClassVar[TimeUnit]
-    Months: ClassVar[TimeUnit]
-    Years: ClassVar[TimeUnit]
+    Days: Final[TimeUnit]
+    Weeks: Final[TimeUnit]
+    Months: Final[TimeUnit]
+    Years: Final[TimeUnit]
 
 @final
 class BusinessDayConvention:
@@ -337,13 +336,13 @@ class BusinessDayConvention:
             Matching adjustment convention.
         """
         ...
-    Following: ClassVar[BusinessDayConvention]
-    ModifiedFollowing: ClassVar[BusinessDayConvention]
-    HalfMonthModifiedFollowing: ClassVar[BusinessDayConvention]
-    Preceding: ClassVar[BusinessDayConvention]
-    ModifiedPreceding: ClassVar[BusinessDayConvention]
-    Unadjusted: ClassVar[BusinessDayConvention]
-    Nearest: ClassVar[BusinessDayConvention]
+    Following: Final[BusinessDayConvention]
+    ModifiedFollowing: Final[BusinessDayConvention]
+    HalfMonthModifiedFollowing: Final[BusinessDayConvention]
+    Preceding: Final[BusinessDayConvention]
+    ModifiedPreceding: Final[BusinessDayConvention]
+    Unadjusted: Final[BusinessDayConvention]
+    Nearest: Final[BusinessDayConvention]
 
 @final
 class DateGenerationRule:
@@ -371,16 +370,16 @@ class DateGenerationRule:
             Matching rule for generating schedule dates.
         """
         ...
-    Backward: ClassVar[DateGenerationRule]
-    Forward: ClassVar[DateGenerationRule]
-    Zero: ClassVar[DateGenerationRule]
-    ThirdWednesday: ClassVar[DateGenerationRule]
-    ThirdWednesdayInclusive: ClassVar[DateGenerationRule]
-    Twentieth: ClassVar[DateGenerationRule]
-    TwentiethIMM: ClassVar[DateGenerationRule]
-    OldCDS: ClassVar[DateGenerationRule]
-    CDS: ClassVar[DateGenerationRule]
-    CDS2015: ClassVar[DateGenerationRule]
+    Backward: Final[DateGenerationRule]
+    Forward: Final[DateGenerationRule]
+    Zero: Final[DateGenerationRule]
+    ThirdWednesday: Final[DateGenerationRule]
+    ThirdWednesdayInclusive: Final[DateGenerationRule]
+    Twentieth: Final[DateGenerationRule]
+    TwentiethIMM: Final[DateGenerationRule]
+    OldCDS: Final[DateGenerationRule]
+    CDS: Final[DateGenerationRule]
+    CDS2015: Final[DateGenerationRule]
 
 @final
 class Date:
@@ -691,13 +690,13 @@ may be passed."""
 @final
 class UnitedStatesMarket:
     """United States calendar market."""
-    Settlement: ClassVar[UnitedStatesMarket]
-    LiborImpact: ClassVar[UnitedStatesMarket]
-    Nyse: ClassVar[UnitedStatesMarket]
-    GovernmentBond: ClassVar[UnitedStatesMarket]
-    Nerc: ClassVar[UnitedStatesMarket]
-    FederalReserve: ClassVar[UnitedStatesMarket]
-    Sofr: ClassVar[UnitedStatesMarket]
+    Settlement: Final[UnitedStatesMarket]
+    LiborImpact: Final[UnitedStatesMarket]
+    Nyse: Final[UnitedStatesMarket]
+    GovernmentBond: Final[UnitedStatesMarket]
+    Nerc: Final[UnitedStatesMarket]
+    FederalReserve: Final[UnitedStatesMarket]
+    Sofr: Final[UnitedStatesMarket]
 
     @staticmethod
     def parse(s: str) -> UnitedStatesMarket:
@@ -725,8 +724,8 @@ class UnitedStatesMarket:
 @final
 class BrazilMarket:
     """Brazil calendar market."""
-    Settlement: ClassVar[BrazilMarket]
-    Exchange: ClassVar[BrazilMarket]
+    Settlement: Final[BrazilMarket]
+    Exchange: Final[BrazilMarket]
 
     @staticmethod
     def parse(s: str) -> BrazilMarket:
@@ -753,8 +752,8 @@ class BrazilMarket:
 @final
 class JointCalendarRule:
     """Business-day combination rule for a joint calendar."""
-    JoinHolidays: ClassVar[JointCalendarRule]
-    JoinBusinessDays: ClassVar[JointCalendarRule]
+    JoinHolidays: Final[JointCalendarRule]
+    JoinBusinessDays: Final[JointCalendarRule]
 
     @staticmethod
     def parse(s: str) -> JointCalendarRule:
@@ -1179,17 +1178,17 @@ class Calendar:
     Holiday overrides return independent calendars and never mutate shared
     class attributes or calendars previously supplied to schedules or joints.
     """
-    NullCalendar: ClassVar[Calendar]
-    WeekendsOnly: ClassVar[Calendar]
-    Switzerland: ClassVar[Calendar]
-    Norway: ClassVar[Calendar]
-    Sweden: ClassVar[Calendar]
-    Denmark: ClassVar[Calendar]
-    SouthAfrica: ClassVar[Calendar]
-    TARGET: ClassVar[Calendar]
-    UnitedKingdom: ClassVar[Calendar]
-    Japan: ClassVar[Calendar]
-    Chile: ClassVar[Calendar]
+    NullCalendar: Final[Calendar]
+    WeekendsOnly: Final[Calendar]
+    Switzerland: Final[Calendar]
+    Norway: Final[Calendar]
+    Sweden: Final[Calendar]
+    Denmark: Final[Calendar]
+    SouthAfrica: Final[Calendar]
+    TARGET: Final[Calendar]
+    UnitedKingdom: Final[Calendar]
+    Japan: Final[Calendar]
+    Chile: Final[Calendar]
 
     @staticmethod
     def Australia( market: AustraliaMarket | None = ...) -> Calendar:
@@ -1610,8 +1609,8 @@ class Calendar:
 @final
 class AustraliaMarket:
     """Australia market or regional calendar selection."""
-    Settlement: ClassVar[AustraliaMarket]
-    ASX: ClassVar[AustraliaMarket]
+    Settlement: Final[AustraliaMarket]
+    ASX: Final[AustraliaMarket]
     @staticmethod
     def parse(s: str) -> AustraliaMarket:
         """Parse a market name, case-insensitively.
@@ -1633,8 +1632,8 @@ class AustraliaMarket:
 @final
 class CanadaMarket:
     """Canada market or regional calendar selection."""
-    Settlement: ClassVar[CanadaMarket]
-    TSX: ClassVar[CanadaMarket]
+    Settlement: Final[CanadaMarket]
+    TSX: Final[CanadaMarket]
     @staticmethod
     def parse(s: str) -> CanadaMarket:
         """Parse a market name, case-insensitively.
@@ -1656,8 +1655,8 @@ class CanadaMarket:
 @final
 class NewZealandMarket:
     """NewZealand market or regional calendar selection."""
-    Wellington: ClassVar[NewZealandMarket]
-    Auckland: ClassVar[NewZealandMarket]
+    Wellington: Final[NewZealandMarket]
+    Auckland: Final[NewZealandMarket]
     @staticmethod
     def parse(s: str) -> NewZealandMarket:
         """Parse a market name, case-insensitively.
@@ -1679,8 +1678,8 @@ class NewZealandMarket:
 @final
 class SouthKoreaMarket:
     """SouthKorea market or regional calendar selection."""
-    Settlement: ClassVar[SouthKoreaMarket]
-    KRX: ClassVar[SouthKoreaMarket]
+    Settlement: Final[SouthKoreaMarket]
+    KRX: Final[SouthKoreaMarket]
     @staticmethod
     def parse(s: str) -> SouthKoreaMarket:
         """Parse a market name, case-insensitively.
@@ -1702,8 +1701,8 @@ class SouthKoreaMarket:
 @final
 class ChinaMarket:
     """China market or regional calendar selection."""
-    SSE: ClassVar[ChinaMarket]
-    IB: ClassVar[ChinaMarket]
+    SSE: Final[ChinaMarket]
+    IB: Final[ChinaMarket]
     @staticmethod
     def parse(s: str) -> ChinaMarket:
         """Parse a market name, case-insensitively.

@@ -335,6 +335,7 @@ All examples below are workspace packages and use local JSON market data where a
 | [`valuation/loans`](examples/valuation/loans) | Fixed contractual principal, reset requests, prepayment functions, fair-rate modes, credit and quote risk | `cargo run -p valuation-loans` |
 | [`bootstrap`](examples/bootstrap) | JSON quote loading, USD/CLP multi-curve bootstrapping, and a corporate bond curve | `cargo run -p bootstrap` |
 | [`sensitivity`](examples/sensitivity) | Multi-curve pricing of SOFR, Term SOFR, ICP, and cross-currency swaps with pillar DV01 | `cargo run -p sensitivity` |
+| [`risk reprojection`](examples/sensitivity/src/bin/risk-reprojection.rs) | The same OIS priced with deposit, OIS and post-bootstrap zero-rate risk bases | `cargo run -p sensitivity --bin risk-reprojection` |
 | [`volatilitysurface`](examples/volatilitysurface) | Building and querying an interpolated SOFR caplet Black-volatility surface | `cargo run -p volatilitysurface` |
 | [`hullwhite`](examples/hullwhite) | Curve construction, caplet-vol calibration, Hull-White pricing, simulation, and plots | `cargo run -p hullwhite` |
 | [`pfe`](examples/pfe) | Multi-currency LGM exposure simulation for swaps, FX products, and cross-currency swaps | `cargo run -p pfe` |

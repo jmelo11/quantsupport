@@ -1,7 +1,10 @@
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     indices::marketindex::MarketIndex,
-    instruments::cashflows::{coupons::NonLinearCoupon, payoffops::PayoffOps},
+    instruments::cashflows::{
+        coupons::{accrual_fraction, NonLinearCoupon},
+        payoffops::PayoffOps,
+    },
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
 };
@@ -170,11 +173,19 @@ impl NonLinearCoupon<f64> for OptionEmbeddedCoupon<f64> {
     }
 
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<f64> {
+        let year_fraction = accrual_fraction(
+            self.day_counter()?,
+            self.accrual_start_date,
+            self.accrual_end_date,
+            start_date,
+            end_date,
+        )?;
+        if year_fraction == 0.0 {
+            return Ok(0.0);
+        }
         let fixing = self
             .fixing
             .ok_or_else(|| QSError::NotFoundErr("Fixing not set".into()))?;
-
-        let year_fraction = self.day_counter()?.year_fraction(start_date, end_date);
 
         let resuling_rate = self.payoff.eval(fixing)?;
         let coupon_rate = self.spread + resuling_rate;
@@ -204,11 +215,19 @@ impl NonLinearCoupon<DualFwd> for OptionEmbeddedCoupon<DualFwd> {
     }
 
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<DualFwd> {
+        let year_fraction = accrual_fraction(
+            self.day_counter()?,
+            self.accrual_start_date,
+            self.accrual_end_date,
+            start_date,
+            end_date,
+        )?;
+        if year_fraction == 0.0 {
+            return Ok(DualFwd::zero());
+        }
         let fixing = self
             .fixing
             .ok_or_else(|| QSError::NotFoundErr("Fixing not set".into()))?;
-
-        let year_fraction = self.day_counter()?.year_fraction(start_date, end_date);
 
         let resuling_rate = self.payoff.eval(fixing)?;
         let coupon_rate: DualFwd = (self.spread + resuling_rate).into();

@@ -1,5 +1,11 @@
 use super::bondpricinganchor::BondPricingAnchor;
+use super::bondterms::BondTerms;
+use crate::rates::interestrate::RateDefinition;
 use crate::time::daycounter::DayCounter;
+use crate::{
+    instruments::fixedincome::callschedule::CallScheduleEntry,
+    utils::errors::{QSError, Result},
+};
 
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
@@ -201,6 +207,45 @@ where
 {
     fn legs(&self) -> &[Leg<T>] {
         self.instrument.legs()
+    }
+}
+
+impl<T: Scalar> BondTerms<T> for FixedRateBondTrade<T> {
+    fn pricing_anchor(&self) -> BondPricingAnchor {
+        self.pricing_anchor()
+    }
+    fn settlement_date(&self) -> Option<Date> {
+        self.settlement_date()
+    }
+    fn spread_day_counter(&self) -> Option<DayCounter> {
+        self.spread_day_counter()
+    }
+    fn bond_leg(&self) -> &Leg<T> {
+        self.instrument().leg()
+    }
+
+    fn units(&self) -> f64 {
+        self.instrument().units()
+    }
+
+    fn call_schedule(&self) -> &[CallScheduleEntry] {
+        &[]
+    }
+
+    fn yield_rate_definition(&self) -> Result<RateDefinition> {
+        self.instrument()
+            .leg()
+            .interest_rate()
+            .map(|rate| rate.rate_definition())
+            .ok_or_else(|| QSError::ValueNotSetErr("Fixed bond rate definition".into()))
+    }
+
+    fn bond_identifier(&self) -> String {
+        self.instrument().identifier()
+    }
+
+    fn position_side(&self) -> crate::core::trade::Side {
+        Trade::side(self)
     }
 }
 

@@ -366,6 +366,7 @@ pub fn values(
         request,
         quantsupport::prelude::Request::Value
             | quantsupport::prelude::Request::FairRate(_)
+            | quantsupport::prelude::Request::AccruedAmount(_, _)
             | quantsupport::prelude::Request::YieldToMaturity
             | quantsupport::prelude::Request::ModifiedDuration
             | quantsupport::prelude::Request::ZSpread

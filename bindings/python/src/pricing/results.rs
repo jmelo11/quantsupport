@@ -88,6 +88,7 @@ pub struct EvaluationResults {
     z_spread: Option<f64>,
     oas: Option<f64>,
     fair_rate: Option<f64>,
+    accrued_amount: Option<f64>,
     sensitivities: Option<Vec<(String, f64)>>,
     cashflows: Option<Vec<CashflowRow>>,
 }
@@ -113,6 +114,9 @@ impl EvaluationResults {
         }
         if let Some(value) = self.fair_rate {
             result = result.with_fair_rate(value);
+        }
+        if let Some(amount) = self.accrued_amount {
+            result = result.with_accrued_amount(amount);
         }
         if let Some(pairs) = &self.sensitivities {
             let (keys, values): (Vec<_>, Vec<_>) = pairs.iter().cloned().unzip();
@@ -181,6 +185,7 @@ impl EvaluationResults {
             z_spread: res.z_spread(),
             oas: res.oas(),
             fair_rate: res.fair_rate(),
+            accrued_amount: res.accrued_amount(),
             sensitivities,
             cashflows,
         }
@@ -206,6 +211,7 @@ impl EvaluationResults {
         fair_rate = None,
         sensitivities = None,
         cashflows = None,
+        accrued_amount = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -219,6 +225,7 @@ impl EvaluationResults {
         fair_rate: Option<f64>,
         sensitivities: Option<&Bound<'_, PyAny>>,
         cashflows: Option<&Bound<'_, PyAny>>,
+        accrued_amount: Option<f64>,
     ) -> PyResult<Self> {
         let sensitivities = sensitivities.map(extract_sensitivities).transpose()?;
         let cashflows = cashflows
@@ -236,6 +243,7 @@ impl EvaluationResults {
             z_spread,
             oas,
             fair_rate,
+            accrued_amount,
             sensitivities,
             cashflows,
         })
@@ -295,6 +303,12 @@ impl EvaluationResults {
     #[getter]
     fn fair_rate(&self) -> Option<f64> {
         self.fair_rate
+    }
+
+    /// Signed, undiscounted coupon interest for Request.AccruedAmount(start, end).
+    #[getter]
+    fn accrued_amount(&self) -> Option<f64> {
+        self.accrued_amount
     }
 
     /// Sensitivities as a DataFrame with columns pillar/value (duplicated

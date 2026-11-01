@@ -1,6 +1,6 @@
 """Product specifications, coupons, loan terms, and payoff scripts."""
 from datetime import date as PythonDate
-from typing import Generic, TypeVar, Any, ClassVar, Mapping, Sequence, final, overload
+from typing import Generic, TypeVar, Any, Final, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
 from ..time import BusinessDayConvention, Calendar, Compounding, Date, DateGenerationRule, DayCounter, Frequency, _DateLike, _PeriodLike
@@ -45,8 +45,8 @@ class Side:
             Dimensionless cashflow multiplier, +1.0 or -1.0.
         """
         ...
-    LongReceive: ClassVar[Side]
-    PayShort: ClassVar[Side]
+    LongReceive: Final[Side]
+    PayShort: Final[Side]
 
 @final
 class OptionType:
@@ -73,8 +73,8 @@ class OptionType:
             Parsed call or put variant.
         """
         ...
-    Call: ClassVar[OptionType]
-    Put: ClassVar[OptionType]
+    Call: Final[OptionType]
+    Put: Final[OptionType]
 
 @final
 class CapFloorType:
@@ -101,8 +101,8 @@ class CapFloorType:
             Parsed cap or floor variant.
         """
         ...
-    Cap: ClassVar[CapFloorType]
-    Floor: ClassVar[CapFloorType]
+    Cap: Final[CapFloorType]
+    Floor: Final[CapFloorType]
 
 @final
 class CapletFloorletType:
@@ -129,8 +129,8 @@ class CapletFloorletType:
             Parsed single-period payoff variant.
         """
         ...
-    Caplet: ClassVar[CapletFloorletType]
-    Floorlet: ClassVar[CapletFloorletType]
+    Caplet: Final[CapletFloorletType]
+    Floorlet: Final[CapletFloorletType]
 
 @final
 class PaymentStructure:
@@ -158,11 +158,11 @@ class PaymentStructure:
             Parsed leg amortization structure.
         """
         ...
-    Bullet: ClassVar[PaymentStructure]
-    EqualPayments: ClassVar[PaymentStructure]
-    EqualRedemptions: ClassVar[PaymentStructure]
-    Zero: ClassVar[PaymentStructure]
-    Other: ClassVar[PaymentStructure]
+    Bullet: Final[PaymentStructure]
+    EqualPayments: Final[PaymentStructure]
+    EqualRedemptions: Final[PaymentStructure]
+    Zero: Final[PaymentStructure]
+    Other: Final[PaymentStructure]
 
 @disjoint_base
 class Instrument:
@@ -555,8 +555,8 @@ class SwaptionType:
             Parsed underlying-swap exercise direction.
         """
         ...
-    Payer: ClassVar[SwaptionType]
-    Receiver: ClassVar[SwaptionType]
+    Payer: Final[SwaptionType]
+    Receiver: Final[SwaptionType]
 
 @disjoint_base
 class EquityForward(Instrument):
@@ -959,7 +959,7 @@ class CrossCurrencySwap(Instrument):
         Foreign coupon payment interval; default None uses Semiannual.
     """
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, domestic_notional: float, foreign_notional: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, domestic_market_index: _IndexLike, foreign_market_index: _IndexLike, domestic_spread: float=..., foreign_spread: float=..., domestic_leg_frequency: Any | None=..., foreign_leg_frequency: Any | None=...) -> Self:
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, domestic_notional: float, foreign_notional: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, domestic_market_index: _IndexLike, foreign_market_index: _IndexLike, domestic_spread: float=..., foreign_spread: float=..., domestic_leg_frequency: Frequency | str | None=..., foreign_leg_frequency: Frequency | str | None=...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -1093,7 +1093,7 @@ class BasisSwap(Instrument):
         Receive-leg coupon payment interval; default None uses Quarterly.
     """
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, currency: _CurrencyLike, pay_market_index: _IndexLike, receive_market_index: _IndexLike, pay_spread: Any | None=..., receive_spread: Any | None=..., pay_leg_frequency: Any | None=..., receive_leg_frequency: Any | None=...) -> Self:
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, currency: _CurrencyLike, pay_market_index: _IndexLike, receive_market_index: _IndexLike, pay_spread: Any | None=..., receive_spread: Any | None=..., pay_leg_frequency: Frequency | str | None=..., receive_leg_frequency: Frequency | str | None=...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -1224,7 +1224,7 @@ class FixFloatCrossCurrencySwap(Instrument):
         Foreign floating coupon payment interval; default None uses Semiannual.
     """
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, domestic_notional: float, foreign_notional: float, fixed_rate: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, floating_index: _IndexLike, spread: float | None=..., day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., rate_frequency: Frequency | str | None=..., domestic_leg_frequency: Any | None=..., foreign_leg_frequency: Any | None=...) -> Self:
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, domestic_notional: float, foreign_notional: float, fixed_rate: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, floating_index: _IndexLike, spread: float | None=..., day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., rate_frequency: Frequency | str | None=..., domestic_leg_frequency: Frequency | str | None=..., foreign_leg_frequency: Frequency | str | None=...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -1385,7 +1385,7 @@ class FixedRateBond(Instrument):
         the first coupon from the regular schedule.
     """
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, rate: float, currency: _CurrencyLike, discount_index: _IndexLike | None=..., day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., rate_frequency: Frequency | str | None=..., payment_frequency: Any | None=..., payment_structure: PaymentStructure | str | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., date_generation_rule: DateGenerationRule | str | None=..., end_of_month: bool | None=..., first_coupon_date: _DateLike | None=...) -> Self:
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, rate: float, currency: _CurrencyLike, discount_index: _IndexLike | None=..., day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., rate_frequency: Frequency | str | None=..., payment_frequency: Frequency | str | None=..., payment_structure: PaymentStructure | str | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., date_generation_rule: DateGenerationRule | str | None=..., end_of_month: bool | None=..., first_coupon_date: _DateLike | None=...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -1619,7 +1619,7 @@ class PayoffOps:
 Index and Const are leaves. Max, Min, Times, Plus, and Minus compose them.
 Arithmetic operators also construct expressions; min() and max() apply bounds.
 OptionEmbeddedCoupon pays notional * accrual * (payoff.eval(fixing) + spread)."""
-    Index: ClassVar[PayoffOps]
+    Index: Final[PayoffOps]
 
     @staticmethod
     def Const(value: float) -> PayoffOps:
@@ -1897,8 +1897,34 @@ payment_date : Date or datetime.date or str, optional
         Returns
         -------
         float
-            Interest in the same monetary units as notional, using the rate's
-            compounding conventions; excludes principal repayment.
+            Interest in the same units as notional: annual rate times principal
+            times contractual year fraction. Excludes principal repayment.
+        """
+        ...
+
+
+    def accrued_amount(self, start: _DateLike, end: _DateLike) -> float:
+        """Return earned interest within the contractual coupon period.
+
+        Parameters
+        ----------
+        start : Date, datetime.date, or str
+            Inclusive start of the requested window.
+        end : Date, datetime.date, or str
+            Exclusive end, at or after start.
+
+        Returns
+        -------
+        float
+            Difference in cumulative coupon accrual over the clipped overlap.
+            Empty overlaps return zero. Fixings must be resolved for floating
+            or option-embedded coupons with nonzero accrual.
+
+        Raises
+        ------
+        QuantSupportError
+            If dates are reversed, an in-window observation is unresolved, or
+            partial overnight accrual needs unavailable daily observations.
         """
         ...
 
@@ -2003,6 +2029,32 @@ fixing : float, optional
         float
             Interest in notional units: principal times accrual fraction times
             (fixing + spread). Raises an error if no fixing has been resolved.
+        """
+        ...
+
+
+    def accrued_amount(self, start: _DateLike, end: _DateLike) -> float:
+        """Return earned interest within the contractual coupon period.
+
+        Parameters
+        ----------
+        start : Date, datetime.date, or str
+            Inclusive start of the requested window.
+        end : Date, datetime.date, or str
+            Exclusive end, at or after start.
+
+        Returns
+        -------
+        float
+            Difference in cumulative coupon accrual over the clipped overlap.
+            Empty overlaps return zero. Fixings must be resolved for floating
+            or option-embedded coupons with nonzero accrual.
+
+        Raises
+        ------
+        QuantSupportError
+            If dates are reversed, an in-window observation is unresolved, or
+            partial overnight accrual needs unavailable daily observations.
         """
         ...
 
@@ -2126,6 +2178,32 @@ fixing : float, optional
         float
             Interest in notional units after evaluating the payoff and adding
             spread. Raises an error when the required fixing is unresolved.
+        """
+        ...
+
+
+    def accrued_amount(self, start: _DateLike, end: _DateLike) -> float:
+        """Return earned interest within the contractual coupon period.
+
+        Parameters
+        ----------
+        start : Date, datetime.date, or str
+            Inclusive start of the requested window.
+        end : Date, datetime.date, or str
+            Exclusive end, at or after start.
+
+        Returns
+        -------
+        float
+            Difference in cumulative coupon accrual over the clipped overlap.
+            Empty overlaps return zero. Fixings must be resolved for floating
+            or option-embedded coupons with nonzero accrual.
+
+        Raises
+        ------
+        QuantSupportError
+            If dates are reversed, an in-window observation is unresolved, or
+            partial overnight accrual needs unavailable daily observations.
         """
         ...
 
@@ -2354,7 +2432,7 @@ class SteppedCouponBond(Instrument):
         Separate final-date adjustment rule. Default None resolves to Unadjusted.
     """
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, currency: _CurrencyLike, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], notional_percentages: Any, call_schedule: Any | None=..., units: float=..., payment_frequency: Any | None=..., coupon_day_counter: Any | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., date_generation_rule: DateGenerationRule | str | None=..., end_of_month: bool | None=..., first_coupon_date: _DateLike | None=..., next_to_last_coupon_date: _DateLike | None=..., termination_date_convention: Any | None=...) -> Self:
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, currency: _CurrencyLike, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], notional_percentages: Any, call_schedule: Any | None=..., units: float=..., payment_frequency: Frequency | str | None=..., coupon_day_counter: DayCounter | str | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., date_generation_rule: DateGenerationRule | str | None=..., end_of_month: bool | None=..., first_coupon_date: _DateLike | None=..., next_to_last_coupon_date: _DateLike | None=..., termination_date_convention: BusinessDayConvention | str | None=...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -2517,7 +2595,7 @@ class FloatingRateNote(Instrument):
         the requested structure.
     """
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, spread: float, currency: _CurrencyLike, forward_index: _IndexLike, payment_frequency: Any | None=..., payment_structure: PaymentStructure | str | None=...) -> Self:
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, spread: float, currency: _CurrencyLike, forward_index: _IndexLike, payment_frequency: Frequency | str | None=..., payment_structure: PaymentStructure | str | None=...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -3032,7 +3110,7 @@ class CreditDefaultSwap(Instrument):
         Running premium accrual basis; default None resolves to Actual360.
     """
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, spread: float, currency: _CurrencyLike, credit_index: _IndexLike, discount_index: _IndexLike, recovery: float=..., premium_frequency: Any | None=..., day_counter: DayCounter | str | None=...) -> Self:
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, spread: float, currency: _CurrencyLike, credit_index: _IndexLike, discount_index: _IndexLike, recovery: float=..., premium_frequency: Frequency | str | None=..., day_counter: DayCounter | str | None=...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -3630,7 +3708,7 @@ class MakeSwap(MakeInstrument[Swap]):
 class MakeFloatFloatCrossCurrencySwap(MakeInstrument[CrossCurrencySwap]):
     """Reusable maker for CrossCurrencySwap. Both build methods return a concrete product."""
 
-    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., domestic_notional: float, foreign_notional: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, domestic_market_index: _IndexLike, foreign_market_index: _IndexLike, domestic_spread: float = ..., foreign_spread: float = ..., domestic_leg_frequency: Any | None = ..., foreign_leg_frequency: Any | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., domestic_notional: float, foreign_notional: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, domestic_market_index: _IndexLike, foreign_market_index: _IndexLike, domestic_spread: float = ..., foreign_spread: float = ..., domestic_leg_frequency: Frequency | str | None = ..., foreign_leg_frequency: Frequency | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
         """Stores copied construction parameters.
 
         Parameters
@@ -3683,7 +3761,7 @@ class MakeFloatFloatCrossCurrencySwap(MakeInstrument[CrossCurrencySwap]):
 class MakeCrossCurrencySwap(MakeInstrument[CrossCurrencySwap]):
     """Reusable maker for CrossCurrencySwap. Both build methods return a concrete product."""
 
-    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., domestic_notional: float, foreign_notional: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, domestic_market_index: _IndexLike, foreign_market_index: _IndexLike, domestic_spread: float = ..., foreign_spread: float = ..., domestic_leg_frequency: Any | None = ..., foreign_leg_frequency: Any | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., domestic_notional: float, foreign_notional: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, domestic_market_index: _IndexLike, foreign_market_index: _IndexLike, domestic_spread: float = ..., foreign_spread: float = ..., domestic_leg_frequency: Frequency | str | None = ..., foreign_leg_frequency: Frequency | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
         """Stores copied construction parameters.
 
         Parameters
@@ -3736,7 +3814,7 @@ class MakeCrossCurrencySwap(MakeInstrument[CrossCurrencySwap]):
 class MakeBasisSwap(MakeInstrument[BasisSwap]):
     """Reusable maker for BasisSwap. Both build methods return a concrete product."""
 
-    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, currency: _CurrencyLike, pay_market_index: _IndexLike, receive_market_index: _IndexLike, pay_spread: Any | None = ..., receive_spread: Any | None = ..., pay_leg_frequency: Any | None = ..., receive_leg_frequency: Any | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, currency: _CurrencyLike, pay_market_index: _IndexLike, receive_market_index: _IndexLike, pay_spread: Any | None = ..., receive_spread: Any | None = ..., pay_leg_frequency: Frequency | str | None = ..., receive_leg_frequency: Frequency | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
         """Stores copied construction parameters.
 
         Parameters
@@ -3787,7 +3865,7 @@ class MakeBasisSwap(MakeInstrument[BasisSwap]):
 class MakeFixFloatCrossCurrencySwap(MakeInstrument[FixFloatCrossCurrencySwap]):
     """Reusable maker for FixFloatCrossCurrencySwap. Both build methods return a concrete product."""
 
-    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., domestic_notional: float, foreign_notional: float, fixed_rate: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, floating_index: _IndexLike, spread: float | None = ..., day_counter: DayCounter | str | None = ..., compounding: Compounding | str | None = ..., rate_frequency: Frequency | str | None = ..., domestic_leg_frequency: Any | None = ..., foreign_leg_frequency: Any | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., domestic_notional: float, foreign_notional: float, fixed_rate: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, floating_index: _IndexLike, spread: float | None = ..., day_counter: DayCounter | str | None = ..., compounding: Compounding | str | None = ..., rate_frequency: Frequency | str | None = ..., domestic_leg_frequency: Frequency | str | None = ..., foreign_leg_frequency: Frequency | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
         """Stores copied construction parameters.
 
         Parameters
@@ -3845,7 +3923,7 @@ class MakeFixFloatCrossCurrencySwap(MakeInstrument[FixFloatCrossCurrencySwap]):
 class MakeFixedRateBond(MakeInstrument[FixedRateBond]):
     """Reusable maker for FixedRateBond. Both build methods return a concrete product."""
 
-    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, rate: float, currency: _CurrencyLike, discount_index: _IndexLike | None = ..., day_counter: DayCounter | str | None = ..., compounding: Compounding | str | None = ..., rate_frequency: Frequency | str | None = ..., payment_frequency: Any | None = ..., payment_structure: PaymentStructure | str | None = ..., calendar: Calendar | str | None = ..., business_day_convention: BusinessDayConvention | str | None = ..., date_generation_rule: DateGenerationRule | str | None = ..., end_of_month: bool | None = ..., first_coupon_date: _DateLike | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., first_coupon_tenor: _PeriodLike | None = ...) -> Self:
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, rate: float, currency: _CurrencyLike, discount_index: _IndexLike | None = ..., day_counter: DayCounter | str | None = ..., compounding: Compounding | str | None = ..., rate_frequency: Frequency | str | None = ..., payment_frequency: Frequency | str | None = ..., payment_structure: PaymentStructure | str | None = ..., calendar: Calendar | str | None = ..., business_day_convention: BusinessDayConvention | str | None = ..., date_generation_rule: DateGenerationRule | str | None = ..., end_of_month: bool | None = ..., first_coupon_date: _DateLike | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., first_coupon_tenor: _PeriodLike | None = ...) -> Self:
         """Stores copied construction parameters.
 
         Parameters
@@ -3915,7 +3993,7 @@ class MakeFixedRateBond(MakeInstrument[FixedRateBond]):
 class MakeSteppedCouponBond(MakeInstrument[SteppedCouponBond]):
     """Reusable maker for SteppedCouponBond. Both build methods return a concrete product."""
 
-    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, currency: _CurrencyLike, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], notional_percentages: Any, call_schedule: Any | None = ..., units: float = ..., payment_frequency: Any | None = ..., coupon_day_counter: Any | None = ..., calendar: Calendar | str | None = ..., business_day_convention: BusinessDayConvention | str | None = ..., date_generation_rule: DateGenerationRule | str | None = ..., end_of_month: bool | None = ..., first_coupon_date: _DateLike | None = ..., next_to_last_coupon_date: _DateLike | None = ..., termination_date_convention: Any | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., first_coupon_tenor: _PeriodLike | None = ..., next_to_last_coupon_tenor: _PeriodLike | None = ..., call_schedule_tenors: Sequence[Any] | None = ...) -> Self:
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, currency: _CurrencyLike, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], notional_percentages: Any, call_schedule: Any | None = ..., units: float = ..., payment_frequency: Frequency | str | None = ..., coupon_day_counter: DayCounter | str | None = ..., calendar: Calendar | str | None = ..., business_day_convention: BusinessDayConvention | str | None = ..., date_generation_rule: DateGenerationRule | str | None = ..., end_of_month: bool | None = ..., first_coupon_date: _DateLike | None = ..., next_to_last_coupon_date: _DateLike | None = ..., termination_date_convention: BusinessDayConvention | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., first_coupon_tenor: _PeriodLike | None = ..., next_to_last_coupon_tenor: _PeriodLike | None = ..., call_schedule_tenors: Sequence[Any] | None = ...) -> Self:
         """Stores copied construction parameters.
 
         Parameters
@@ -3994,7 +4072,7 @@ class MakeSteppedCouponBond(MakeInstrument[SteppedCouponBond]):
 class MakeFloatingRateNote(MakeInstrument[FloatingRateNote]):
     """Reusable maker for FloatingRateNote. Both build methods return a concrete product."""
 
-    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, spread: float, currency: _CurrencyLike, forward_index: _IndexLike, payment_frequency: Any | None = ..., payment_structure: PaymentStructure | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, spread: float, currency: _CurrencyLike, forward_index: _IndexLike, payment_frequency: Frequency | str | None = ..., payment_structure: PaymentStructure | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
         """Stores copied construction parameters.
 
         Parameters
@@ -4374,7 +4452,7 @@ class MakeEquityOption(MakeInstrument[EquityOption]):
 class MakeCreditDefaultSwap(MakeInstrument[CreditDefaultSwap]):
     """Reusable maker for CreditDefaultSwap. Both build methods return a concrete product."""
 
-    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., spread: float, currency: _CurrencyLike, credit_index: _IndexLike, discount_index: _IndexLike, recovery: float = ..., premium_frequency: Any | None = ..., day_counter: DayCounter | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., spread: float, currency: _CurrencyLike, credit_index: _IndexLike, discount_index: _IndexLike, recovery: float = ..., premium_frequency: Frequency | str | None = ..., day_counter: DayCounter | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
         """Stores copied construction parameters.
 
         Parameters

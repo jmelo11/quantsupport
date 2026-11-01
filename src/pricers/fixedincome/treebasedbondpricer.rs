@@ -1,12 +1,13 @@
 //! Trinomial-tree valuation of callable bond trades.
-use super::bondanalytics::{
+use super::bondpricer::{
     bond_market_data_request, contractual_market_request, discounted_value, evaluate_bond,
-    impl_bond_pricer, BondPricingEngine, BondState, BondTerms, BondValuation,
+    BondPricingEngine, BondState, BondValuation,
 };
 use super::{
     bondevents::BondEventGrid,
     callablebond::{prepare_callable_bond, pricer_configuration, CallableBondModel},
 };
+use crate::instruments::fixedincome::bondterms::BondTerms;
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::{
@@ -273,22 +274,30 @@ pub fn lattice_value<T: Scalar>(
 }
 
 impl BondPricingEngine for TreeBasedBondPricer {
+    const INSTRUMENT_TYPE: crate::core::pricerconfiguration::InstrumentType =
+        crate::core::pricerconfiguration::InstrumentType::SteppedCouponBond;
     type Model<T: Scalar> = Option<CallableBondModel<T>>;
     fn policy(&self) -> Option<&dyn DiscountPolicy> {
         self.discount_policy.as_deref()
     }
     fn prepare(
         &self,
-        trade: &impl BondTerms,
+        trade: &impl BondTerms<DualFwd>,
         index: &MarketIndex,
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, Self::Model<f64>)> {
         if trade.call_schedule().is_empty() {
-            let request = contractual_market_request(trade, index, context.evaluation_date());
+            let request = contractual_market_request(
+                trade,
+                Some(index),
+                context.evaluation_date(),
+                context.anchor_fixings(),
+                None,
+            )?;
             let market = context.handle_request(&request)?;
             return Ok((market, None));
         }
-        let configuration = pricer_configuration(trade, context)?;
+        let configuration = pricer_configuration(Self::INSTRUMENT_TYPE, context)?;
         let time_grid = match configuration.pricer() {
             PricerImplementation::TreeBased { time_grid } => *time_grid,
             actual => {
@@ -331,8 +340,29 @@ impl BondPricingEngine for TreeBasedBondPricer {
         }
     }
 }
-impl<T: BondTerms> HandleCashflows<T, BondState> for TreeBasedBondPricer {}
-impl_bond_pricer!(TreeBasedBondPricer, SteppedCouponBondTrade<DualFwd>);
+impl<T: BondTerms<DualFwd>> HandleCashflows<T, BondState> for TreeBasedBondPricer {}
+impl Pricer for TreeBasedBondPricer {
+    type Item = SteppedCouponBondTrade<DualFwd>;
+    type Policy = dyn DiscountPolicy;
+
+    fn evaluate(
+        &self,
+        trade: &Self::Item,
+        requests: &[Request],
+        context: &impl MarketDataProvider,
+    ) -> Result<EvaluationResults> {
+        evaluate_bond(self, trade, requests, context)
+    }
+    fn market_data_request(&self, trade: &Self::Item) -> Option<MarketDataRequest> {
+        bond_market_data_request(self.policy(), trade, Self::INSTRUMENT_TYPE)
+    }
+    fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {
+        self.discount_policy = Some(policy);
+    }
+    fn discount_policy(&self) -> Option<&Self::Policy> {
+        self.discount_policy.as_deref()
+    }
+}
 
 /// Shared fixtures for callable-bond tree tests.
 #[cfg(test)]
@@ -1206,7 +1236,7 @@ mod tests {
     }
 
     #[test]
-    fn stepped_coupon_bond_rejects_yield_analytics() {
+    fn stepped_coupon_bond_leaves_unsupported_yield_analytics_absent() -> Result<()> {
         let evaluation_date = Date::new(2025, 1, 1);
         let (provider, _) = provider(evaluation_date, 24);
         let trade = bond(
@@ -1216,21 +1246,25 @@ mod tests {
             PaymentStructure::Bullet,
             vec![CallScheduleEntry::new(Date::new(2027, 1, 1), 100.0)],
         );
-        let pricer = tree_pricer();
-        for request in [Request::YieldToMaturity, Request::ModifiedDuration] {
-            let Err(error) = pricer.evaluate(
-                &trade
-                    .clone()
-                    .with_pricing_anchor(BondPricingAnchor::OAS(0.0)),
-                &[request],
-                &provider,
-            ) else {
-                panic!("stepped bond yield analytics must be rejected");
-            };
-            assert!(error
-                .to_string()
-                .contains("not defined for SteppedCouponBond"));
-        }
+        let result = TreeBasedBondPricer::new().evaluate(
+            &trade,
+            &[
+                Request::YieldToMaturity,
+                Request::ModifiedDuration,
+                Request::ZSpread,
+                Request::FairRate(0),
+                Request::FairRate(1),
+            ],
+            &provider,
+        )?;
+        assert!(
+            result.price().is_none()
+                && result.ytm().is_none()
+                && result.modified_duration().is_none()
+                && result.z_spread().is_none()
+                && result.fair_rate().is_none()
+        );
+        Ok(())
     }
 
     #[test]

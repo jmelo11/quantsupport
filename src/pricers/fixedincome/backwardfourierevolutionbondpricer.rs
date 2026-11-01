@@ -1,12 +1,13 @@
 //! Backward Fourier evolution valuation of callable bond trades.
-use super::bondanalytics::{
+use super::bondpricer::{
     bond_market_data_request, contractual_market_request, discounted_value, evaluate_bond,
-    impl_bond_pricer, BondPricingEngine, BondState, BondTerms, BondValuation,
+    BondPricingEngine, BondState, BondValuation,
 };
 use super::{
     bondevents::BondEventGrid,
     callablebond::{prepare_callable_bond, pricer_configuration, CallableBondModel},
 };
+use crate::instruments::fixedincome::bondterms::BondTerms;
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::{
@@ -233,22 +234,30 @@ pub fn backward_fourier_value<T: Scalar>(
 }
 
 impl BondPricingEngine for BackwardFourierEvolutionBondPricer {
+    const INSTRUMENT_TYPE: crate::core::pricerconfiguration::InstrumentType =
+        crate::core::pricerconfiguration::InstrumentType::SteppedCouponBond;
     type Model<T: Scalar> = (Option<CallableBondModel<T>>, FourierGridConfiguration);
     fn policy(&self) -> Option<&dyn DiscountPolicy> {
         self.discount_policy.as_deref()
     }
     fn prepare(
         &self,
-        trade: &impl BondTerms,
+        trade: &impl BondTerms<DualFwd>,
         index: &MarketIndex,
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, Self::Model<f64>)> {
         if trade.call_schedule().is_empty() {
-            let request = contractual_market_request(trade, index, context.evaluation_date());
+            let request = contractual_market_request(
+                trade,
+                Some(index),
+                context.evaluation_date(),
+                context.anchor_fixings(),
+                None,
+            )?;
             let market = context.handle_request(&request)?;
             return Ok((market, (None, FourierGridConfiguration::default())));
         }
-        let configuration = pricer_configuration(trade, context)?;
+        let configuration = pricer_configuration(Self::INSTRUMENT_TYPE, context)?;
         let (time_grid, grid) = match configuration.pricer() {
             PricerImplementation::BackwardFourierEvolution { time_grid, fourier_grid } => (*time_grid, *fourier_grid),
             actual => return Err(QSError::InvalidValueErr(format!("BackwardFourierEvolutionBondPricer requires a BackwardFourierEvolution context configuration, got {actual:?}"))),
@@ -292,11 +301,29 @@ impl BondPricingEngine for BackwardFourierEvolutionBondPricer {
         }
     }
 }
-impl<T: BondTerms> HandleCashflows<T, BondState> for BackwardFourierEvolutionBondPricer {}
-impl_bond_pricer!(
-    BackwardFourierEvolutionBondPricer,
-    SteppedCouponBondTrade<DualFwd>
-);
+impl<T: BondTerms<DualFwd>> HandleCashflows<T, BondState> for BackwardFourierEvolutionBondPricer {}
+impl Pricer for BackwardFourierEvolutionBondPricer {
+    type Item = SteppedCouponBondTrade<DualFwd>;
+    type Policy = dyn DiscountPolicy;
+
+    fn evaluate(
+        &self,
+        trade: &Self::Item,
+        requests: &[Request],
+        context: &impl MarketDataProvider,
+    ) -> Result<EvaluationResults> {
+        evaluate_bond(self, trade, requests, context)
+    }
+    fn market_data_request(&self, trade: &Self::Item) -> Option<MarketDataRequest> {
+        bond_market_data_request(self.policy(), trade, Self::INSTRUMENT_TYPE)
+    }
+    fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {
+        self.discount_policy = Some(policy);
+    }
+    fn discount_policy(&self) -> Option<&Self::Policy> {
+        self.discount_policy.as_deref()
+    }
+}
 
 /// Shared fixtures for callable-bond Fourier tests.
 #[cfg(test)]

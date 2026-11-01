@@ -1,6 +1,6 @@
 """Observable market data, construction inputs, curves, volatility, and simulations."""
 from datetime import date as PythonDate
-from typing import Any, ClassVar, Mapping, Sequence, final, overload
+from typing import Any, Final, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
 from ..time import Compounding, Date, DateTime, DayCounter, Frequency, Period, _DateLike, _DateTimeLike, _PeriodLike
@@ -17,9 +17,9 @@ class SnapshotSelectionRule:
 
     Closest can select later data. Equidistant timestamps prefer the earlier one.
     """
-    Exact: ClassVar[SnapshotSelectionRule]
-    Closest: ClassVar[SnapshotSelectionRule]
-    Previous: ClassVar[SnapshotSelectionRule]
+    Exact: Final[SnapshotSelectionRule]
+    Closest: Final[SnapshotSelectionRule]
+    Previous: Final[SnapshotSelectionRule]
 
 @final
 class SnapshotSelector:
@@ -221,9 +221,9 @@ class Level:
             Matching quote-level selector.
         """
         ...
-    Mid: ClassVar[Level]
-    Bid: ClassVar[Level]
-    Ask: ClassVar[Level]
+    Mid: Final[Level]
+    Bid: Final[Level]
+    Ask: Final[Level]
 
 @final
 class Currency:
@@ -276,31 +276,31 @@ class Currency:
     def precision(self) -> int:
         """Decimal precision."""
         ...
-    USD: ClassVar[Currency]
-    EUR: ClassVar[Currency]
-    JPY: ClassVar[Currency]
-    ZAR: ClassVar[Currency]
-    CLP: ClassVar[Currency]
-    CLF: ClassVar[Currency]
-    CHF: ClassVar[Currency]
-    BRL: ClassVar[Currency]
-    COP: ClassVar[Currency]
-    MXN: ClassVar[Currency]
-    AUD: ClassVar[Currency]
-    CAD: ClassVar[Currency]
-    CNY: ClassVar[Currency]
-    GBP: ClassVar[Currency]
-    NZD: ClassVar[Currency]
-    NOK: ClassVar[Currency]
-    SEK: ClassVar[Currency]
-    PEN: ClassVar[Currency]
-    CNH: ClassVar[Currency]
-    INR: ClassVar[Currency]
-    TWD: ClassVar[Currency]
-    HKD: ClassVar[Currency]
-    KRW: ClassVar[Currency]
-    DKK: ClassVar[Currency]
-    IDR: ClassVar[Currency]
+    USD: Final[Currency]
+    EUR: Final[Currency]
+    JPY: Final[Currency]
+    ZAR: Final[Currency]
+    CLP: Final[Currency]
+    CLF: Final[Currency]
+    CHF: Final[Currency]
+    BRL: Final[Currency]
+    COP: Final[Currency]
+    MXN: Final[Currency]
+    AUD: Final[Currency]
+    CAD: Final[Currency]
+    CNY: Final[Currency]
+    GBP: Final[Currency]
+    NZD: Final[Currency]
+    NOK: Final[Currency]
+    SEK: Final[Currency]
+    PEN: Final[Currency]
+    CNH: Final[Currency]
+    INR: Final[Currency]
+    TWD: Final[Currency]
+    HKD: Final[Currency]
+    KRW: Final[Currency]
+    DKK: Final[Currency]
+    IDR: Final[Currency]
 
 @final
 class MarketIndex:
@@ -422,63 +422,63 @@ Plain rate indices are available as class constants
             Matching fieldless index.
         """
         ...
-    FedFunds: ClassVar[MarketIndex]
-    CDI: ClassVar[MarketIndex]
-    DESTR: ClassVar[MarketIndex]
-    KOFR: ClassVar[MarketIndex]
-    ZARONIA: ClassVar[MarketIndex]
-    BBSW1m: ClassVar[MarketIndex]
-    BBSW2m: ClassVar[MarketIndex]
-    BBSW3m: ClassVar[MarketIndex]
-    BBSW4m: ClassVar[MarketIndex]
-    BBSW6m: ClassVar[MarketIndex]
-    BKBM1m: ClassVar[MarketIndex]
-    BKBM2m: ClassVar[MarketIndex]
-    BKBM3m: ClassVar[MarketIndex]
-    BKBM4m: ClassVar[MarketIndex]
-    BKBM6m: ClassVar[MarketIndex]
-    NIBOR1m: ClassVar[MarketIndex]
-    NIBOR3m: ClassVar[MarketIndex]
-    NIBOR6m: ClassVar[MarketIndex]
-    NIBOR12m: ClassVar[MarketIndex]
-    SHIBOR1d: ClassVar[MarketIndex]
-    SHIBOR1w: ClassVar[MarketIndex]
-    SHIBOR2w: ClassVar[MarketIndex]
-    SHIBOR1m: ClassVar[MarketIndex]
-    SHIBOR3m: ClassVar[MarketIndex]
-    SHIBOR6m: ClassVar[MarketIndex]
-    SHIBOR12m: ClassVar[MarketIndex]
-    EURIBOR1w: ClassVar[MarketIndex]
-    SOFR: ClassVar[MarketIndex]
-    SOFRCompounded: ClassVar[MarketIndex]
-    TermSOFR1m: ClassVar[MarketIndex]
-    TermSOFR3m: ClassVar[MarketIndex]
-    TermSOFR6m: ClassVar[MarketIndex]
-    TermSOFR12m: ClassVar[MarketIndex]
-    ESTR: ClassVar[MarketIndex]
-    EURIBOR1m: ClassVar[MarketIndex]
-    EURIBOR3m: ClassVar[MarketIndex]
-    EURIBOR6m: ClassVar[MarketIndex]
-    EURIBOR12m: ClassVar[MarketIndex]
-    SONIA: ClassVar[MarketIndex]
-    TONAR: ClassVar[MarketIndex]
-    TIBOR3m: ClassVar[MarketIndex]
-    TIBOR6m: ClassVar[MarketIndex]
-    SARON: ClassVar[MarketIndex]
-    CORRA: ClassVar[MarketIndex]
-    AONIA: ClassVar[MarketIndex]
-    NZONIA: ClassVar[MarketIndex]
-    NOWA: ClassVar[MarketIndex]
-    SWESTR: ClassVar[MarketIndex]
-    ICP: ClassVar[MarketIndex]
-    VIX: ClassVar[MarketIndex]
+    FedFunds: Final[MarketIndex]
+    CDI: Final[MarketIndex]
+    DESTR: Final[MarketIndex]
+    KOFR: Final[MarketIndex]
+    ZARONIA: Final[MarketIndex]
+    BBSW1m: Final[MarketIndex]
+    BBSW2m: Final[MarketIndex]
+    BBSW3m: Final[MarketIndex]
+    BBSW4m: Final[MarketIndex]
+    BBSW6m: Final[MarketIndex]
+    BKBM1m: Final[MarketIndex]
+    BKBM2m: Final[MarketIndex]
+    BKBM3m: Final[MarketIndex]
+    BKBM4m: Final[MarketIndex]
+    BKBM6m: Final[MarketIndex]
+    NIBOR1m: Final[MarketIndex]
+    NIBOR3m: Final[MarketIndex]
+    NIBOR6m: Final[MarketIndex]
+    NIBOR12m: Final[MarketIndex]
+    SHIBOR1d: Final[MarketIndex]
+    SHIBOR1w: Final[MarketIndex]
+    SHIBOR2w: Final[MarketIndex]
+    SHIBOR1m: Final[MarketIndex]
+    SHIBOR3m: Final[MarketIndex]
+    SHIBOR6m: Final[MarketIndex]
+    SHIBOR12m: Final[MarketIndex]
+    EURIBOR1w: Final[MarketIndex]
+    SOFR: Final[MarketIndex]
+    SOFRCompounded: Final[MarketIndex]
+    TermSOFR1m: Final[MarketIndex]
+    TermSOFR3m: Final[MarketIndex]
+    TermSOFR6m: Final[MarketIndex]
+    TermSOFR12m: Final[MarketIndex]
+    ESTR: Final[MarketIndex]
+    EURIBOR1m: Final[MarketIndex]
+    EURIBOR3m: Final[MarketIndex]
+    EURIBOR6m: Final[MarketIndex]
+    EURIBOR12m: Final[MarketIndex]
+    SONIA: Final[MarketIndex]
+    TONAR: Final[MarketIndex]
+    TIBOR3m: Final[MarketIndex]
+    TIBOR6m: Final[MarketIndex]
+    SARON: Final[MarketIndex]
+    CORRA: Final[MarketIndex]
+    AONIA: Final[MarketIndex]
+    NZONIA: Final[MarketIndex]
+    NOWA: Final[MarketIndex]
+    SWESTR: Final[MarketIndex]
+    ICP: Final[MarketIndex]
+    VIX: Final[MarketIndex]
 
 @final
 class Interpolator:
     """Interpolation rule for curve pillars."""
-    Linear: ClassVar[Interpolator]
-    LogLinear: ClassVar[Interpolator]
-    CubicSpline: ClassVar[Interpolator]
+    Linear: Final[Interpolator]
+    LogLinear: Final[Interpolator]
+    CubicSpline: Final[Interpolator]
 
     @staticmethod
     def parse(s: str) -> Interpolator:
@@ -527,8 +527,8 @@ class VolatilityType:
             Convention determining how quoted volatilities are interpreted.
         """
         ...
-    Black: ClassVar[VolatilityType]
-    Normal: ClassVar[VolatilityType]
+    Black: Final[VolatilityType]
+    Normal: Final[VolatilityType]
 
 @final
 class SmileType:
@@ -555,9 +555,9 @@ class SmileType:
             Matching smile-axis convention.
         """
         ...
-    Strike: ClassVar[SmileType]
-    Delta: ClassVar[SmileType]
-    LogMoneyness: ClassVar[SmileType]
+    Strike: Final[SmileType]
+    Delta: Final[SmileType]
+    LogMoneyness: Final[SmileType]
 
 @final
 class QuoteStore:

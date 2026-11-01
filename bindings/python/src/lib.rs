@@ -82,6 +82,8 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<pricing::collateral::FixedIncomeDiscountPolicy>()?;
     m.add_class::<pricing::bond_anchor::BondPricingAnchorConfig>()?;
     m.add_class::<pricing::context::PricingContext>()?;
+    m.add_class::<pricing::riskcontext::RiskContext>()?;
+    m.add_class::<pricing::riskcontext::ZeroRateRisk>()?;
     // Python-native extension points
     m.add_class::<pricing::extension::Instrument>()?;
     m.add_class::<pricing::extension::Trade>()?;

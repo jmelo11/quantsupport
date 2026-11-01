@@ -238,7 +238,10 @@ mod array_tests {
             &aligned(&[("base", &currencies), ("quote", &other), ("rates", &rates)]).unwrap(),
         )
         .unwrap();
-        assert_eq!((fx[0].base, fx[1].quote), (Currency::USD, Currency::USD));
+        assert_eq!(
+            (fx[0].base(), fx[1].quote()),
+            (Currency::USD, Currency::USD)
+        );
         let curves = vec![text("SOFR"), text("ESTR")];
         let policy = pricing::fixed_income_policy(
             &aligned(&[("currencies", &currencies), ("curves", &curves)]).unwrap(),

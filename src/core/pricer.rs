@@ -31,7 +31,7 @@ pub trait Pricer: Send + Sync {
     /// ## Errors
     /// Propagates invalid-contract, missing-market-data, calibration, and
     /// numerical errors encountered by the implementation. Unsupported result
-    /// requests may be rejected or left absent; consult the concrete pricer.
+    /// measures are ignored and their result fields are left absent.
     fn evaluate(
         &self,
         trade: &Self::Item,

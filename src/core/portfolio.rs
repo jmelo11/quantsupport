@@ -124,6 +124,7 @@ pub struct PortfolioAccumulator<A = GrossCashflowAggregator> {
     unavailable: HashSet<Request>,
     evaluation_date: Option<Date>,
     value: CompensatedSum,
+    accrued_amount: CompensatedSum,
     sensitivities: BTreeMap<String, CompensatedSum>,
     cashflows: A,
 }
@@ -138,7 +139,10 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
         for request in requests {
             if matches!(
                 request,
-                Request::Value | Request::Sensitivities | Request::Cashflows
+                Request::Value
+                    | Request::Sensitivities
+                    | Request::Cashflows
+                    | Request::AccruedAmount(_, _)
             ) && !unique.contains(request)
             {
                 unique.push(*request);
@@ -149,6 +153,7 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
             unavailable: HashSet::new(),
             evaluation_date: None,
             value: CompensatedSum::default(),
+            accrued_amount: CompensatedSum::default(),
             sensitivities: BTreeMap::new(),
             cashflows: cashflow_aggregator,
         }
@@ -187,6 +192,13 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
                     };
                     self.value.add(value)?;
                 }
+                Request::AccruedAmount(_, _) => {
+                    let Some(value) = result.accrued_amount() else {
+                        self.unavailable.insert(*request);
+                        continue;
+                    };
+                    self.accrued_amount.add(value)?;
+                }
                 Request::Sensitivities => {
                     let Some(risk) = result.sensitivities() else {
                         self.unavailable.insert(*request);
@@ -222,12 +234,20 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
     /// # Errors
     /// Rejects an empty accumulator or failure of the injected cashflow strategy.
     pub fn into_evaluation_results(self, identifier: String) -> Result<EvaluationResults> {
+        Request::validate(&self.requests)?;
         let date = self
             .evaluation_date
             .ok_or_else(|| QSError::ValueNotSetErr("Portfolio evaluation date".into()))?;
         let mut result = EvaluationResults::new(date, identifier);
         if self.requests.contains(&Request::Value) && !self.unavailable.contains(&Request::Value) {
             result = result.with_price(self.value.total());
+        }
+        if self
+            .requests
+            .iter()
+            .any(|r| matches!(r, Request::AccruedAmount(_, _)) && !self.unavailable.contains(r))
+        {
+            result = result.with_accrued_amount(self.accrued_amount.total());
         }
         if self.requests.contains(&Request::Sensitivities)
             && !self.unavailable.contains(&Request::Sensitivities)
@@ -566,6 +586,42 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains("custom cashflow strategy"));
         assert!(message.contains("aggregating portfolio member 1"));
+        Ok(())
+    }
+    #[test]
+    fn portfolio_filters_unsupported_scalar_targets_before_validation() -> Result<()> {
+        let accumulator = MakePortfolioAccumulator::default()
+            .with_requests(&[Request::Value, Request::FairRate(0), Request::FairRate(1)])
+            .build()?;
+        assert_eq!(accumulator.requests(), &[Request::Value]);
+        Ok(())
+    }
+
+    #[test]
+    fn aggregates_accrued_amount_and_propagates_missing_members() -> Result<()> {
+        let start = Date::new(2026, 1, 1);
+        let end = Date::new(2026, 2, 1);
+        let requests = [Request::AccruedAmount(start, end)];
+        let mut accumulator = MakePortfolioAccumulator::default()
+            .with_requests(&requests)
+            .build()?;
+        accumulator.accumulate_trade_result(&result(0).with_accrued_amount(12.0))?;
+        accumulator.accumulate_trade_result(&result(1).with_accrued_amount(-4.0))?;
+        let result = accumulator.into_evaluation_results("INTEREST".into())?;
+        assert_eq!(result.accrued_amount(), Some(8.0));
+        assert!(result.price().is_none());
+        let mut accumulator = MakePortfolioAccumulator::default()
+            .with_requests(&requests)
+            .build()?;
+        accumulator.accumulate_trade_result(&result)?;
+        accumulator.accumulate_trade_result(&EvaluationResults::new(
+            result.evaluation_date(),
+            "MISSING".into(),
+        ))?;
+        assert!(accumulator
+            .into_evaluation_results("PARTIAL".into())?
+            .accrued_amount()
+            .is_none());
         Ok(())
     }
 }
