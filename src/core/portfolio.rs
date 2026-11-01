@@ -296,17 +296,17 @@ fn add_cashflows(
     rows: &mut BTreeMap<(Date, String), CashflowSums>,
     flows: &CashflowsTable,
 ) -> Result<()> {
-    for row in 0..flows.payment_dates().len() {
-        let currency = flows.currencies()[row];
+    for flow in flows.rows() {
+        let currency = flow.currency;
         let sums = rows
-            .entry((flows.payment_dates()[row], currency.to_string()))
+            .entry((flow.payment_date, currency.to_string()))
             .or_insert_with(|| CashflowSums {
                 currency,
                 interest: CompensatedSum::default(),
                 capital: CompensatedSum::default(),
                 other: CompensatedSum::default(),
             });
-        let sum = match &flows.cashflow_types()[row] {
+        let sum = match flow.kind {
             CashflowKind::FixedRateCoupon
             | CashflowKind::FloatingRateCoupon
             | CashflowKind::OptionEmbeddedCoupon
@@ -316,7 +316,7 @@ fn add_cashflows(
             }
             _ => &mut sums.other,
         };
-        sum.add(flows.amounts()[row])?;
+        sum.add(flow.amount)?;
     }
     Ok(())
 }

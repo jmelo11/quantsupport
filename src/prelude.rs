@@ -27,7 +27,9 @@ pub use crate::{
             volatilitycubelement::{ADVolatilityCubeElement, VolatilityCubeElement},
             volatilitysurfaceelement::{ADVolatilitySurfaceElement, VolatilitySurfaceElement},
         },
-        evaluationresults::{CashflowKind, CashflowsTable, EvaluationResults, SensitivityMap},
+        evaluationresults::{
+            CashflowKind, CashflowRow, CashflowsTable, EvaluationResults, SensitivityMap,
+        },
         instrument::{AssetClass, Instrument},
         makeinstrument::MakeInstrument,
         makeportfolioaccumulator::MakePortfolioAccumulator,

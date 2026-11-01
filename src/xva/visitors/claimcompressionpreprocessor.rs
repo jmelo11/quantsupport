@@ -36,19 +36,12 @@ impl ClaimCompressionPreprocessor {
         type Key = (Date, Currency, Option<Currency>);
 
         // Partition into deterministic (compressible) and others.
-        let mut deterministic: Vec<ContingentClaim> = Vec::new();
-        let mut others: Vec<ContingentClaim> = Vec::new();
-
-        for claim in claims.drain(..) {
-            if matches!(
+        let (deterministic, others): (Vec<_>, Vec<_>) = claims.drain(..).partition(|claim| {
+            matches!(
                 claim.evaluation_strategy(),
                 ClaimEvaluationStrategy::Deterministic { .. }
-            ) {
-                deterministic.push(claim);
-            } else {
-                others.push(claim);
-            }
-        }
+            )
+        });
 
         // Group deterministic claims by (payment_date, currency, foreign_currency).
         let mut groups: HashMap<Key, Vec<ContingentClaim>> = HashMap::new();

@@ -536,16 +536,15 @@ impl PathGenerator<f64> for LgmRateModel<'_, f64> {
         }
         let mut z = 0.0;
         let mut prev_t = 0.0;
-        for i in 0..times.len() {
-            let t = times[i];
+        for ((&t, &draw), output) in times.iter().zip(draws).zip(scenario) {
             let dt = t - prev_t;
             if dt <= 0.0 {
                 return Err(QSError::InvalidValueErr(
                     "LgmRateModel::generate: times must be positive and strictly increasing".into(),
                 ));
             }
-            z = self.evolve_domestic_factor_euler(prev_t, z, dt, draws[i] * dt.sqrt());
-            scenario[i] = self.short_rate(t, z)?;
+            z = self.evolve_domestic_factor_euler(prev_t, z, dt, draw * dt.sqrt());
+            *output = self.short_rate(t, z)?;
             prev_t = t;
         }
         Ok(())

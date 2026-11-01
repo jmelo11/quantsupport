@@ -622,14 +622,10 @@ impl MakeSchedule {
             }
         }
 
+        let last = self.dates.len() - 1;
         if self.rule == DateGenerationRule::ThirdWednesday {
-            for i in 1..self.dates.len() - 1 {
-                self.dates[i] = Date::nth_weekday(
-                    3,
-                    Weekday::Wednesday,
-                    self.dates[i].month(),
-                    self.dates[i].year(),
-                );
+            for date in self.dates.iter_mut().take(last).skip(1) {
+                *date = Date::nth_weekday(3, Weekday::Wednesday, date.month(), date.year());
             }
         } else if self.rule == DateGenerationRule::ThirdWednesdayInclusive {
             for date in &mut self.dates {
@@ -655,17 +651,17 @@ impl MakeSchedule {
 
         if self.end_of_month && self.calendar.is_end_of_month(&seed) {
             if self.convention == BusinessDayConvention::Unadjusted {
-                for i in 1..self.dates.len() - 1 {
-                    self.dates[i] = Date::end_of_month(self.dates[i]);
+                for date in self.dates.iter_mut().take(last).skip(1) {
+                    *date = Date::end_of_month(*date);
                 }
             } else {
-                for i in 1..self.dates.len() - 1 {
-                    self.dates[i] = self.calendar.end_of_month(self.dates[i]);
+                for date in self.dates.iter_mut().take(last).skip(1) {
+                    *date = self.calendar.end_of_month(*date);
                 }
             }
         } else {
-            for i in 1..self.dates.len() - 1 {
-                self.dates[i] = self.calendar.adjust(self.dates[i], Some(self.convention));
+            for date in self.dates.iter_mut().take(last).skip(1) {
+                *date = self.calendar.adjust(*date, Some(self.convention));
             }
         }
 

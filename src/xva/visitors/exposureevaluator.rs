@@ -581,9 +581,9 @@ fn reduce_chunk_results(
     let mut merged_cubes: Vec<Vec<Vec<f64>>> = ns_ids.iter().map(|_| Vec::new()).collect();
 
     for chunk in chunk_results {
-        for (ns, accums) in chunk.xva_accums.iter().enumerate() {
-            for (a, &v) in accums.iter().enumerate() {
-                total_xva[ns][a] += v;
+        for (totals, accums) in total_xva.iter_mut().zip(&chunk.xva_accums) {
+            for (total, &value) in totals.iter_mut().zip(accums) {
+                *total += value;
             }
         }
         for (label, adj) in &chunk.sensitivities {

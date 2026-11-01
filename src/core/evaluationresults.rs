@@ -86,6 +86,34 @@ impl std::fmt::Display for CashflowKind {
     }
 }
 
+/// One signed, undiscounted cashflow borrowed from a [`CashflowsTable`].
+///
+/// Scalar fields are copied; the kind and contractual coupon terms borrow the
+/// table. Iterating rows does not allocate or clone coupon metadata.
+#[derive(Clone, Copy, Debug)]
+pub struct CashflowRow<'a> {
+    /// Contractual coupon terms, when available.
+    pub coupon_details: Option<&'a CouponDetails>,
+    /// Actual payment date.
+    pub payment_date: Date,
+    /// Economic cashflow kind.
+    pub kind: &'a CashflowKind,
+    /// Signed, undiscounted payment in the cashflow's currency.
+    pub amount: f64,
+    /// Resolved floating coupon rate, in decimal units, when applicable.
+    pub fixing: Option<f64>,
+    /// Coupon year fraction, or zero for non-accruing cashflows.
+    pub accrual_period: f64,
+    /// Original payment currency.
+    pub currency: Currency,
+    /// Embedded floorlet strike, when present.
+    pub floorlet_strike: Option<f64>,
+    /// Embedded caplet strike, when present.
+    pub caplet_strike: Option<f64>,
+    /// Zero-based leg index within the reporting instrument.
+    pub leg_index: usize,
+}
+
 /// Column-oriented, undiscounted cashflow report.
 ///
 /// Each position across the columns describes one cashflow in its own currency;
@@ -125,6 +153,25 @@ impl CashflowsTable {
             caplet_strike: Vec::new(),
             leg_indices: Vec::new(),
         }
+    }
+
+    /// Iterates over borrowed cashflows in the report's original row order.
+    ///
+    /// The table keeps its column-oriented storage; each row provides named
+    /// fields for values at the same position across all columns.
+    pub fn rows(&self) -> impl ExactSizeIterator<Item = CashflowRow<'_>> + DoubleEndedIterator {
+        (0..self.payment_dates.len()).map(|row| CashflowRow {
+            coupon_details: self.coupon_details[row].as_ref(),
+            payment_date: self.payment_dates[row],
+            kind: &self.cashflow_types[row],
+            amount: self.amount[row],
+            fixing: self.fixing[row],
+            accrual_period: self.accrual_periods[row],
+            currency: self.currencies[row],
+            floorlet_strike: self.floorlet_strike[row],
+            caplet_strike: self.caplet_strike[row],
+            leg_index: self.leg_indices[row],
+        })
     }
 
     /// Returns the payment dates of the cashflows.
@@ -187,9 +234,9 @@ impl CashflowsTable {
             return Ok(Vec::new());
         }
         let mut currency = None;
-        for (row, kind) in self.cashflow_types.iter().enumerate() {
+        for flow in self.rows() {
             if !matches!(
-                kind,
+                flow.kind,
                 CashflowKind::FixedRateCoupon
                     | CashflowKind::FloatingRateCoupon
                     | CashflowKind::OptionEmbeddedCoupon
@@ -197,7 +244,7 @@ impl CashflowsTable {
             ) {
                 continue;
             }
-            let terms = self.coupon_details[row].as_ref().ok_or_else(|| {
+            let terms = flow.coupon_details.ok_or_else(|| {
                 QSError::ValueNotSetErr("Accrual requires contractual coupon terms".into())
             })?;
             let mut active = windows
@@ -210,13 +257,13 @@ impl CashflowsTable {
             if active.peek().is_none() {
                 continue;
             }
-            if currency.is_some_and(|value| value != self.currencies[row]) {
+            if currency.is_some_and(|value| value != flow.currency) {
                 return Err(QSError::InvalidValueErr(
                     "Cashflow accrual requires a single coupon currency".into(),
                 ));
             }
-            currency = Some(self.currencies[row]);
-            let coupon = terms.to_coupon(self.payment_dates[row], self.fixing[row])?;
+            currency = Some(flow.currency);
+            let coupon = terms.to_coupon(flow.payment_date, flow.fixing)?;
             for (index, (start, end)) in active {
                 let amount = match &coupon {
                     CashflowType::FixedRateCoupon(c) => c.accrued_amount(*start, *end)?,
@@ -262,16 +309,17 @@ impl CashflowsTable {
     pub fn remaining_redemptions(&self, as_of: Date) -> Result<f64> {
         let mut total = CompensatedSum::default();
         let mut currency = None;
-        for (row, kind) in self.cashflow_types.iter().enumerate() {
-            if *kind == CashflowKind::Redemption && self.payment_dates[row] > as_of {
-                if currency.is_some_and(|value| value != self.currencies[row]) {
-                    return Err(QSError::InvalidValueErr(
-                        "Remaining redemptions require a single currency".into(),
-                    ));
-                }
-                currency = Some(self.currencies[row]);
-                total.add(self.amount[row])?;
+        for flow in self
+            .rows()
+            .filter(|flow| *flow.kind == CashflowKind::Redemption && flow.payment_date > as_of)
+        {
+            if currency.is_some_and(|value| value != flow.currency) {
+                return Err(QSError::InvalidValueErr(
+                    "Remaining redemptions require a single currency".into(),
+                ));
             }
+            currency = Some(flow.currency);
+            total.add(flow.amount)?;
         }
         Ok(total.total())
     }
@@ -700,6 +748,41 @@ mod accrual_tests {
             0,
         );
         flows
+    }
+
+    #[test]
+    fn row_iteration_keeps_report_order_and_borrows_coupon_terms() -> Result<()> {
+        let flows = report();
+        let mut rows = flows.rows();
+        assert_eq!(rows.len(), 3);
+
+        // Reports can be nonchronological; traversing from either end must
+        // retain their original order and each cashflow's own metadata.
+        let first = rows
+            .next()
+            .ok_or_else(|| QSError::NotFoundErr("First cashflow".into()))?;
+        let last = rows
+            .next_back()
+            .ok_or_else(|| QSError::NotFoundErr("Last cashflow".into()))?;
+        assert_eq!(first.payment_date, Date::new(2026, 6, 5));
+        assert_eq!(first.amount, -20.0);
+        assert_eq!(first.currency, Currency::EUR);
+        let terms = first
+            .coupon_details
+            .ok_or_else(|| QSError::ValueNotSetErr("Coupon terms".into()))?;
+        assert!(flows.coupon_details[0]
+            .as_ref()
+            .is_some_and(|stored| std::ptr::eq(terms, stored)));
+        assert_eq!(last.payment_date, Date::new(2026, 4, 1));
+        assert_eq!(*last.kind, CashflowKind::Redemption);
+        assert_eq!(last.currency, Currency::USD);
+        assert!(last.coupon_details.is_none());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows.next().and_then(|flow| flow.fixing), Some(0.03));
+        assert!(rows.next().is_none());
+        assert!(rows.next_back().is_none());
+        assert_eq!(CashflowsTable::new().rows().len(), 0);
+        Ok(())
     }
 
     #[test]

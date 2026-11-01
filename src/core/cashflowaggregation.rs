@@ -406,25 +406,25 @@ struct CashflowCompressor {
 impl CashflowCompressor {
     /// Merges numeric cashflows into compatible payment and coupon groups.
     fn accumulate_cashflows(&mut self, flows: &CashflowsTable, grouping: Grouping) -> Result<()> {
-        for row in 0..flows.payment_dates().len() {
+        for flow in flows.rows() {
             self.serial += 1;
-            let mut kind = flows.cashflow_types()[row].clone();
+            let mut kind = flow.kind.clone();
             if matches!(grouping, Grouping::Net)
                 && matches!(kind, CashflowKind::Redemption | CashflowKind::Disbursement)
             {
                 kind = CashflowKind::Capital;
             }
-            let details = flows.coupon_details()[row].clone();
+            let details = flow.coupon_details;
             let equivalent_rate = matches!(kind, CashflowKind::FixedRateCoupon)
-                && details.as_ref().is_some_and(|terms| terms.rate.is_some());
+                && details.is_some_and(|terms| terms.rate.is_some());
             let equivalent_spread = matches!(kind, CashflowKind::FloatingRateCoupon)
-                && details.as_ref().is_some_and(|terms| {
+                && details.is_some_and(|terms| {
                     !terms
                         .overnight_conventions
                         .as_ref()
                         .is_some_and(OvernightCouponConventions::compound_spread_daily)
                 });
-            let coupon = details.as_ref().map(|terms| CouponIdentity {
+            let coupon = details.map(|terms| CouponIdentity {
                 start: terms.accrual_start,
                 end: terms.accrual_end,
                 index: terms.market_index.clone(),
@@ -453,24 +453,23 @@ impl CashflowCompressor {
                     | CashflowKind::Interest
             );
             let identity = CashflowIdentity {
-                date: flows.payment_dates()[row],
-                currency: flows.currencies()[row],
+                date: flow.payment_date,
+                currency: flow.currency,
                 kind,
-                leg: flows.leg_indices()[row],
+                leg: flow.leg_index,
                 direction: match grouping {
                     Grouping::Gross => Some(
                         details
-                            .as_ref()
-                            .map_or_else(|| flows.amounts()[row], |terms| terms.notional)
+                            .map_or(flow.amount, |terms| terms.notional)
                             .is_sign_negative(),
                     ),
                     Grouping::Net => None,
                 },
                 coupon,
-                fixing: flows.fixing()[row].map(f64::to_bits),
-                accrual: flows.accrual_periods()[row].to_bits(),
-                floor: flows.floorlet_strikes()[row].map(f64::to_bits),
-                cap: flows.caplet_strikes()[row].map(f64::to_bits),
+                fixing: flow.fixing.map(f64::to_bits),
+                accrual: flow.accrual_period.to_bits(),
+                floor: flow.floorlet_strike.map(f64::to_bits),
+                cap: flow.caplet_strike.map(f64::to_bits),
                 unique: (details.is_none() && !known_without_terms).then_some(self.serial),
             };
             let index = if let Some(index) = self.indices.get(&identity) {
@@ -479,11 +478,11 @@ impl CashflowCompressor {
                 let index = self.groups.len();
                 self.groups.push(CashflowGroup {
                     identity: identity.clone(),
-                    fixing: flows.fixing()[row],
-                    accrual: flows.accrual_periods()[row],
-                    floor: flows.floorlet_strikes()[row],
-                    cap: flows.caplet_strikes()[row],
-                    details: details.clone(),
+                    fixing: flow.fixing,
+                    accrual: flow.accrual_period,
+                    floor: flow.floorlet_strike,
+                    cap: flow.caplet_strike,
+                    details: details.cloned(),
                     amount: CompensatedSum::default(),
                     notional: CompensatedSum::default(),
                     equivalent_rate,
@@ -493,7 +492,7 @@ impl CashflowCompressor {
                 index
             };
             let group = &mut self.groups[index];
-            group.amount.add(flows.amounts()[row])?;
+            group.amount.add(flow.amount)?;
             if let Some(terms) = details {
                 group.notional.add(terms.notional)?;
             }

@@ -11,7 +11,7 @@ use crate::{
     math::{
         interpolation::interpolator::Interpolator,
         solvers::{
-            solvertraits::{ContFunc, JacobianFunc, VectorFunc},
+            solvertraits::{ContFunc, JacobianFunc, OptimizerSolution, VectorFunc},
             vectornewton::VectorNewton,
         },
     },
@@ -36,7 +36,7 @@ use crate::{
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
 };
-use nalgebra::{DMatrix, DVector};
+use nalgebra::{linalg::LU, DMatrix, DVector, Dyn};
 use std::{borrow::Cow, cell::RefCell, collections::HashMap, rc::Rc};
 
 /// Multi-curve bootstrapping engine.
@@ -299,9 +299,8 @@ impl<'a> MultiCurveBootstrapper<'a> {
         ))
     }
 
-    /// Bootstraps a single curve by solving for discount factors that
-    /// reprice all its instruments to zero residual.
-    #[allow(clippy::too_many_lines)]
+    /// Bootstraps a curve, computes its own and parent-curve sensitivities,
+    /// and links the solved discount factors to their market quotes in AD.
     fn bootstrap_next_curve(
         &self,
         target_index: &MarketIndex,
@@ -311,22 +310,14 @@ impl<'a> MultiCurveBootstrapper<'a> {
         let reference_date = curve_config.reference_date()?;
         let dc = curve_config.day_counter();
         let interp = curve_config.interpolator();
-
-        // Build pillar time grid: [0, t_1, t_2, …]
         let instruments = curve_config.instruments()?;
-        let mut times = vec![0.0_f64];
-        times.extend(
-            instruments
-                .iter()
-                .map(|instr| dc.year_fraction(reference_date, instr.pillar_date())),
-        );
-
-        let n = instruments.len();
-
-        // Initial guess: slight discount (safe for positive-rate environments).
-        let x0 = vec![0.99; n];
-
-        // Build the problem.
+        let times: Vec<f64> = std::iter::once(0.0)
+            .chain(
+                instruments
+                    .iter()
+                    .map(|instrument| dc.year_fraction(reference_date, instrument.pillar_date())),
+            )
+            .collect();
         let problem = BootstrapObjectiveFunc {
             target_index: target_index.clone(),
             reference_date,
@@ -340,70 +331,80 @@ impl<'a> MultiCurveBootstrapper<'a> {
             fixing_store: self.fixing_store.as_deref(),
         };
 
-        // Solve.
-        let solver = VectorNewton::new(1e-12, 200);
-        let solution = solver.solve(&problem, &x0)?;
-
-        // -----------------------------------------------------------------
-        // IFT post-processing
-        //
-        // Given the implicit relation  F(x, q, z) = 0  where x are the
-        // discount factors, q the market quotes, and z the parent curve
-        // discount factors, the implicit function theorem gives:
-        //
-        //   dx/dq = −J⁻¹ G           (own-curve sensitivity)
-        //   dx/dz = −J⁻¹ (∂F/∂z)    (cross-curve sensitivity)
-        //
-        // where J = ∂F/∂x is the Jacobian at the solution and
-        // G = ∂F/∂q is diagonal (quote q_i only enters residual F_i).
-        //
-        // Downstream pricers that call `backward()` on the AD tape will
-        // propagate through DF → own quotes AND DF → parent DFs → parent
-        // quotes correctly.
-        // -----------------------------------------------------------------
+        let solution = Self::solve_discount_factors(&problem)?;
         let converged_x = &solution.x;
-
-        let mut solved_dfs = vec![1.0_f64];
-        solved_dfs.extend(converged_x.iter().copied());
-
-        // Retrieve quote values and the Jacobian J = ∂F/∂x.
-        let quote_vals = curve_config.quote_values();
-        let j_raw = solution
+        let solved_dfs = std::iter::once(1.0)
+            .chain(converged_x.iter().copied())
+            .collect();
+        let jacobian = solution
             .jacobian
             .ok_or_else(|| QSError::SolverErr("Newton solver did not return a Jacobian".into()))?;
+        let quote_sensitivities = Self::compute_quote_sensitivities(&problem, converged_x)?;
+        let n = converged_x.len();
+        let jacobian_data: Vec<f64> = jacobian.iter().flatten().copied().collect();
+        let lu = DMatrix::from_row_slice(n, n, &jacobian_data).lu();
 
-        // Compute diagonal of G = ∂F/∂q analytically.
-        let g_diag = Self::compute_quote_sensitivities(&problem, converged_x)?;
+        let own_sensitivities = Self::compute_own_curve_sensitivities(&lu, &quote_sensitivities);
+        let cross_deps = Self::compute_cross_curve_dependencies(&problem, converged_x, &lu)?;
+        let sensitivities =
+            Self::compose_curve_sensitivities(curve_config, own_sensitivities, &cross_deps);
+        let ad_dfs = Self::build_ad_discount_factors(converged_x, &sensitivities);
 
-        // Build nalgebra objects and solve  J · S_col = −g_col  for each
-        // quote j (only one non-zero entry per column).
-        let j_data: Vec<f64> = j_raw.iter().flat_map(|row| row.iter().copied()).collect();
-        let j_mat = DMatrix::from_row_slice(n, n, &j_data);
-        let lu = j_mat.lu();
+        Ok(BootstrappedCurve::new(
+            target_index.clone(),
+            reference_date,
+            times,
+            solved_dfs,
+            dc,
+            interp,
+        )
+        .with_pillar_values(sensitivities.quotes)
+        .with_pillar_labels(sensitivities.labels)
+        .with_output_discount_factors(ad_dfs)
+        .with_ift_sensitivities(sensitivities.matrix))
+    }
 
-        // sensitivity[i][j] = ∂DF_{i+1}/∂q_j
-        let mut sensitivity = vec![vec![0.0_f64; n]; n];
-        for j in 0..n {
+    /// Solves instrument residuals from a slightly discounted initial guess.
+    fn solve_discount_factors(
+        problem: &BootstrapObjectiveFunc,
+    ) -> Result<OptimizerSolution<Vec<f64>>> {
+        let initial_guess = vec![0.99; problem.instruments.len()];
+        VectorNewton::new(1e-12, 200).solve(problem, &initial_guess)
+    }
+
+    /// Applies the implicit function theorem: dx/dq = -J⁻¹ G.
+    ///
+    /// G is diagonal because each quote enters only its own instrument residual.
+    fn compute_own_curve_sensitivities(
+        lu: &FactorizedJacobian,
+        quote_sensitivities: &[f64],
+    ) -> Vec<Vec<f64>> {
+        let n = quote_sensitivities.len();
+        let mut sensitivities = vec![vec![0.0; n]; n];
+        for (quote_index, &quote_sensitivity) in quote_sensitivities.iter().enumerate() {
             let mut rhs = DVector::zeros(n);
-            rhs[j] = g_diag[j];
-            if let Some(col) = lu.solve(&rhs) {
-                for i in 0..n {
-                    sensitivity[i][j] = -col[i];
+            rhs[quote_index] = quote_sensitivity;
+            if let Some(column) = lu.solve(&rhs) {
+                for (row, &value) in sensitivities.iter_mut().zip(column.iter()) {
+                    row[quote_index] = -value;
                 }
             }
         }
+        sensitivities
+    }
 
-        // -----------------------------------------------------------------
-        // Cross-curve IFT: compute ∂DF_self/∂DF_parent for each parent.
-        //
-        // For each parent curve present in `other_curves`, compute the
-        // matrix ∂F/∂z (how residuals depend on parent DFs) via central
-        // finite differences, then solve  J · cross_col = −(∂F/∂z)_col.
-        // -----------------------------------------------------------------
+    /// Collects nonzero dependencies on parent curves in their source coordinates.
+    ///
+    /// Explicit parents use their source pillars directly; calibrated parents
+    /// link their discount factors back to quotes through their own IFT matrix.
+    fn compute_cross_curve_dependencies(
+        problem: &BootstrapObjectiveFunc,
+        converged_x: &[f64],
+        lu: &FactorizedJacobian,
+    ) -> Result<Vec<CrossCurveDep>> {
         let _base_residual = problem.call(converged_x)?;
-        let mut cross_deps: Vec<CrossCurveDep> = Vec::new();
-
-        for (parent_idx, parent_curve) in other_curves {
+        let mut cross_deps = Vec::new();
+        for (parent_index, parent_curve) in problem.other_curves {
             let explicit = parent_curve.has_explicit_source();
             let parent_inputs: Vec<f64> = if explicit {
                 parent_curve
@@ -415,8 +416,6 @@ impl<'a> MultiCurveBootstrapper<'a> {
                 parent_curve.discount_factors()[1..].to_vec()
             };
             let parent_n = parent_inputs.len();
-            // Explicit curves are differentiated directly in their source-pillar
-            // coordinates. Calibrated parents retain the existing DF-to-quote IFT.
             let parent_ift = if explicit {
                 (0..parent_n)
                     .map(|row| {
@@ -431,148 +430,165 @@ impl<'a> MultiCurveBootstrapper<'a> {
                     None => continue,
                 }
             };
-            let parent_labels: Vec<String> = parent_curve.pillar_labels().map_or_else(
+            let parent_labels = parent_curve.pillar_labels().map_or_else(
                 || {
                     parent_curve
                         .pillar_values()
-                        .map(|pv| pv.iter().map(|_| String::new()).collect())
+                        .map(|values| values.iter().map(|_| String::new()).collect())
                         .unwrap_or_default()
                 },
                 <[String]>::to_vec,
             );
-
-            // Bump each parent DF or explicit source pillar.
-            let mut df_dz = vec![vec![0.0_f64; parent_n]; n];
-
-            for m in 0..parent_n {
-                let coordinate = if explicit { m } else { m + 1 };
-                let bump = (parent_inputs[m].abs() * 1e-6).max(1e-10);
-
-                let (up_res, up_bump) = bumped_residual(
-                    &problem,
-                    parent_idx,
-                    parent_curve,
-                    coordinate,
-                    bump,
-                    converged_x,
-                )?;
-                let (dn_res, dn_bump) = bumped_residual(
-                    &problem,
-                    parent_idx,
-                    parent_curve,
-                    coordinate,
-                    -bump,
-                    converged_x,
-                )?;
-
-                let denom = up_bump - dn_bump;
-                for row in 0..n {
-                    df_dz[row][m] = (up_res[row] - dn_res[row]) / denom;
-                }
-            }
-
-            // Solve  J · cross_S_col = −(∂F/∂z)_col  for each parent DF
-            // cross_df_sens[i][m] = ∂DF_self(i+1)/∂DF_parent(m+1)
-            let mut cross_df_sens = vec![vec![0.0_f64; parent_n]; n];
-            let mut has_nonzero = false;
-            for m in 0..parent_n {
-                let mut rhs = DVector::zeros(n);
-                for row in 0..n {
-                    rhs[row] = df_dz[row][m];
-                }
-                if let Some(col) = lu.solve(&rhs) {
-                    for i in 0..n {
-                        let val = -col[i];
-                        if val.abs() > 1e-16 {
-                            cross_df_sens[i][m] = val;
-                            has_nonzero = true;
-                        }
-                    }
-                }
-            }
-
-            if has_nonzero {
-                // Retrieve parent quote values
-                let parent_quote_vals: Vec<f64> = parent_curve
+            if let Some(cross_df_sens) = Self::compute_parent_sensitivities(
+                problem,
+                converged_x,
+                lu,
+                parent_index,
+                parent_curve,
+                &parent_inputs,
+            )? {
+                let parent_quote_values = parent_curve
                     .pillar_values()
-                    .map(|pv| pv.iter().map(Scalar::value).collect())
+                    .map(|values| values.iter().map(Scalar::value).collect())
                     .unwrap_or_default();
-
                 cross_deps.push(CrossCurveDep {
                     cross_df_sens,
                     parent_ift_sens: parent_ift,
-                    parent_quote_values: parent_quote_vals,
+                    parent_quote_values,
                     parent_pillar_labels: parent_labels,
                 });
             }
         }
+        Ok(cross_deps)
+    }
 
-        // Build DualFwd discount factors whose derivatives flow to the
-        // quote DualFwds via the computed sensitivities.
-        let quote_ad: Vec<DualFwd> = quote_vals.iter().map(|&v| DualFwd::new(v)).collect();
+    /// Computes dx/dz = -J⁻¹ (∂F/∂z) for one parent's source pillars.
+    ///
+    /// Residual derivatives use central differences with the actual applied
+    /// bumps, including the positive-DF clamp on calibrated parent curves.
+    fn compute_parent_sensitivities(
+        problem: &BootstrapObjectiveFunc,
+        converged_x: &[f64],
+        lu: &FactorizedJacobian,
+        parent_index: &MarketIndex,
+        parent_curve: &BootstrappedCurve,
+        parent_inputs: &[f64],
+    ) -> Result<Option<Vec<Vec<f64>>>> {
+        let n = converged_x.len();
+        let parent_n = parent_inputs.len();
+        let explicit = parent_curve.has_explicit_source();
+        let mut residual_sensitivities = vec![vec![0.0; parent_n]; n];
+        for (pillar_index, &input) in parent_inputs.iter().enumerate() {
+            let coordinate = if explicit {
+                pillar_index
+            } else {
+                pillar_index + 1
+            };
+            let bump = (input.abs() * 1e-6).max(1e-10);
+            let (up_res, up_bump) = bumped_residual(
+                problem,
+                parent_index,
+                parent_curve,
+                coordinate,
+                bump,
+                converged_x,
+            )?;
+            let (dn_res, dn_bump) = bumped_residual(
+                problem,
+                parent_index,
+                parent_curve,
+                coordinate,
+                -bump,
+                converged_x,
+            )?;
+            let denominator = up_bump - dn_bump;
+            for ((row, up), down) in residual_sensitivities.iter_mut().zip(up_res).zip(dn_res) {
+                row[pillar_index] = (up - down) / denominator;
+            }
+        }
 
-        // Pre-compose cross-curve dependencies into the IFT matrix.
-        // For each parent, compose:  combined[i][k] = Σ_m cross_df_sens[i][m] * parent_ift_sens[m][k]
-        // Extend pillar_values and pillar_labels with parent quotes.
-        let mut full_sensitivity = sensitivity.clone();
-        let mut full_quotes = quote_ad;
-        let mut full_labels = curve_config.pillar_labels();
+        let mut cross_df_sens = vec![vec![0.0; parent_n]; n];
+        let mut has_nonzero = false;
+        for pillar_index in 0..parent_n {
+            let rhs = DVector::from_iterator(
+                n,
+                residual_sensitivities.iter().map(|row| row[pillar_index]),
+            );
+            if let Some(column) = lu.solve(&rhs) {
+                for (row, &value) in cross_df_sens.iter_mut().zip(column.iter()) {
+                    let sensitivity = -value;
+                    if sensitivity.abs() > 1e-16 {
+                        row[pillar_index] = sensitivity;
+                        has_nonzero = true;
+                    }
+                }
+            }
+        }
+        Ok(has_nonzero.then_some(cross_df_sens))
+    }
 
-        for dep in &cross_deps {
+    /// Composes parent-DF sensitivities with parent IFT matrices, then appends
+    /// parent quotes and labels in the same order as the added matrix columns.
+    fn compose_curve_sensitivities(
+        curve_config: &CurveConfiguration,
+        own_sensitivities: Vec<Vec<f64>>,
+        cross_deps: &[CrossCurveDep],
+    ) -> CurveSensitivities {
+        let mut sensitivities = CurveSensitivities {
+            matrix: own_sensitivities,
+            quotes: curve_config
+                .quote_values()
+                .into_iter()
+                .map(DualFwd::new)
+                .collect(),
+            labels: curve_config.pillar_labels(),
+        };
+        for dep in cross_deps {
             let parent_n_quotes = dep.parent_quote_values.len();
-            let m_count = dep.parent_ift_sens.len();
-            for (i, sensitivity_row) in full_sensitivity.iter_mut().enumerate().take(n) {
+            for (row, cross_row) in sensitivities.matrix.iter_mut().zip(&dep.cross_df_sens) {
                 let mut row_ext = Vec::with_capacity(parent_n_quotes);
-                for k in 0..parent_n_quotes {
+                for quote_index in 0..parent_n_quotes {
                     let mut combined = 0.0_f64;
-                    for m in 0..m_count {
-                        combined = f64::mul_add(
-                            dep.cross_df_sens[i][m],
-                            dep.parent_ift_sens[m][k],
-                            combined,
-                        );
+                    for (parent_row, &cross_sensitivity) in
+                        dep.parent_ift_sens.iter().zip(cross_row)
+                    {
+                        combined = cross_sensitivity.mul_add(parent_row[quote_index], combined);
                     }
                     row_ext.push(combined);
                 }
-                sensitivity_row.extend(row_ext);
+                row.extend(row_ext);
             }
-            for &v in &dep.parent_quote_values {
-                full_quotes.push(DualFwd::new(v));
-            }
-            full_labels.extend(dep.parent_pillar_labels.clone());
+            sensitivities
+                .quotes
+                .extend(dep.parent_quote_values.iter().copied().map(DualFwd::new));
+            sensitivities
+                .labels
+                .extend(dep.parent_pillar_labels.iter().cloned());
         }
+        sensitivities
+    }
 
-        // Build output discount factors: DF_0 = 1 (constant), then each
-        // DF_{i+1} = converged_value + Σ_j  S[i][j] * (q_j − q_j_value).
-        // Since (q_j − q_j_value) = 0 in value, the numeric result is
-        // exact; but the AD graph records ∂DF/∂q correctly.
-        let n_total = full_quotes.len();
-        let mut ad_dfs: Vec<DualFwd> = Vec::with_capacity(n + 1);
-        ad_dfs.push(DualFwd::new(1.0)); // DF(0) = 1
-        for i in 0..n {
-            let mut df_ad = DualFwd::new(converged_x[i]);
-            for j in 0..n_total {
-                let s = full_sensitivity[i][j];
-                if s.abs() > 1e-16 {
-                    let delta = full_quotes[j] - DualFwd::new(full_quotes[j].value());
-                    df_ad = (df_ad + DualFwd::new(s) * delta).into();
+    /// Records `DF = solved_value + Σ S_j (q_j - q_j_value)` on the AD tape.
+    ///
+    /// Each quote delta has zero value, preserving the solved discount factors
+    /// while propagating derivatives to both own and parent quotes.
+    fn build_ad_discount_factors(
+        converged_x: &[f64],
+        sensitivities: &CurveSensitivities,
+    ) -> Vec<DualFwd> {
+        let mut ad_dfs = Vec::with_capacity(converged_x.len() + 1);
+        ad_dfs.push(DualFwd::new(1.0));
+        for (&value, row) in converged_x.iter().zip(&sensitivities.matrix) {
+            let mut df_ad = DualFwd::new(value);
+            for (&sensitivity, &quote) in row.iter().zip(&sensitivities.quotes) {
+                if sensitivity.abs() > 1e-16 {
+                    let delta = quote - DualFwd::new(quote.value());
+                    df_ad = (df_ad + DualFwd::new(sensitivity) * delta).into();
                 }
             }
             ad_dfs.push(df_ad);
         }
-
-        Ok(BootstrappedCurve::new(
-            target_index.clone(),
-            reference_date,
-            times,
-            solved_dfs,
-            dc,
-            interp,
-        )
-        .with_pillar_values(full_quotes)
-        .with_pillar_labels(full_labels)
-        .with_output_discount_factors(ad_dfs)
-        .with_ift_sensitivities(full_sensitivity))
+        ad_dfs
     }
 
     /// Computes the diagonal of the G = ∂F/∂q matrix analytically.
@@ -599,6 +615,16 @@ impl<'a> MultiCurveBootstrapper<'a> {
             .map(|inst| evaluator.sensitivity(inst))
             .collect()
     }
+}
+
+/// LU factorization shared by own-quote and parent-curve sensitivity solves.
+type FactorizedJacobian = LU<f64, Dyn, Dyn>;
+
+/// Quote coordinates and their aligned discount-factor sensitivity matrix.
+struct CurveSensitivities {
+    matrix: Vec<Vec<f64>>,
+    quotes: Vec<DualFwd>,
+    labels: Vec<String>,
 }
 
 /// Evaluates a calibration residual after bumping one parent-curve pillar.
