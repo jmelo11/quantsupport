@@ -99,7 +99,7 @@ fn compute_moments_f64(x: &[f64], y: &[f64]) -> Vec<f64> {
     let mut dp = vec![0.0; inner]; // modified RHS
 
     // Build the system.
-    let h: Vec<f64> = (0..n - 1).map(|i| x[i + 1] - x[i]).collect();
+    let h: Vec<f64> = x.windows(2).map(|pair| pair[1] - pair[0]).collect();
     let mut d: Vec<f64> = Vec::with_capacity(inner);
     let mut rhs: Vec<f64> = Vec::with_capacity(inner);
     let mut upper: Vec<f64> = Vec::with_capacity(inner);
@@ -221,7 +221,7 @@ fn compute_moments_dual(x: &[DualFwd], y: &[DualFwd]) -> Vec<DualFwd> {
     }
 
     let inner = n - 2;
-    let h: Vec<DualFwd> = (0..n - 1).map(|i| x[i + 1].sub_val(x[i])).collect();
+    let h: Vec<DualFwd> = x.windows(2).map(|pair| pair[1].sub_val(pair[0])).collect();
 
     let mut d: Vec<DualFwd> = Vec::with_capacity(inner);
     let mut rhs: Vec<DualFwd> = Vec::with_capacity(inner);

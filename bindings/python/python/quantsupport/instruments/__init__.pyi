@@ -504,6 +504,24 @@ class Loan(Instrument):
         """Original principal advanced under the contract."""
         ...
 
+    def contractual_principal(self, as_of: _DateLike) -> float:
+        """Principal after scheduled payments on as_of settle, without pricing.
+
+        Ignores prepayment, default and position overrides. Returns zero before
+        origination and after the final principal repayment.
+
+        Parameters
+        ----------
+        as_of : Date | str | datetime.date
+            Reporting date; principal payments on this date have already settled.
+
+        Returns
+        -------
+        float
+            Remaining scheduled principal in the loan's currency.
+        """
+        ...
+
     @property
     def currency(self) -> Currency:
         """Native payment currency."""

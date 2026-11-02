@@ -416,12 +416,7 @@ impl ScriptEngine {
         // expectations. Treating the fitted coefficients as constants keeps
         // the estimator stable and avoids differentiating the regression.
         let control_expectations = self.control_expectations(model)?;
-        let use_controls = result_variable.is_some()
-            && n_paths >= 16
-            && self
-                .response_maps
-                .iter()
-                .any(|mapping| mapping.discounts.len + mapping.forwards.len > 0);
+        let use_controls = self.uses_controls(result_variable, n_paths);
 
         let mut averages: HashMap<String, f64> = HashMap::new();
         let mut cashflows: Vec<ExpectedCashflow> = Vec::new();

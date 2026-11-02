@@ -48,17 +48,11 @@ impl FixingPreprocessor {
     /// Returns `None` if no fixings are available for the index.
     fn compound_daily_fixings(&self, index: &MarketIndex, start: Date, end: Date) -> Option<f64> {
         let fixings = self.fixing_store.fixings(index).ok()?;
+        let mut observations = fixings.range(start..end).peekable();
         let mut factor = 1.0;
-        // Collect dates in [start, end) that have fixings.
-        let dates: Vec<Date> = fixings.range(start..end).map(|(d, _)| *d).collect();
-        for (i, &d) in dates.iter().enumerate() {
-            let rate = fixings[&d];
-            let next = if i + 1 < dates.len() {
-                dates[i + 1]
-            } else {
-                end
-            };
-            let dt = self.day_counter.year_fraction(d, next);
+        while let Some((&date, &rate)) = observations.next() {
+            let next_date = observations.peek().map_or(end, |(date, _)| **date);
+            let dt = self.day_counter.year_fraction(date, next_date);
             factor *= rate.mul_add(dt, 1.0);
         }
         Some(factor)
@@ -119,5 +113,48 @@ impl ClaimPreprocessor for FixingPreprocessor {
                 claim.set_partial_fixing(realized_factor, accrual_start, self.ref_date);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compounding_uses_sparse_observations_and_clips_the_final_period() {
+        let start = Date::new(2026, 1, 2);
+        let end = Date::new(2026, 1, 7);
+        let mut store = FixingStore::default();
+        for (date, rate) in [
+            (start - 1, 0.99),
+            (start, 0.04),
+            (start + 3, 0.05),
+            (end, 0.99),
+        ] {
+            store.add_fixing(&MarketIndex::SOFR, date, rate);
+        }
+        let preprocessor = FixingPreprocessor::new(end, DayCounter::Actual360, store);
+        let factor = preprocessor
+            .compound_daily_fixings(&MarketIndex::SOFR, start, end)
+            .unwrap();
+        let expected = (1.0 + 0.04 * 3.0 / 360.0) * (1.0 + 0.05 * 2.0 / 360.0);
+        assert!((factor - expected).abs() < 1e-14);
+
+        let single = preprocessor
+            .compound_daily_fixings(&MarketIndex::SOFR, start + 3, end)
+            .unwrap();
+        assert!((single - (1.0 + 0.05 * 2.0 / 360.0)).abs() < 1e-14);
+        assert_eq!(
+            preprocessor.compound_daily_fixings(&MarketIndex::SOFR, start + 1, start + 2),
+            Some(1.0)
+        );
+        assert_eq!(
+            preprocessor.compound_daily_fixings(&MarketIndex::SOFR, end, end),
+            Some(1.0)
+        );
+        assert_eq!(
+            preprocessor.compound_daily_fixings(&MarketIndex::ESTR, start, end),
+            None
+        );
     }
 }

@@ -130,7 +130,7 @@ fn resolve_leg<T: Scalar + From<DualFwd>>(
                 )?
             }
             _ => T::from(
-                ForwardRateRequest::new(index.clone(), start)
+                ForwardRateRequest::new(index, start)
                     .with_start_date(start)
                     .with_end_date(end)
                     .resolve_index_rate(

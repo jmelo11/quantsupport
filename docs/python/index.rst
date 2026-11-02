@@ -56,6 +56,19 @@ Exceptions
    ``operation``, ``path``, ``expected``, ``actual``, ``contexts``, and ``details``.
    Fields that do not apply are ``None``. ``__cause__`` preserves the original
    exception chain; ``to_dict()`` exports the same fields and nested causes.
+   Context annotations update the existing error; intermediate operations remain
+   in ``contexts`` instead of producing repeated chained exceptions.
+
+In Jupyter and IPython, failures show one continuous panel: the calling code's
+traceback leads directly into the error message, operation, input path, and
+expected and received types when available. Tracebacks include complete
+multiline calls and line markers, using the shell's selected color theme. Long
+messages wrap without truncation. Generated binding frames and cause chains are
+omitted from this display. Inspect ``error.__cause__`` or ``error.to_dict()`` for
+diagnostics, or use
+``traceback.print_exception(type(error), error, error.__traceback__)``
+to print the traceback including its causes. Standard Python tracebacks retain
+original causes and omit generated binding frames.
 
 The Python subclasses are :py:class:`~quantsupport.QuantSupportTypeError`,
 :py:class:`~quantsupport.QuantSupportValueError`,

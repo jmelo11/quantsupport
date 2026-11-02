@@ -48,6 +48,8 @@ pub enum Request {
     /// fixings and projected expected notionals come from the selected pricer.
     /// Monetary amounts use the context base currency when one is configured.
     /// Loan forecasts require start at or after the evaluation date.
+    /// The pricer can reuse an existing cashflow projection or compute accrual
+    /// independently; the completed amount is stored in the evaluation result.
     AccruedAmount(Date, Date),
 }
 

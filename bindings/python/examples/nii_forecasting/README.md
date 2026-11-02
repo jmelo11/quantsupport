@@ -1,20 +1,22 @@
 # Net interest income forecasting
 
 [Forecasting net interest income](nii_forecast.ipynb) builds a book of 300 distinct
-seasoned contracts, forecasts monthly earned interest, and sizes a deposit hedge
-from the opening portfolio's native sensitivity report. All implementation and
-technical explanations are in the notebook.
+seasoned contracts, forecasts monthly earned interest, and sizes deposit hedges
+from native sensitivity reports. It shows both an opening hedge and monthly
+PV01 rebalancing as new business arrives. All implementation and technical
+explanations are in the notebook.
 
 The forecast has three steps:
 
 1. Project native portfolio groups and identify their future principal receipts.
 2. Replace eligible repayments in date order and add explicit planned production.
-3. Request monthly native accrued interest and build the reporting tables.
+3. Request monthly accrued interest and build the reporting tables.
 
 `ForecastPosition` retains each trade and its segment. Portfolio grouping keeps
 individual coupon, repayment and prepayment terms while reducing Python calls
 and pandas tables. `position_detail=True` selects original-position attribution
-for an audit. Rust still prices the members of each portfolio group.
+for an audit. The first accrual window is requested alongside cashflows;
+subsequent windows use separate native requests on the same portfolio groups.
 
 ## Keep principal balances constant
 
@@ -64,10 +66,23 @@ currency-policy inputs to the native binding.
 
 ## Earned interest and principal
 
-`Request.AccruedAmount(start, end)` returns signed, undiscounted coupon interest.
-Rust resolves floating observations and expected prepayment-adjusted notionals,
-clips reporting windows to coupon periods, and computes differences in cumulative
-contractual accrual. Accrual uses ordinary numeric values without PV or AD.
+`Request.AccruedAmount(start, end)` returns signed, undiscounted coupon interest
+in `result.accrued_amount`. Evaluation results hold completed data; the selected
+pricer performs the calculation. Coupon periods clip the reporting window and
+principal is excluded. Accrual is the difference in cumulative contractual
+accrual at the clipped boundaries.
+
+The forecast requests its first window together with `Cashflows`. The loan
+pricer reuses the existing projection's resolved fixings and expected
+prepayment-adjusted notionals. Later windows use standalone requests, which
+perform their own numeric projections without calculating PV or recording AD.
+Amounts use the context's base currency; this example uses EUR throughout.
+Coupons paid beyond the reporting horizon still contribute interest earned
+within it.
+
+Opening inventory uses `Loan.contractual_principal(as_of)` to read the remaining
+scheduled principal without pricing each trade or creating per-trade cashflow
+tables. This assumes no historical prepayment, as in the generated book.
 
 Principal remains separate from NII:
 
@@ -91,10 +106,49 @@ amounts create `qs.Side.LongReceive` deposits and negative amounts create
 
 With `cash_neutral=True`, initial lending and borrowing amounts are equal.
 This funding choice is independent of keeping forecast principal constant.
-We keep hedge coupons fixed and let the hedge positions run off without
-replacement. Their PV01 hedge does not automatically offset floating NII changes.
+The opening comparison keeps hedge coupons fixed and lets those positions run
+off. Their PV01 hedge does not automatically offset floating NII changes.
 The notebook explains the sizing equations and shows both the residual risk
 and the hedge's income and principal-cash effects.
+
+### Rebalance as new loans originate
+
+`MonthlyHedgingEngine` advances the business book through each monthly date.
+It carries expected prepayments into loan notionals, preserves contractual
+amortization and coupon terms, and keeps past floating resets in a fixing store.
+At each rebalance it includes originated lending and funding plus surviving
+hedges, drops matured positions, and sizes additional cash-neutral deposit trades
+against their combined current PV01. Existing hedge trades retain their original
+coupons and notionals. Rounded new hedges are repriced; their native risk is added
+to the existing report, avoiding a second valuation of the large business book.
+
+Date-boundary payments and originations precede the solve. Mid-month originations
+join the next monthly solve. `monthly`, `rebalances`, `tickets`, `risk` and
+`productions` report the income, dated residual risk, executed trades and new
+business. This targets PV01; it does not target sensitivity of forecast NII.
+
+```python
+def market_at(when, fixings):
+    return MarketSetup.context(as_of=when, fixings=fixings)
+
+monthly_hedge = MonthlyHedgingEngine(hedger).forecast(
+    portfolio, AS_OF, HORIZON, market_at=market_at, fixings=context.fixings,
+    rollovers=constant_balance_rules, planned=growth,
+)
+monthly_hedge.rebalances
+```
+
+The worked monthly market path holds quoted zero rates unchanged by tenor and
+advances the reference date. Missing realized EURIBOR3m resets use the current
+month's forwards; supplied observations take precedence. Supply another
+`market_at(date, fixings)` factory for observed or simulated dated markets.
+Expected prepayments stand in for realized principal in this credit-free example.
+The unhedged and hedged NII columns use the same monthly market path, which can
+differ from the earlier full-horizon forecasts using fixed-date forward curves.
+
+Monthly risk rebalancing requires fresh valuations on each dated book.
+Cashflows, sensitivities and that month's accrued amount are requested together,
+so the loan pricer shares one projection across those outputs.
 
 ## Run and scope
 

@@ -82,6 +82,35 @@ class AccruedAmountTests(unittest.TestCase):
                 context.evaluate(deposit(), [qs.Request.AccruedAmount(REFERENCE, "2026-04-01"),
                                               qs.Request.AccruedAmount("2026-04-01", "2026-05-01")])
 
+    def test_accrual_requests_match_with_or_without_cashflows(self):
+        windows = [(date(2026, 3, 1), qs.Date.parse("2026-04-01")),
+                   ("2026-04-01", "2026-05-01"), ("2026-05-01", "2026-06-01"),
+                   ("2026-06-01", "2026-07-01"), (REFERENCE, REFERENCE)]
+        with market() as context:
+            for rate in (0, -0.02, 0.06):
+                for side in (qs.Side.LongReceive, qs.Side.PayShort):
+                    instrument = qs.FixedRateDeposit(
+                        "DEPOSIT", "2025-12-01", "2026-06-01", 1000, rate, "EUR", "ESTR",
+                        day_counter="Thirty360", compounding="Simple")
+                    trade = qs.Trade(instrument, REFERENCE, side, notional=250)
+                    for start, end in windows:
+                        with self.subTest(rate=rate, side=side, start=start, end=end):
+                            request = qs.Request.AccruedAmount(start, end)
+                            standalone = context.evaluate(trade, [request])
+                            self.assertIsNone(standalone.cashflows)
+                            for requests in ([request, qs.Request.Cashflows],
+                                             [qs.Request.Cashflows, request]):
+                                result = context.evaluate(trade, requests)
+                                self.assertAlmostEqual(result.accrued_amount, standalone.accrued_amount)
+                                self.assertIsNotNone(result.cashflows)
+                                self.assertIsNone(result.price)
+
+    def test_evaluation_results_expose_accrual_as_completed_data(self):
+        result = qs.EvaluationResults(REFERENCE, "RESULT", accrued_amount=12.5)
+        self.assertEqual(result.accrued_amount, 12.5)
+        self.assertFalse(hasattr(result, "cashflow_accruals"))
+        self.assertFalse(hasattr(result, "remaining_redemptions"))
+
     def test_python_pricer_roundtrips_requests_and_optional_accrued_amount(self):
         class AccrualPricer:
             def evaluate(self, trade, requests, context):

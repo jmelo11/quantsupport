@@ -335,6 +335,15 @@ impl Loan {
         self.principal
     }
 
+    /// Contractual principal after payments on as_of settle, without pricing.
+    /// Ignores prepayment, default and trade overrides. Zero before origination
+    /// and after final principal repayment.
+    fn contractual_principal(&self, as_of: &Bound<'_, PyAny>) -> PyResult<f64> {
+        self.inner
+            .contractual_principal(extract_date(as_of)?)
+            .map_err(qs_err)
+    }
+
     /// Native payment currency.
     #[getter]
     fn currency(&self) -> Currency {

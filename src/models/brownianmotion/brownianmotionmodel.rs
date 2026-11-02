@@ -300,17 +300,15 @@ impl PathGenerator<f64> for BrownianMotion<f64> {
 
         let mut prev_spot = self.spot;
         let mut prev_t = 0.0_f64;
-        for i in 0..times.len() {
-            let t = times[i];
+        for ((&t, &z), output) in times.iter().zip(draws).zip(scenario) {
             let dt = t - prev_t;
-            let z = draws[i];
             let vol = self.vol_func.vol(t)?;
             let drift = (self.rate - self.dividend_rate.unwrap_or(0.0))
                 .mul_add(dt, -(0.5 * vol * vol * dt));
             let diffusion = vol * z * dt.sqrt();
             let log_return = drift + diffusion;
             let spot = prev_spot * log_return.exp();
-            scenario[i] = spot;
+            *output = spot;
             prev_spot = spot;
             prev_t = t;
         }

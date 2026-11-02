@@ -113,24 +113,23 @@ fn install_constructors(module: &Bound<'_, PyModule>) -> PyResult<()> {
 pub fn native(error: &QSError) -> PyErr {
     Python::attach(|py| {
         let (code, variant) = error.kind();
+        let root = error.root_cause();
         let result = make(py, code, &error.to_string(), None, None, None, None);
         let value = result.value(py);
         let _ = value.setattr("native_type", variant);
         if let Ok(contexts) = pyo3::types::PyTuple::new(py, error.contexts()) {
             let _ = value.setattr("contexts", contexts);
         }
-        if let QSError::InvalidTypeErr { expected, actual } = error.root_cause() {
+        if let QSError::InvalidTypeErr { expected, actual } = root {
             let _ = value.setattr("expected", expected);
             let _ = value.setattr("actual", actual);
         }
-        if let QSError::Context { source, .. } = error {
-            result.set_cause(py, Some(native(source)));
-        } else if let QSError::IoErr(cause) = error {
+        if let QSError::IoErr(cause) = root {
             result.set_cause(
                 py,
                 Some(pyo3::exceptions::PyOSError::new_err(cause.to_string())),
             );
-        } else if let Some(cause) = std::error::Error::source(error) {
+        } else if let Some(cause) = std::error::Error::source(root) {
             result.set_cause(
                 py,
                 Some(pyo3::exceptions::PyValueError::new_err(cause.to_string())),
@@ -216,7 +215,11 @@ pub fn context(py: Python<'_>, error: PyErr, operation: Option<&str>, path: Opti
     };
     match convert() {
         Ok(result) => {
-            result.set_cause(py, Some(error));
+            // Structured context annotates the same exception. Only a conversion
+            // from another exception type introduces an actual cause.
+            if !result.value(py).is(error.value(py)) {
+                result.set_cause(py, Some(error));
+            }
             result
         }
         Err(_) => error,

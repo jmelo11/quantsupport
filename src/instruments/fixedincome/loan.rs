@@ -15,6 +15,7 @@ use crate::{
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
+    math::compensatedsum::CompensatedSum,
     models::prepaymentmodel::PrepaymentModel,
     time::date::Date,
     utils::errors::{QSError, Result},
@@ -242,6 +243,29 @@ impl<T: Scalar> Loan<T> {
     #[must_use]
     pub const fn notional(&self) -> f64 {
         self.notional
+    }
+
+    /// Returns contractual principal after payments on `as_of` have settled.
+    ///
+    /// Sums remaining scheduled redemptions without market data, prepayments,
+    /// defaults, position signs or notional overrides. Returns zero before the
+    /// initial advance and after the final principal payment.
+    ///
+    /// # Errors
+    /// Propagates invalid redemption amounts or a nonfinite sum.
+    pub fn contractual_principal(&self, as_of: Date) -> Result<f64> {
+        if as_of < self.start_date() {
+            return Ok(0.0);
+        }
+        let mut principal = CompensatedSum::default();
+        for cashflow in self.leg.cashflows() {
+            if let CashflowType::Redemption(redemption) = cashflow {
+                if redemption.payment_date() > as_of {
+                    principal.add(redemption.amount()?)?;
+                }
+            }
+        }
+        Ok(principal.total())
     }
     /// Contractual cashflows, unaffected by prepayment or valuation.
     #[must_use]
