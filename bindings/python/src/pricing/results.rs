@@ -311,43 +311,6 @@ impl EvaluationResults {
         self.accrued_amount
     }
 
-    /// Accrues reported coupons over date-pair windows without repricing.
-    ///
-    /// Returns one signed amount per [start, end) window, or None without a
-    /// cashflow report. Uses resolved fixings and expected notionals from that
-    /// report, including coupons paid after a window's end. Principal is
-    /// excluded. Only reported coupons contribute; omitted settled coupons
-    /// cannot be recovered. Requires one coupon currency and performs no FX
-    /// conversion. Missing coupon terms and unsupported partial overnight
-    /// accrual raise errors.
-    fn cashflow_accruals(
-        &self,
-        windows: Vec<(Bound<'_, PyAny>, Bound<'_, PyAny>)>,
-    ) -> PyResult<Option<Vec<f64>>> {
-        let windows = windows
-            .iter()
-            .map(|(start, end)| Ok((extract_date(start)?, extract_date(end)?)))
-            .collect::<PyResult<Vec<_>>>()?;
-        self.to_qs()?
-            .cashflows()
-            .map(|flows| flows.accrued_amounts(&windows))
-            .transpose()
-            .map_err(crate::common::conversion::qs_err)
-    }
-
-    /// Sum signed reported redemptions strictly after as_of, without repricing.
-    /// Includes projected prepayments; excludes coupons, advances and recovery
-    /// legs not reported as redemptions. Returns None without cashflows. Amounts
-    /// are in their original currency; no FX conversion is performed.
-    fn remaining_redemptions(&self, as_of: &Bound<'_, PyAny>) -> PyResult<Option<f64>> {
-        let as_of = extract_date(as_of)?;
-        self.to_qs()?
-            .cashflows()
-            .map(|flows| flows.remaining_redemptions(as_of))
-            .transpose()
-            .map_err(crate::common::conversion::qs_err)
-    }
-
     /// Sensitivities as a DataFrame with columns pillar/value (duplicated
     /// pillars summed, sorted by pillar), if `"Sensitivities"` was requested.
     #[getter]

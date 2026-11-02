@@ -3,14 +3,9 @@ use std::collections::HashMap;
 use crate::{
     core::cashflowaggregation::CouponDetails,
     currencies::currency::Currency,
-    instruments::cashflows::{
-        cashflowtype::CashflowType,
-        coupons::{LinearCoupon, NonLinearCoupon},
-    },
-    math::compensatedsum::CompensatedSum,
     rates::interestrate::{InterestRate, RateDefinition},
     time::date::Date,
-    utils::errors::{QSError, Result},
+    utils::errors::Result,
 };
 
 /// Economic cashflow kind used by numeric reports and aggregators.
@@ -209,74 +204,6 @@ impl CashflowsTable {
             .collect()
     }
 
-    /// Allocates resolved, signed coupon interest to each `[start, end)` window.
-    ///
-    /// Reuses reported coupon terms, fixings and expected notionals without
-    /// repricing. Only coupons present in this table contribute; callers must
-    /// obtain a report covering every coupon needed for their windows. Payment
-    /// dates do not clip accrual, and principal is excluded. No FX conversion is
-    /// performed, so contributing coupons must share a currency.
-    ///
-    /// # Errors
-    /// Rejects reversed windows, interest without contractual coupon terms,
-    /// mixed coupon currencies, unresolved fixings, nonfinite accrual and
-    /// unsupported partial overnight accrual.
-    pub fn accrued_amounts(&self, windows: &[(Date, Date)]) -> Result<Vec<f64>> {
-        if windows.iter().any(|(start, end)| end < start) {
-            return Err(QSError::InvalidValueErr(
-                "Accrual end must not precede start".into(),
-            ));
-        }
-        let mut totals: Vec<_> = std::iter::repeat_with(CompensatedSum::default)
-            .take(windows.len())
-            .collect();
-        if windows.is_empty() {
-            return Ok(Vec::new());
-        }
-        let mut currency = None;
-        for flow in self.rows() {
-            if !matches!(
-                flow.kind,
-                CashflowKind::FixedRateCoupon
-                    | CashflowKind::FloatingRateCoupon
-                    | CashflowKind::OptionEmbeddedCoupon
-                    | CashflowKind::Interest
-            ) {
-                continue;
-            }
-            let terms = flow.coupon_details.ok_or_else(|| {
-                QSError::ValueNotSetErr("Accrual requires contractual coupon terms".into())
-            })?;
-            let mut active = windows
-                .iter()
-                .enumerate()
-                .filter(|(_, (start, end))| {
-                    start < end && *start < terms.accrual_end() && *end > terms.accrual_start()
-                })
-                .peekable();
-            if active.peek().is_none() {
-                continue;
-            }
-            if currency.is_some_and(|value| value != flow.currency) {
-                return Err(QSError::InvalidValueErr(
-                    "Cashflow accrual requires a single coupon currency".into(),
-                ));
-            }
-            currency = Some(flow.currency);
-            let coupon = terms.to_coupon(flow.payment_date, flow.fixing)?;
-            for (index, (start, end)) in active {
-                let amount = match &coupon {
-                    CashflowType::FixedRateCoupon(c) => c.accrued_amount(*start, *end)?,
-                    CashflowType::FloatingRateCoupon(c) => c.accrued_amount(*start, *end)?,
-                    CashflowType::OptionEmbeddedCoupon(c) => c.accrued_amount(*start, *end)?,
-                    _ => unreachable!("CouponDetails reconstructs only coupons"),
-                };
-                totals[index].add(amount)?;
-            }
-        }
-        Ok(totals.iter().map(CompensatedSum::total).collect())
-    }
-
     /// Attaches contractual metadata to the most recently added cashflow.
     pub fn set_last_coupon_details(&mut self, details: CouponDetails) {
         if let Some(last) = self.coupon_details.last_mut() {
@@ -294,34 +221,6 @@ impl CashflowsTable {
     #[must_use]
     pub fn amounts(&self) -> &[f64] {
         &self.amount
-    }
-
-    /// Sums signed redemption receipts with payment dates strictly after `as_of`.
-    ///
-    /// Uses the existing projection, including expected prepayments, without
-    /// repricing. Disbursements, coupons and non-redemption recoveries are
-    /// excluded. For credit-free loans this is their projected remaining
-    /// principal after payments on `as_of` settle. Requires a single redemption
-    /// currency; no FX conversion is performed.
-    ///
-    /// # Errors
-    /// Rejects mixed currencies, nonfinite redemption amounts or aggregation overflow.
-    pub fn remaining_redemptions(&self, as_of: Date) -> Result<f64> {
-        let mut total = CompensatedSum::default();
-        let mut currency = None;
-        for flow in self
-            .rows()
-            .filter(|flow| *flow.kind == CashflowKind::Redemption && flow.payment_date > as_of)
-        {
-            if currency.is_some_and(|value| value != flow.currency) {
-                return Err(QSError::InvalidValueErr(
-                    "Remaining redemptions require a single currency".into(),
-                ));
-            }
-            currency = Some(flow.currency);
-            total.add(flow.amount)?;
-        }
-        Ok(total.total())
     }
 
     /// Returns resolved floating coupon rates, or `None` for non-floating rows.
@@ -685,9 +584,9 @@ impl EvaluationResults {
 }
 
 #[cfg(test)]
-mod accrual_tests {
+mod tests {
     use super::*;
-    use crate::prelude::{Compounding, DayCounter, Frequency, MarketIndex};
+    use crate::prelude::{Compounding, DayCounter, Frequency, MarketIndex, QSError};
 
     fn report() -> CashflowsTable {
         let mut flows = CashflowsTable::new();
@@ -782,61 +681,6 @@ mod accrual_tests {
         assert!(rows.next().is_none());
         assert!(rows.next_back().is_none());
         assert_eq!(CashflowsTable::new().rows().len(), 0);
-        Ok(())
-    }
-
-    #[test]
-    fn batch_accrual_clips_signed_coupons_and_excludes_principal() -> Result<()> {
-        let march = Date::new(2026, 3, 1);
-        let april = Date::new(2026, 4, 1);
-        let may = Date::new(2026, 5, 1);
-        let amounts = report().accrued_amounts(&[
-            (march, april),
-            (april, may),
-            (march, may),
-            (april, april),
-        ])?;
-        assert!((amounts[0] + 5.0).abs() < 1e-12);
-        assert!((amounts[1] - (-5.0 + 500.0 * 0.04 * 30.0 / 360.0)).abs() < 1e-12);
-        assert!((amounts[2] - amounts[0] - amounts[1]).abs() < 1e-12);
-        assert_eq!(amounts[3], 0.0);
-        assert!(report().accrued_amounts(&[])?.is_empty());
-        assert!(report().accrued_amounts(&[(may, march)]).is_err());
-        Ok(())
-    }
-
-    #[test]
-    fn batch_accrual_requires_fixings_only_for_overlapping_coupons() -> Result<()> {
-        let mut flows = report();
-        flows.fixing[1] = None;
-        assert!(flows
-            .accrued_amounts(&[(Date::new(2026, 4, 1), Date::new(2026, 5, 1))])
-            .is_err());
-        let amounts = flows.accrued_amounts(&[(Date::new(2026, 3, 1), Date::new(2026, 4, 1))])?;
-        assert!((amounts[0] + 5.0).abs() < 1e-12);
-        Ok(())
-    }
-
-    #[test]
-    fn batch_accrual_rejects_missing_terms_and_mixed_coupon_currencies() {
-        let windows = [(Date::new(2026, 4, 1), Date::new(2026, 5, 1))];
-        let mut flows = report();
-        flows.currencies[1] = Currency::USD;
-        assert!(flows.accrued_amounts(&windows).is_err());
-        flows.currencies[1] = Currency::EUR;
-        flows.coupon_details[1] = None;
-        assert!(flows.accrued_amounts(&windows).is_err());
-    }
-
-    #[test]
-    fn remaining_redemptions_exclude_settled_principal_and_coupons() -> Result<()> {
-        let flows = report();
-        assert_eq!(flows.remaining_redemptions(Date::new(2026, 3, 31))?, 1e9);
-        assert_eq!(flows.remaining_redemptions(Date::new(2026, 4, 1))?, 0.0);
-        assert_eq!(
-            CashflowsTable::new().remaining_redemptions(Date::new(2026, 4, 1))?,
-            0.0
-        );
         Ok(())
     }
 }

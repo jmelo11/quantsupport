@@ -645,10 +645,6 @@ mod tests {
             assert_eq!(terms.accrual_start(), Date::new(2026, 1, 15));
             assert_eq!(terms.accrual_end(), Date::new(2027, 1, 15));
         }
-        assert_eq!(
-            result.accrued_amounts(&[(Date::new(2026, 3, 1), Date::new(2026, 4, 1))])?,
-            vec![0.0]
-        );
         Ok(())
     }
 

@@ -1853,23 +1853,6 @@ performed. Table properties construct new pandas DataFrames on access.
         """Signed coupon interest selected by Request.AccruedAmount(start, end)."""
         ...
 
-    def cashflow_accruals(self, windows: Sequence[tuple[_DateLike, _DateLike]]) -> list[float] | None:
-        """Accrue reported coupons over [start, end) windows without repricing.
-
-        Uses reported fixings and expected notionals, excludes principal, and
-        requires one coupon currency (no FX conversion). Only coupons present
-        in the report contribute. Returns None without a cashflow report.
-        """
-        ...
-
-    def remaining_redemptions(self, as_of: _DateLike) -> float | None:
-        """Signed reported redemptions strictly after as_of, without repricing.
-
-        Includes projected prepayments; excludes coupons, disbursements and
-        non-redemption recoveries. No FX conversion. None without cashflows.
-        """
-        ...
-
     @property
     def fair_rate(self) -> float | None:
         """Fair rate for the target selected by Request.FairRate(index)."""

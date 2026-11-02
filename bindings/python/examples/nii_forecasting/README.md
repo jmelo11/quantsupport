@@ -10,13 +10,13 @@ The forecast has three steps:
 
 1. Project native portfolio groups and identify their future principal receipts.
 2. Replace eligible repayments in date order and add explicit planned production.
-3. Allocate those resolved coupons to monthly accrual windows and build reports.
+3. Request monthly accrued interest and build the reporting tables.
 
 `ForecastPosition` retains each trade and its segment. Portfolio grouping keeps
 individual coupon, repayment and prepayment terms while reducing Python calls
 and pandas tables. `position_detail=True` selects original-position attribution
-for an audit. Rust prices each member once per forecast and reuses the resolved
-cashflows for all reporting months.
+for an audit. The first accrual window is requested alongside cashflows;
+subsequent windows use separate native requests on the same portfolio groups.
 
 ## Keep principal balances constant
 
@@ -66,18 +66,19 @@ currency-policy inputs to the native binding.
 
 ## Earned interest and principal
 
-`EvaluationResults.cashflow_accruals(periods)` returns signed, undiscounted coupon
-interest for every reporting window in one native call. It reuses the cashflow
-report's resolved floating observations and expected prepayment-adjusted notionals,
-clips reporting windows to coupon periods, and computes differences in cumulative
-contractual accrual. This avoids rebuilding the entire portfolio projection for
-each month. The standalone `Request.AccruedAmount(start, end)` remains available
-for individual windows and independent reconciliation. Accrual uses ordinary
-numeric values without PV or AD.
+`Request.AccruedAmount(start, end)` returns signed, undiscounted coupon interest
+in `result.accrued_amount`. Evaluation results hold completed data; the selected
+pricer performs the calculation. Coupon periods clip the reporting window and
+principal is excluded. Accrual is the difference in cumulative contractual
+accrual at the clipped boundaries.
 
-Only coupons present in the report contribute. The forecast requests full-life
-receipts, including coupons paid beyond the horizon. Report accrual requires a
-single coupon currency and performs no FX conversion; this example uses EUR.
+The forecast requests its first window together with `Cashflows`. The loan
+pricer reuses the existing projection's resolved fixings and expected
+prepayment-adjusted notionals. Later windows use standalone requests, which
+perform their own numeric projections without calculating PV or recording AD.
+Amounts use the context's base currency; this example uses EUR throughout.
+Coupons paid beyond the reporting horizon still contribute interest earned
+within it.
 
 Opening inventory uses `Loan.contractual_principal(as_of)` to read the remaining
 scheduled principal without pricing each trade or creating per-trade cashflow
@@ -145,9 +146,9 @@ Expected prepayments stand in for realized principal in this credit-free example
 The unhedged and hedged NII columns use the same monthly market path, which can
 differ from the earlier full-horizon forecasts using fixed-date forward curves.
 
-Monthly risk rebalancing requires fresh valuations on each dated book. Loan
-sensitivities and income receipts share a native projection, and income reuses
-those resolved coupons for its reporting windows.
+Monthly risk rebalancing requires fresh valuations on each dated book.
+Cashflows, sensitivities and that month's accrued amount are requested together,
+so the loan pricer shares one projection across those outputs.
 
 ## Run and scope
 

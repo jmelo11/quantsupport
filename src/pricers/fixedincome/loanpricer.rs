@@ -1221,6 +1221,10 @@ where
         start: Date,
         end: Date,
     ) -> Result<f64> {
+        if state.value.is_some() {
+            let legs: Vec<Leg<f64>> = state.legs.iter().cloned().map(Into::into).collect();
+            return accrued_amount(&legs, state.get_market_data_reponse(), start, end);
+        }
         let cashflows = Self::clone_cashflows_with_resolved_fixings(trade.instrument(), state)?;
         let (_, projected) = self.project_expected_receipts(trade, state, &cashflows, false)?;
         let legs: Vec<Leg<f64>> = projected.into_iter().map(Into::into).collect();
@@ -1234,7 +1238,8 @@ impl Pricer for LoanPricer {
     /// Evaluates requested results against a fresh market-data state.
     ///
     /// Supports `Value`, `Cashflows`, `Sensitivities`, `FairRate` and `AccruedAmount` in the
-    /// caller's order. Repeated value/cashflow requests share a cached projection.
+    /// caller's order. Accrual reuses the projection when cashflows, value or
+    /// sensitivities are requested; standalone accrual projects numeric receipts.
     ///
     /// # Errors
     /// Rejects a missing discount policy and propagates data/handler errors.
@@ -1268,6 +1273,14 @@ impl Pricer for LoanPricer {
             ));
         }
         let mut state = self.load_loan_valuation_state(trade, ctx)?;
+        if requests.iter().any(|request| {
+            matches!(
+                request,
+                Request::Cashflows | Request::Value | Request::Sensitivities
+            )
+        }) {
+            self.handle_value(trade, &mut state)?;
+        }
         let mut results =
             EvaluationResults::new(ctx.evaluation_date(), trade.instrument().identifier());
         for request in requests {
@@ -2175,6 +2188,50 @@ mod tests {
         let expected = -principal * 0.06 * 28.0 / 360.0;
         assert!((result.accrued_amount().unwrap_or_default() - expected).abs() < 1e-8);
         assert!(result.price().is_none() && result.cashflows().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn accrual_reuses_the_projection_in_any_request_order() -> Result<()> {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let model_calls = Arc::clone(&calls);
+        let loan = default_loan_builder()
+            .with_custom_prepayment_model(move |_: &PrepaymentModelState<DualFwd>| {
+                model_calls.fetch_add(1, Ordering::Relaxed);
+                Ok(DualFwd::scalar(0.01))
+            })
+            .build()?;
+        let trade = LoanTrade::new(loan, provider.date, Side::PayShort);
+        let pricer = estr_loan_pricer();
+        let accrual = Request::AccruedAmount(Date::new(2026, 2, 1), Date::new(2026, 3, 1));
+        let standalone = pricer.evaluate(&trade, &[accrual], &provider)?;
+        let expected_calls = calls.load(Ordering::Relaxed);
+        assert!(expected_calls > 0);
+        let expected_amount = standalone
+            .accrued_amount()
+            .ok_or_else(|| QSError::ValueNotSetErr("Accrued amount".into()))?;
+        for requests in [
+            vec![accrual, Request::Cashflows],
+            vec![Request::Cashflows, accrual],
+            vec![accrual, Request::Sensitivities, Request::Cashflows],
+            vec![Request::Value, accrual, Request::Cashflows],
+        ] {
+            calls.store(0, Ordering::Relaxed);
+            let result = pricer.evaluate(&trade, &requests, &provider)?;
+            let amount = result
+                .accrued_amount()
+                .ok_or_else(|| QSError::ValueNotSetErr("Accrued amount".into()))?;
+            assert!((amount - expected_amount).abs() < 1e-8);
+            assert_eq!(calls.load(Ordering::Relaxed), expected_calls);
+            assert!(result.cashflows().is_some());
+            assert_eq!(result.price().is_some(), requests.contains(&Request::Value));
+        }
         Ok(())
     }
 

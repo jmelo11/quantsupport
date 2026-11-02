@@ -82,48 +82,34 @@ class AccruedAmountTests(unittest.TestCase):
                 context.evaluate(deposit(), [qs.Request.AccruedAmount(REFERENCE, "2026-04-01"),
                                               qs.Request.AccruedAmount("2026-04-01", "2026-05-01")])
 
-    def test_report_accrual_reuses_signed_coupons_and_accepts_date_types(self):
+    def test_accrual_requests_match_with_or_without_cashflows(self):
         windows = [(date(2026, 3, 1), qs.Date.parse("2026-04-01")),
                    ("2026-04-01", "2026-05-01"), ("2026-05-01", "2026-06-01"),
                    ("2026-06-01", "2026-07-01"), (REFERENCE, REFERENCE)]
         with market() as context:
             for rate in (0, -0.02, 0.06):
                 for side in (qs.Side.LongReceive, qs.Side.PayShort):
-                    with self.subTest(rate=rate, side=side):
-                        instrument = qs.FixedRateDeposit(
-                            "DEPOSIT", "2025-12-01", "2026-06-01", 1000, rate, "EUR", "ESTR",
-                            day_counter="Thirty360", compounding="Simple")
-                        trade = qs.Trade(instrument, REFERENCE, side, notional=250)
-                        report = context.evaluate(trade, [qs.Request.Cashflows])
-                        expected = [context.evaluate(trade, [qs.Request.AccruedAmount(start, end)])
-                                    .accrued_amount for start, end in windows]
-                        for actual, value in zip(report.cashflow_accruals(windows), expected):
-                            self.assertAlmostEqual(actual, value)
-                        self.assertEqual(report.cashflow_accruals([]), [])
-        with self.assertRaises(qs.QuantSupportError):
-            report.cashflow_accruals([("2026-04-01", REFERENCE)])
+                    instrument = qs.FixedRateDeposit(
+                        "DEPOSIT", "2025-12-01", "2026-06-01", 1000, rate, "EUR", "ESTR",
+                        day_counter="Thirty360", compounding="Simple")
+                    trade = qs.Trade(instrument, REFERENCE, side, notional=250)
+                    for start, end in windows:
+                        with self.subTest(rate=rate, side=side, start=start, end=end):
+                            request = qs.Request.AccruedAmount(start, end)
+                            standalone = context.evaluate(trade, [request])
+                            self.assertIsNone(standalone.cashflows)
+                            for requests in ([request, qs.Request.Cashflows],
+                                             [qs.Request.Cashflows, request]):
+                                result = context.evaluate(trade, requests)
+                                self.assertAlmostEqual(result.accrued_amount, standalone.accrued_amount)
+                                self.assertIsNotNone(result.cashflows)
+                                self.assertIsNone(result.price)
 
-    def test_report_accrual_handles_missing_reports_and_rejects_missing_terms(self):
-        window = [(REFERENCE, "2026-04-01")]
-        self.assertIsNone(qs.EvaluationResults(REFERENCE, "ABSENT").cashflow_accruals(window))
-        self.assertEqual(qs.EvaluationResults(REFERENCE, "EMPTY", cashflows=[])
-                         .cashflow_accruals(window), [0.0])
-        report = qs.EvaluationResults(REFERENCE, "MISSING-TERMS", cashflows=[
-            dict(payment_date="2026-06-01", type="Interest", amount=10, currency="EUR")])
-        with self.assertRaises(qs.QuantSupportError):
-            report.cashflow_accruals(window)
-
-    def test_remaining_redemptions_exclude_coupons_and_settled_payments(self):
-        self.assertIsNone(qs.EvaluationResults(REFERENCE, "ABSENT").remaining_redemptions(REFERENCE))
-        report = qs.EvaluationResults(REFERENCE, "PRINCIPAL", cashflows=[
-            dict(payment_date="2026-04-01", type="Redemption", amount=100, currency="EUR"),
-            dict(payment_date="2026-05-01", type="Redemption", amount=-25, currency="EUR"),
-            dict(payment_date="2026-06-01", type="FixedRateCoupon", amount=5, currency="EUR"),
-            dict(payment_date="2026-04-01", type="Disbursement", amount=-1000, currency="EUR"),
-        ])
-        self.assertEqual(report.remaining_redemptions(date(2026, 3, 1)), 75)
-        self.assertEqual(report.remaining_redemptions(qs.Date.parse("2026-04-01")), -25)
-        self.assertEqual(report.remaining_redemptions("2026-05-01"), 0)
+    def test_evaluation_results_expose_accrual_as_completed_data(self):
+        result = qs.EvaluationResults(REFERENCE, "RESULT", accrued_amount=12.5)
+        self.assertEqual(result.accrued_amount, 12.5)
+        self.assertFalse(hasattr(result, "cashflow_accruals"))
+        self.assertFalse(hasattr(result, "remaining_redemptions"))
 
     def test_python_pricer_roundtrips_requests_and_optional_accrued_amount(self):
         class AccrualPricer:

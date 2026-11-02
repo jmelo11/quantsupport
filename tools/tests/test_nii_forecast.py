@@ -425,7 +425,7 @@ class IncomeForecastTests(unittest.TestCase):
                         mixed = example.replace(cohort, receipts=receipts)
                         self.assertEqual(forecaster.accrue(context, [mixed]), expected)
                         empty = example.replace(cohort, receipts=incomplete,
-                                                accrued_interest=[0.0] * len(forecaster.periods))
+                                                first_period_interest=0.0)
                         self.assertEqual(forecaster.accrue(context, [empty]), [])
 
     def test_nonzero_coupon_with_missing_accrual_date_is_rejected(self):
@@ -475,7 +475,7 @@ class IncomeForecastTests(unittest.TestCase):
         self.assertEqual(result.income_detail.position.nunique(), 3)
         self.assertEqual(set(result.cashflows.origin), {"existing"})
 
-    def test_forecast_evaluation_calls_scale_with_portfolio_groups(self):
+    def test_forecast_evaluation_calls_use_portfolio_groups_and_accrual_requests(self):
         context = make_context()
         book, _ = generate_opening_portfolio(
             context, AS_OF, n_fixed=40, n_floating=30, n_deposits=30)
@@ -487,13 +487,22 @@ class IncomeForecastTests(unittest.TestCase):
                 return context.evaluate(item, requests)
 
         with context:
-            IncomeForecaster(AS_OF, date(2028, 3, 1)).forecast(CountedContext(), book)
+            forecaster = IncomeForecaster(AS_OF, date(2028, 3, 1))
+            forecaster.forecast(CountedContext(), book)
 
         self.assertTrue(all(isinstance(item, qs.Portfolio) for item, _ in calls))
         cashflow_groups = [item for item, requests in calls
-                           if requests == [qs.Request.Cashflows]]
+                           if qs.Request.Cashflows in requests]
         self.assertEqual(sorted(map(len, cashflow_groups)), [30, 30, 40])
-        self.assertEqual(len(calls), 3)
+        first_window = qs.Request.AccruedAmount(*forecaster.periods[0])
+        for _, requests in calls:
+            if qs.Request.Cashflows in requests:
+                self.assertIn(first_window, requests)
+            else:
+                self.assertEqual(len(requests), 1)
+                self.assertIsNotNone(requests[0].start_date)
+        self.assertGreater(len(calls), len(cashflow_groups))
+        self.assertLessEqual(len(calls), len(cashflow_groups) * len(forecaster.periods))
 
     def test_contractual_principal_matches_native_remaining_principal(self):
         for repayment in (qs.LoanRepaymentStructure.french(),
@@ -510,7 +519,7 @@ class IncomeForecastTests(unittest.TestCase):
                     expected = receipts.loc[receipts.type == "Redemption"].amount.sum()
                     self.assertAlmostEqual(contract.contractual_principal(when), expected)
 
-    def test_batched_accrual_matches_independent_monthly_repricing(self):
+    def test_accrual_requests_match_independent_monthly_repricing(self):
         context = make_context()
         book, _ = generate_opening_portfolio(
             context, AS_OF, n_fixed=6, n_floating=4, n_deposits=5)
