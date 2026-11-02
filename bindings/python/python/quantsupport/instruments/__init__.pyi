@@ -509,6 +509,16 @@ class Loan(Instrument):
 
         Ignores prepayment, default and position overrides. Returns zero before
         origination and after the final principal repayment.
+
+        Parameters
+        ----------
+        as_of : Date | str | datetime.date
+            Reporting date; principal payments on this date have already settled.
+
+        Returns
+        -------
+        float
+            Remaining scheduled principal in the loan's currency.
         """
         ...
 

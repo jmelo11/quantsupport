@@ -154,6 +154,7 @@ impl CashflowsTable {
     ///
     /// The table keeps its column-oriented storage; each row provides named
     /// fields for values at the same position across all columns.
+    #[must_use]
     pub fn rows(&self) -> impl ExactSizeIterator<Item = CashflowRow<'_>> + DoubleEndedIterator {
         (0..self.payment_dates.len()).map(|row| CashflowRow {
             coupon_details: self.coupon_details[row].as_ref(),
