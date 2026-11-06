@@ -10,13 +10,13 @@ The forecast has three steps:
 
 1. Project native portfolio groups and identify their future principal receipts.
 2. Replace eligible repayments in date order and add explicit planned production.
-3. Request monthly accrued interest and build the reporting tables.
+3. Allocate projected coupon interest to months with pandas and build the reports.
 
 `ForecastPosition` retains each trade and its segment. Portfolio grouping keeps
 individual coupon, repayment and prepayment terms while reducing Python calls
 and pandas tables. `position_detail=True` selects original-position attribution
 for an audit. The first accrual window is requested alongside cashflows;
-subsequent windows use separate native requests on the same portfolio groups.
+subsequent simple-interest windows use those projected coupons without repricing.
 
 ## Keep principal balances constant
 
@@ -56,12 +56,15 @@ when reading observations and cashflows.
 Contracts use native `qs.Side`, `qs.Currency`, `qs.MarketIndex`, `qs.DayCounter`,
 `qs.Frequency`, `qs.Compounding` and repayment structures. Local enums describe
 segments, product and rate types, production origins, principal movements and
-forecast scenarios. Typed records hold orders, cohorts and report rows.
+forecast scenarios. Orders and cohorts retain business state; inventory, income,
+principal movements, production and hedge reports use pandas DataFrames directly.
 
 `ForecastTables` creates the income, production, cashflow, balance and monthly
 summary tables. `ExampleTables` builds display comparisons. The forecast uses
-an ordered list of production orders, with no dictionary-based event state or
-quote cache. The mappings in `MarketSetup.context` are required quote-store and
+an ordered list of production orders. Principal movements are bucketed once by
+reporting period, then grouped cumulative sums produce balances. No custom row
+classes or repeated monthly scans of the movement ledger are needed. The mappings
+in `MarketSetup.context` are required quote-store and
 currency-policy inputs to the native binding.
 
 ## Earned interest and principal
@@ -74,11 +77,15 @@ accrual at the clipped boundaries.
 
 The forecast requests its first window together with `Cashflows`. The loan
 pricer reuses the existing projection's resolved fixings and expected
-prepayment-adjusted notionals. Later windows use standalone requests, which
-perform their own numeric projections without calculating PV or recording AD.
+prepayment-adjusted notionals. Later simple-interest windows allocate the same
+projected coupon amounts with NumPy arrays. Actual/360 and Actual/365 use
+vectorized calendar-day differences; other conventions use native cumulative
+day-count fractions. Non-simple compounding, overnight conventions and
+foreign-currency coupons retain native accrual requests.
 Amounts use the context's base currency; this example uses EUR throughout.
 Coupons paid beyond the reporting horizon still contribute interest earned
-within it.
+within it. Regression tests reconcile the pandas allocation to independent native
+monthly accrual requests, including 30/360 boundaries and rate scenarios.
 
 Opening inventory supplies historical coupon resets and refinancing benchmark
 fixings, then values each loan once. Its remaining native redemptions give the

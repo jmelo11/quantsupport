@@ -423,10 +423,10 @@ class IncomeForecastTests(unittest.TestCase):
                             incomplete[column] = missing
                         receipts = pd.concat((cohort.receipts, incomplete), ignore_index=True)
                         mixed = example.replace(cohort, receipts=receipts)
-                        self.assertEqual(forecaster.accrue(context, [mixed]), expected)
+                        pd.testing.assert_frame_equal(forecaster.accrue(context, [mixed]), expected)
                         empty = example.replace(cohort, receipts=incomplete,
                                                 first_period_interest=0.0)
-                        self.assertEqual(forecaster.accrue(context, [empty]), [])
+                        self.assertTrue(forecaster.accrue(context, [empty]).empty)
 
     def test_nonzero_coupon_with_missing_accrual_date_is_rejected(self):
         forecaster = IncomeForecaster(AS_OF, date(2026, 5, 1))
@@ -479,7 +479,7 @@ class IncomeForecastTests(unittest.TestCase):
         self.assertEqual(result.income_detail.position.nunique(), 3)
         self.assertEqual(set(result.cashflows.origin), {"existing"})
 
-    def test_forecast_evaluation_calls_use_portfolio_groups_and_accrual_requests(self):
+    def test_simple_interest_forecast_projects_each_portfolio_group_once(self):
         context = make_context()
         book, _ = generate_opening_portfolio(
             context, AS_OF, n_fixed=40, n_floating=30, n_deposits=30)
@@ -505,8 +505,34 @@ class IncomeForecastTests(unittest.TestCase):
             else:
                 self.assertEqual(len(requests), 1)
                 self.assertIsNotNone(requests[0].start_date)
-        self.assertGreater(len(calls), len(cashflow_groups))
-        self.assertLessEqual(len(calls), len(cashflow_groups) * len(forecaster.periods))
+        self.assertEqual(len(calls), len(cashflow_groups))
+
+    def test_compounded_interest_keeps_native_accrual_for_each_reporting_window(self):
+        for compounding in ("Compounded", "Continuous"):
+            with self.subTest(compounding=compounding), make_context() as context:
+                instrument = qs.FixedRateDeposit(
+                    "COMPOUNDED", date(2026, 1, 15), date(2027, 7, 15), 1000,
+                    0.06, "EUR", "ESTR", day_counter="Actual365",
+                    compounding=compounding, rate_frequency="Semiannual")
+                trade = qs.Trade(instrument, AS_OF)
+                forecaster = IncomeForecaster(AS_OF, date(2026, 8, 10))
+                result = forecaster.forecast(context, portfolio(trade))
+                expected = [context.evaluate(trade, [qs.Request.AccruedAmount(start, end)]).accrued_amount
+                            for start, end in forecaster.periods]
+                np.testing.assert_allclose(result.monthly.nii, expected, rtol=1e-12, atol=1e-12)
+
+    def test_coupon_allocation_matches_native_day_counts_across_year_end(self):
+        for basis in ("Actual360", "Actual365", "ActualActual", "Thirty360", "Thirty360US"):
+            with self.subTest(basis=basis), make_context() as context:
+                instrument = qs.FixedRateDeposit(
+                    "DAY-COUNTS", date(2026, 1, 31), date(2027, 5, 31), 1000,
+                    0.06, "EUR", "ESTR", day_counter=basis, compounding="Simple")
+                trade = qs.Trade(instrument, AS_OF)
+                forecaster = IncomeForecaster(AS_OF, date(2027, 4, 10))
+                result = forecaster.forecast(context, portfolio(trade))
+                expected = [context.evaluate(trade, [qs.Request.AccruedAmount(start, end)]).accrued_amount
+                            for start, end in forecaster.periods]
+                np.testing.assert_allclose(result.monthly.nii, expected, rtol=1e-12, atol=1e-12)
 
     def test_contractual_principal_matches_native_remaining_principal(self):
         for repayment in (qs.LoanRepaymentStructure.french(),
