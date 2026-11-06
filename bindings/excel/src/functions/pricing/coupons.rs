@@ -6,7 +6,7 @@ use xll_rs::types::{XllError, XLOPER12};
 #[xll_bindgen(
     name = "QS.RESULT.COUPONS",
     category = "QuantSupport - Pricing",
-    help = "Spills coupon type, fixing index, dates, signed notional, weighted rate/spread and original conventions"
+    help = "Spills coupon type, effective market index, fixing/accrual dates, signed notional and weighted rate/spread"
 )]
 pub fn qs_result_coupons(
     result: &str,
@@ -27,16 +27,14 @@ pub fn qs_result_coupons(
             "Amount",
             "Accrual start",
             "Accrual end",
-            "Fixing index",
-            "Coupon index",
+            "Fixing date",
+            "Market index",
             "Signed notional",
             "Coupon rate",
             "Spread",
             "Fixing",
             "Accrual",
             "Day count",
-            "Compounding",
-            "Rate frequency",
             "Overnight conventions",
             "Payoff",
         ];
@@ -58,10 +56,8 @@ pub fn qs_result_coupons(
                     XLOPER12::from_str(&terms.accrual_end().to_string())
                 }),
                 details
-                    .and_then(|terms| terms.fixing_index())
-                    .map_or_else(XLOPER12::nil, |index| {
-                        XLOPER12::from_str(&index.to_string())
-                    }),
+                    .and_then(|terms| terms.fixing_date())
+                    .map_or_else(XLOPER12::nil, |date| XLOPER12::from_str(&date.to_string())),
                 details
                     .and_then(|terms| terms.market_index())
                     .map_or_else(XLOPER12::nil, |index| {
@@ -79,16 +75,6 @@ pub fn qs_result_coupons(
                 details.map_or_else(XLOPER12::nil, |terms| {
                     XLOPER12::from_str(&format!("{:?}", terms.day_counter()))
                 }),
-                details
-                    .and_then(|terms| terms.rate_definition())
-                    .map_or_else(XLOPER12::nil, |definition| {
-                        XLOPER12::from_str(&format!("{:?}", definition.compounding()))
-                    }),
-                details
-                    .and_then(|terms| terms.rate_definition())
-                    .map_or_else(XLOPER12::nil, |definition| {
-                        XLOPER12::from_str(&format!("{:?}", definition.frequency()))
-                    }),
                 details
                     .and_then(|terms| terms.overnight_conventions())
                     .map_or_else(XLOPER12::nil, |conventions| {
