@@ -1113,7 +1113,7 @@ impl PricingContext {
     /// `requests` is a list of [`crate::common::enums::Request`] values (or their
     /// string names). Defaults to `[Request.Value]`.
     #[pyo3(signature = (trade, requests = None))]
-    fn evaluate<'py>(
+    pub(super) fn evaluate<'py>(
         slf: PyRef<'py, Self>,
         py: Python<'py>,
         trade: &Bound<'py, PyAny>,

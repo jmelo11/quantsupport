@@ -17,6 +17,7 @@ use crate::{
         errors::{invalid_value, native},
     },
     instruments::makers::MakeInstrument,
+    market::scenario::active_context,
     pricing::{
         bond_anchor::BondPricingAnchorConfig, context::PricingContext, results::EvaluationResults,
     },
@@ -281,6 +282,36 @@ impl Trade {
             settlement_date: settlement_date.map(extract_date).transpose()?,
             spread_day_counter: spread_day_counter.map(extract_day_counter).transpose()?,
         })
+    }
+
+    /// Evaluates this trade in the innermost active pricing context.
+    ///
+    /// Parameters
+    /// ----------
+    /// requests : sequence of Request or str, optional
+    ///     Measures to compute, defaulting to [Request.Value]. An empty sequence
+    ///     requests no measures. Accepts the same requests as PricingContext.evaluate.
+    ///
+    /// Returns
+    /// -------
+    /// EvaluationResults
+    ///     Completed results using the active context's policies, registered
+    ///     pricers, scenario shocks and risk basis.
+    ///
+    /// Raises
+    /// ------
+    /// RuntimeError
+    ///     If no pricing context is active. Enter one with ``with context:``.
+    /// QuantSupportError
+    ///     If market data, request validation or pricing fails.
+    #[pyo3(signature = (requests = None))]
+    fn evaluate<'py>(
+        slf: Bound<'py, Self>,
+        requests: Option<Vec<Bound<'py, PyAny>>>,
+    ) -> PyResult<Py<EvaluationResults>> {
+        let py = slf.py();
+        let context = active_context(py)?;
+        PricingContext::evaluate(context.bind(py).try_borrow()?, py, slf.as_any(), requests)
     }
 
     /// Instrument held by this position.

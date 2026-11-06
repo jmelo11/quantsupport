@@ -120,17 +120,14 @@ pub fn exit_context(context: &Bound<'_, PricingContext>) -> PyResult<(bool, bool
     })
 }
 
-fn active_context(py: Python<'_>) -> PyResult<Py<PricingContext>> {
+/// Returns the innermost pricing context entered on the current thread.
+pub(crate) fn active_context(py: Python<'_>) -> PyResult<Py<PricingContext>> {
     ACTIVE_CONTEXTS.with(|contexts| {
         contexts
             .borrow()
             .last()
             .map(|context| context.clone_ref(py))
-            .ok_or_else(|| {
-                PyRuntimeError::new_err(
-                    "Scenario requires an active PricingContext; use `with context, scenario:`",
-                )
-            })
+            .ok_or_else(|| PyRuntimeError::new_err("No active PricingContext; use `with context:`"))
     })
 }
 

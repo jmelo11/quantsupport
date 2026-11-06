@@ -81,7 +81,7 @@ swap = qs.Swap(
 )
 position = qs.Trade(swap, reference, qs.Side.LongReceive)
 with context:
-    result = context.evaluate(position, ["Value", "FairRate", "Sensitivities"])
+    result = position.evaluate(["Value", "FairRate", "Sensitivities"])
     print(result.price, result.fair_rate)
     print(result.sensitivities)
 ```
@@ -93,6 +93,12 @@ input; multiply decimal-rate derivatives by `0.0001` for the approximate
 monetary change from a one-basis-point increase.
 Generic swap cashflow tables report signed amounts, positive for receipts and
 negative for payments, including initial advances. They contain no PV column.
+
+`position.evaluate()` uses the innermost active pricing context and defaults to
+`[Request.Value]`. It follows that context's scenario shocks, pricing policies
+and registered pricers. Enter `with context:` before calling it; nested context
+scopes restore the previous context on exit. `context.evaluate(position, requests)`
+remains available for explicit evaluation and portfolio aggregation.
 
 ## Interface conventions
 

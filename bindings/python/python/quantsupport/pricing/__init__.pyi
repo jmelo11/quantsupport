@@ -1498,6 +1498,30 @@ Positions retain a reference to the instrument and are thread-confined.
     def __new__(cls, instrument: Instrument, trade_date: _DateLike, side: Side | str | None = ..., notional: float | None = ..., domestic_notional: float | None = ..., foreign_notional: float | None = ..., num_contracts: float = ..., pricing_anchor: Any | None = ..., settlement_date: _DateLike | None = ..., spread_day_counter: Any | None = ...) -> Self:
         ...
 
+    def evaluate(self, requests: Sequence[Request | str] | None = None) -> EvaluationResults:
+        """Evaluate this trade in the innermost active pricing context.
+
+Parameters
+----------
+requests : sequence of Request or str, optional
+    Measures to compute; defaults to [Request.Value]. An empty sequence requests
+    no measures. Accepts the same requests as PricingContext.evaluate.
+
+Returns
+-------
+EvaluationResults
+    Results using the active context's policies, registered pricers, scenario
+    shocks and risk basis.
+
+Raises
+------
+RuntimeError
+    If no pricing context is active. Enter one with ``with context:``.
+QuantSupportError
+    If market data, request validation or pricing fails.
+"""
+        ...
+
     def __repr__(self) -> str:
         ...
 
