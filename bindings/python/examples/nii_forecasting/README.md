@@ -80,9 +80,10 @@ Amounts use the context's base currency; this example uses EUR throughout.
 Coupons paid beyond the reporting horizon still contribute interest earned
 within it.
 
-Opening inventory uses `Loan.contractual_principal(as_of)` to read the remaining
-scheduled principal without pricing each trade or creating per-trade cashflow
-tables. This assumes no historical prepayment, as in the generated book.
+Opening inventory supplies historical coupon resets and refinancing benchmark
+fixings, then values each loan once. Its remaining native redemptions give the
+expected current principal after amortization, resets and prepayment from
+origination. Funding deposits match that expected opening principal.
 
 Principal remains separate from NII:
 
@@ -92,8 +93,8 @@ Balance movements belong to `(period_start, period_end]`; earned interest uses
 `[period_start, period_end)`. Production on the forecast date enters the first
 period. Production on the horizon changes closing principal and earns no
 in-horizon interest. Coupons paid after the horizon still contribute interest
-earned before it. Current opening balances follow the remaining contractual
-principal; the example assumes no historical prepayments.
+earned before it. Current opening balances include expected historical
+prepayments.
 
 ## Deposit hedging
 
@@ -114,8 +115,9 @@ and the hedge's income and principal-cash effects.
 ### Rebalance as new loans originate
 
 `MonthlyHedgingEngine` advances the business book through each monthly date.
-It carries expected prepayments into loan notionals, preserves contractual
-amortization and coupon terms, and keeps past floating resets in a fixing store.
+It retains original loan notionals and keeps past coupon resets and refinancing
+benchmark observations in a fixing store. Native pricing replays prepayment
+from origination at every date, applying the reduction once.
 At each rebalance it includes originated lending and funding plus surviving
 hedges, drops matured positions, and sizes additional cash-neutral deposit trades
 against their combined current PV01. Existing hedge trades retain their original
@@ -140,7 +142,8 @@ monthly_hedge.rebalances
 
 The worked monthly market path holds quoted zero rates unchanged by tenor and
 advances the reference date. Missing realized EURIBOR3m resets use the current
-month's forwards; supplied observations take precedence. Supply another
+month's forwards, including refinancing observations; supplied observations
+take precedence. Supply another
 `market_at(date, fixings)` factory for observed or simulated dated markets.
 Expected prepayments stand in for realized principal in this credit-free example.
 The unhedged and hedged NII columns use the same monthly market path, which can

@@ -97,7 +97,7 @@ class IncomeForecastTests(unittest.TestCase):
                         with self.subTest(side=side, amount=amount, rate=rate):
                             original = deposit(rate=rate)
                             trade = qs.Trade(original.instrument, AS_OF, side, notional=amount)
-                            native = context.evaluate(trade, [qs.Request.Cashflows]).cashflows
+                            native = context.evaluate(trade, [qs.Request.Cashflows()]).cashflows
                             expected = native[native.type != "Disbursement"].sort_values("type").reset_index(drop=True)
                             for column in ("payment_date", "accrual_start", "accrual_end"):
                                 expected[column] = pd.to_datetime(expected[column]).dt.date
@@ -204,7 +204,7 @@ class IncomeForecastTests(unittest.TestCase):
         book = portfolio(asset, half_funding)
         with make_context() as context:
             result = IncomeForecaster(AS_OF, date(2027, 3, 1)).forecast(context, book)
-            native = context.evaluate(book.native, [qs.Request.Cashflows]).cashflows
+            native = context.evaluate(book.native, [qs.Request.Cashflows()]).cashflows
         self.assertAlmostEqual(result.monthly.nii.sum(), 500 * 0.06)
         self.assertAlmostEqual(result.monthly.nii.sum(), native.query("type == 'FixedRateCoupon'").amount.sum())
 
@@ -270,7 +270,7 @@ class IncomeForecastTests(unittest.TestCase):
                                       day_counter="Actual365", margin=0)
         with make_context() as context:
             trade, quote = template.build(context, "NEW-FLOAT", start, 80_000)
-            result = context.evaluate(trade, [qs.Request.Value, qs.Request.Cashflows])
+            result = context.evaluate(trade, [qs.Request.Value, qs.Request.Cashflows()])
             expected_advance = 80_000 * context.curve("ESTR").discount_factor(start)
             self.assertAlmostEqual(result.price, expected_advance, delta=0.0001)
             self.assertEqual(quote.quote_type, "floating_spread")
@@ -472,6 +472,10 @@ class IncomeForecastTests(unittest.TestCase):
         self.assertLess(assets.current_principal.sum(), assets.original_notional.sum())
         with context:
             result = IncomeForecaster(AS_OF, date(2026, 5, 1)).forecast(context, book)
+        opening = result.balances.loc[result.balances.period_start == AS_OF]
+        np.testing.assert_allclose(
+            opening.groupby("segment").opening_balance.sum(),
+            inventory.groupby("segment").current_principal.sum(), rtol=0, atol=1e-7)
         self.assertEqual(result.income_detail.position.nunique(), 3)
         self.assertEqual(set(result.cashflows.origin), {"existing"})
 
@@ -492,11 +496,11 @@ class IncomeForecastTests(unittest.TestCase):
 
         self.assertTrue(all(isinstance(item, qs.Portfolio) for item, _ in calls))
         cashflow_groups = [item for item, requests in calls
-                           if qs.Request.Cashflows in requests]
+                           if qs.Request.Cashflows() in requests]
         self.assertEqual(sorted(map(len, cashflow_groups)), [30, 30, 40])
         first_window = qs.Request.AccruedAmount(*forecaster.periods[0])
         for _, requests in calls:
-            if qs.Request.Cashflows in requests:
+            if qs.Request.Cashflows() in requests:
                 self.assertIn(first_window, requests)
             else:
                 self.assertEqual(len(requests), 1)
@@ -508,14 +512,14 @@ class IncomeForecastTests(unittest.TestCase):
         for repayment in (qs.LoanRepaymentStructure.french(),
                           qs.LoanRepaymentStructure.bullet(),
                           qs.LoanRepaymentStructure.balloon(0.25)):
-            trade = loan(repayment)
+            trade = loan(repayment, cpr=0)
             contract = trade.instrument
             self.assertEqual(contract.contractual_principal(date(2026, 2, 28)), 0)
             self.assertAlmostEqual(contract.contractual_principal(AS_OF), 1000)
             self.assertEqual(contract.contractual_principal(date(2027, 3, 1)), 0)
             for when in (AS_OF, date(2026, 4, 1), date(2026, 9, 15), date(2027, 2, 1)):
                 with self.subTest(repayment=repayment, when=when), make_context(reference=when) as context:
-                    receipts = context.evaluate(trade, [qs.Request.Cashflows]).cashflows
+                    receipts = context.evaluate(trade, [qs.Request.Cashflows()]).cashflows
                     expected = receipts.loc[receipts.type == "Redemption"].amount.sum()
                     self.assertAlmostEqual(contract.contractual_principal(when), expected)
 
@@ -693,7 +697,7 @@ class DepositHedgingTests(unittest.TestCase):
         book = portfolio(trade)
         with make_context() as context:
             report = engine.sensitivity_report(context, book)
-            receipts = context.evaluate(trade, [qs.Request.Cashflows]).cashflows
+            receipts = context.evaluate(trade, [qs.Request.Cashflows()]).cashflows
             receipts["payment_date"] = pd.to_datetime(receipts.payment_date).dt.date
             future = receipts[receipts.payment_date > AS_OF]
             values = []
@@ -817,7 +821,7 @@ class MonthlyHedgingTests(unittest.TestCase):
         result = MonthlyHedgingEngine(hedger).forecast(
             portfolio(original), AS_OF, date(2026, 5, 1), market_at=self.market_at)
         expected = 1000 * (1 - 0.36) ** (2 / 12)
-        self.assertAlmostEqual(result.business_portfolio.positions[0].trade.notional, expected)
+        self.assertEqual(result.business_portfolio.positions[0].trade.notional, original.notional)
         self.assertAlmostEqual(result.monthly.asset_balance.iloc[-1], expected)
         self.assertEqual(original.instrument.to_dict(), terms)
         self.assertTrue(result.tickets.empty)
@@ -838,6 +842,29 @@ class MonthlyHedgingTests(unittest.TestCase):
             expected = context.curve("EURIBOR3m").forward_rate(date(2026, 5, 1), date(2026, 8, 1))
         self.assertAlmostEqual(result.fixings.fixing("EURIBOR3m", date(2026, 5, 1)), expected)
         self.assertEqual(len(result.rebalances), 3)
+
+    def test_refinancing_observations_are_realized_between_monthly_rebalances(self):
+        instrument = qs.Loan(
+            "REFINANCING", date(2026, 2, 10), date(2027, 2, 10), 1000,
+            [qs.FixedRateCoupon(qs.InterestRate(0.06))], "EUR",
+            repayment="French", payment_frequency="Monthly",
+            prepayment=qs.PrepaymentModelConfiguration.refinancing_incentive(0.03, 4, 0.35))
+        fixings = qs.FixingStore()
+        fixings.add("EURIBOR3m", date(2026, 2, 10), 0.02)
+        hedger = DepositHedgingEngine(DepositHedgingTests.templates(("ESTR",))[:1])
+        result = MonthlyHedgingEngine(hedger).forecast(
+            portfolio(qs.Trade(instrument, AS_OF)), AS_OF, date(2026, 6, 1),
+            market_at=self.market_at, fixings=fixings)
+        self.assertEqual(result.fixings.fixing("EURIBOR3m", date(2026, 2, 10)), 0.02)
+        for month in (3, 4, 5):
+            observed = date(2026, month, 10)
+            with make_context(reference=date(2026, month, 1)) as context:
+                expected = context.curve("EURIBOR3m").forward_rate(
+                    observed, date(2026, month + 3, 10))
+            self.assertAlmostEqual(result.fixings.fixing("EURIBOR3m", observed), expected)
+        carried = result.business_portfolio.positions[0].trade
+        self.assertIsNone(carried.notional)
+        self.assertEqual(carried.instrument.to_dict(), instrument.to_dict())
 
     def test_start_date_originations_join_the_first_solve_and_horizon_orders_only_change_balance(self):
         lending = ProductionTemplate("GROWTH", tenor_months=12)
