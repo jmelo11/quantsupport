@@ -23,6 +23,7 @@ use crate::{
 pub struct OptionEmbeddedCoupon<T: Scalar> {
     notional: f64,
     fixing: Option<T>,
+    fixing_date: Option<Date>,
     spread: T,
     index: MarketIndex,
     accrual_start_date: Date,
@@ -47,6 +48,7 @@ impl<T: Scalar> OptionEmbeddedCoupon<T> {
         Self {
             notional,
             fixing: None,
+            fixing_date: None,
             spread,
             index,
             accrual_start_date,
@@ -55,6 +57,24 @@ impl<T: Scalar> OptionEmbeddedCoupon<T> {
             payoff,
             day_counter: None,
         }
+    }
+
+    /// Sets the contractual reset date independently of accrual start.
+    #[must_use]
+    pub const fn with_fixing_date(mut self, date: Date) -> Self {
+        self.fixing_date = Some(date);
+        self
+    }
+
+    /// Installs the contractual reset date while resolving an existing coupon.
+    pub const fn set_fixing_date(&mut self, date: Date) {
+        self.fixing_date = Some(date);
+    }
+
+    /// Returns the contractual fixing date, defaulting to accrual start.
+    #[must_use]
+    pub fn fixing_date(&self) -> Date {
+        self.fixing_date.unwrap_or(self.accrual_start_date)
     }
 
     /// Sets the fixing for the coupon, which is used to determine the payoff.
@@ -259,6 +279,7 @@ impl From<OptionEmbeddedCoupon<f64>> for OptionEmbeddedCoupon<DualFwd> {
             payment_date: value.payment_date,
             payoff: value.payoff,
             day_counter: value.day_counter,
+            fixing_date: value.fixing_date,
         }
     }
 }
@@ -275,6 +296,7 @@ impl From<OptionEmbeddedCoupon<DualFwd>> for OptionEmbeddedCoupon<f64> {
             payment_date: value.payment_date,
             payoff: value.payoff,
             day_counter: value.day_counter,
+            fixing_date: value.fixing_date,
         }
     }
 }

@@ -294,7 +294,20 @@ pub fn parse_requests(names: &[String]) -> Result<Vec<Request>, String> {
             "zspread" => Request::ZSpread,
             "oas" => Request::OAS,
             "sensitivities" => Request::Sensitivities,
-            "cashflows" => Request::Cashflows,
+            "cashflows" => Request::Cashflows(true),
+            _ if normalized.starts_with("cashflows(") => {
+                let flag = normalized
+                    .strip_prefix("cashflows(")
+                    .and_then(|s| s.strip_suffix(')'))
+                    .ok_or_else(|| "use Cashflows(true) or Cashflows(false)".to_owned())?;
+                let flag = flag
+                    .strip_prefix("fromevaluationdate=")
+                    .unwrap_or(flag)
+                    .trim()
+                    .parse::<bool>()
+                    .map_err(|_| "use Cashflows(true) or Cashflows(false)".to_owned())?;
+                Request::Cashflows(flag)
+            }
             _ if normalized.starts_with("accruedamount(") => {
                 let window = normalized
                     .strip_prefix("accruedamount(")
@@ -583,14 +596,22 @@ mod tests {
         let first = risk_free
             .evaluate(
                 &trade,
-                &[Request::Value, Request::Cashflows, Request::FairRate(1)],
+                &[
+                    Request::Value,
+                    Request::Cashflows(true),
+                    Request::FairRate(1),
+                ],
                 &context,
             )
             .unwrap();
         let second = funded
             .evaluate(
                 &trade,
-                &[Request::Value, Request::Cashflows, Request::FairRate(1)],
+                &[
+                    Request::Value,
+                    Request::Cashflows(true),
+                    Request::FairRate(1),
+                ],
                 &context,
             )
             .unwrap();

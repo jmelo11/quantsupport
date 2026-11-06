@@ -62,13 +62,12 @@ the first coupon's fixing or forecast, including spread and payoff rules. An
 explicit `with_initial_amortization_rate` overrides that observation. Direct
 `build()` construction requires an explicit initial all-in `amortization_rate`
 for floating-first French/balloon loans. Python makers use `build_using(context)` when that rate is omitted.
-Excel constructs the loan using its explicit construction context. The resolved rate fixes
-the principal schedule.
-Subsequent market moves or reset observations change floating interest without
-changing contractual coupon notionals or redemptions. Otherwise the first fixed
-coupon supplies the initial amortization rate for every principal period;
-later coupon steps do not automatically recast principal. Bullet loans repay
-principal at maturity.
+Excel constructs the loan using its explicit construction context. The builder
+retains a contractual baseline and recasts known fixed coupon steps. During
+valuation, French and balloon loans recalculate the installment at each
+contractual coupon/reset change from the opening balance and remaining maturity.
+The installment stays level within each rate period, including unequal accrual
+lengths. Bullet loans repay principal at maturity.
 
 Accrual day counters belong to coupons. A floating coupon uses its explicit
 day counter, falling back to its index convention when omitted. Fixed coupons
@@ -77,8 +76,8 @@ principal amortization and preserves them when generating each cashflow.
 `MakeLoan::with_day_counter` and Python `Loan(day_counter=...)` have been removed;
 move that setting into the coupon. With an initial amortization rate matching
 the first all-in floating fixing, French payments are level through the first
-reset, including months with different accrual lengths. Later resets can change
-payments because contractual principal remains fixed.
+reset, including months with different accrual lengths. Later resets set a new
+level installment for their rate period.
 
 The following Rust fragment builds a floating mortgage; its market and trade
 are supplied by the surrounding application.
@@ -176,12 +175,31 @@ AD dependencies on market rates without changing the cashflows' `f64` notionals.
 
 ## Valuation and cashflows
 
-`LoanPricer` implements the standard request handlers. `Request::Cashflows`
+`LoanPricer` implements the standard request handlers. `Request::Cashflows(true)`
 uses `HandleCashflows` over projected legs containing existing cashflow variants:
 leg 0 contains scheduled coupons/redemptions, leg 1 prepayment redemptions, and
-leg 2 recovery amounts. The table reports expected signed receipts strictly after
-the evaluation date. Their discounted sum reproduces `Value`. The initial
-advance remains part of the contractual leg but is excluded from receipt PV.
+leg 2 recovery redemptions. Prepayment is projected from origination, including
+periods before evaluation. Historical coupon and refinancing observations needed
+to replay this history are required; missing fixings raise an error.
+
+Python's `qs.Request.Cashflows()` defaults to
+`qs.Request.Cashflows(from_evaluation_date=True)` and reports payments strictly
+after evaluation. Pass `from_evaluation_date=False` to include the full schedule
+and initial advance. Rust uses `Request::Cashflows(true)` or
+`Request::Cashflows(false)`; Excel accepts `Cashflows(false)` as its request name.
+The report window does not affect PV, which includes future receipts and excludes
+the initial advance. Floating rows include their contractual `fixing_date`; monthly
+coupons sharing an annual reset have the same date. Fixed and principal rows have
+no fixing date.
+
+Payment schedules accept forward/backward generation, month-end alignment,
+`first_coupon_date` and `next_to_last_coupon_date`. The first anchor ends an
+initial stub; the penultimate anchor starts a final stub. `Backward` generation
+places an automatically generated stub at the beginning; `Forward` places it at
+the end. Excel accepts these controls as rows in the existing loan settings table.
+The default French convention
+keeps the same scheduled installment for a stub, with interest based on its actual
+accrual fraction and the remainder allocated to principal.
 
 Bounded floating templates retain `OptionEmbeddedCoupon`. Their floor/cap payoff
 is applied to the resolved index observation with the loan's accrual basis.
@@ -209,7 +227,7 @@ trade = qs.Trade(instrument=loan, trade_date=reference_date, side=qs.Side.LongRe
 discount_policy = qs.FixedIncomeDiscountPolicy(discount_curve_by_currency={qs.Currency.EUR: qs.MarketIndex.ESTR})
 with qs.PricingContext(quotes=quotes, curves=curves, fixings=fixings, csa_policy=csa_policy,
                       fixed_income_policy=discount_policy) as context:
-    result = context.evaluate(trade=trade, requests=[qs.Request.Value, qs.Request.Cashflows, qs.Request.Sensitivities])
+    result = context.evaluate(trade=trade, requests=[qs.Request.Value, qs.Request.Cashflows(), qs.Request.Sensitivities])
     value = result.price
     expected_receipts = result.cashflows
     risk = result.sensitivities
@@ -244,7 +262,7 @@ scenarios. No Python pricer registration or trade subclass is needed.
 Sensitivities are derivatives with respect to labelled market pillars. Multiply
 a rate-quote derivative by 0.0001 for the first-order PV change from a one-basis-point
 increase. Native refinancing and survival weights participate in AD; contractual
-principal schedules stay fixed during market sensitivity calculations.
+rate-dependent principal schedules participate in market sensitivity calculations.
 
 ## Fair rate and schedule choice
 
@@ -276,7 +294,8 @@ trials treat principal. The default `false` preserves the already created
 amortization schedule. With `true`, each trial regenerates the builder's French,
 bullet, or balloon schedule using the first trial coupon's all-in rate. Once
 the first segment is solved, its rate stays fixed during later trials. A custom leg needs explicit repayment
-metadata to use this mode. Neither mode changes the original instrument.
+metadata to use this mode. Neither mode changes the original instrument. Both apply the French reset rule
+during receipt projection.
 
 ```python
 original_configurations = context.pricer_configurations

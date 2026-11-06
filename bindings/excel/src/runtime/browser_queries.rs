@@ -480,19 +480,18 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
                 "Leg index",
                 "Accrual start",
                 "Accrual end",
-                "Fixing index",
                 "Coupon index",
                 "Signed notional",
                 "Coupon rate",
                 "Spread",
                 "Day count",
-                "Rate conventions",
                 "Overnight conventions",
                 "Payoff",
+                "Fixing date",
             ],
         );
         table.message = "Signed, undiscounted amounts in each row's currency. Rates are decimal; leg indices start at 0.".into();
-        table.numeric_columns = vec![2, 4, 5, 6, 7, 8, 13, 14, 15];
+        table.numeric_columns = vec![2, 4, 5, 6, 7, 8, 12, 13, 14];
         for row in 0..flows.payment_dates().len() {
             let details = flows.coupon_details()[row].as_ref();
             let optional =
@@ -514,10 +513,6 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
                     .map(|terms| terms.accrual_end().to_string())
                     .unwrap_or_default(),
                 details
-                    .and_then(CouponDetails::fixing_index)
-                    .map(ToString::to_string)
-                    .unwrap_or_default(),
-                details
                     .and_then(|terms| terms.market_index())
                     .map(ToString::to_string)
                     .unwrap_or_default(),
@@ -528,16 +523,16 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
                     .map(|terms| format!("{:?}", terms.day_counter()))
                     .unwrap_or_default(),
                 details
-                    .and_then(|terms| terms.rate_definition())
-                    .map(|definition| format!("{definition:?}"))
-                    .unwrap_or_default(),
-                details
                     .and_then(|terms| terms.overnight_conventions())
                     .map(|conventions| format!("{conventions:?}"))
                     .unwrap_or_default(),
                 details
                     .and_then(|terms| terms.payoff())
                     .map(|payoff| format!("{payoff:?}"))
+                    .unwrap_or_default(),
+                details
+                    .and_then(CouponDetails::fixing_date)
+                    .map(|date| date.to_string())
                     .unwrap_or_default(),
             ]);
         }
@@ -738,7 +733,7 @@ mod tests {
         assert!(flows
             .rows
             .iter()
-            .any(|row| row[1] == "FloatingRateCoupon" && row[11] == "SOFR" && row[12] == "SOFR"));
+            .any(|row| row[1] == "FloatingRateCoupon" && row[11] == "SOFR"));
         assert!(flows
             .rows
             .iter()
@@ -1076,7 +1071,7 @@ mod tests {
         let mut flows = CashflowsTable::new();
         flows.add_cashflow(
             Date::new(2027, 1, 15),
-            "Coupon café".into(),
+            CashflowKind::FixedRateCoupon,
             -1234.5,
             None,
             1.0,

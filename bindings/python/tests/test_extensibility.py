@@ -78,7 +78,7 @@ class ExtensionTests(unittest.TestCase):
         with context:
             result = context.evaluate(
                 trade,
-                [qs.Request.Value, qs.Request.Sensitivities, qs.Request.Cashflows],
+                [qs.Request.Value, qs.Request.Sensitivities, qs.Request.Cashflows()],
             )
 
         self.assertEqual(result.identifier, "COUPON")

@@ -2,7 +2,6 @@
 use super::bondanalytics::{
     bracketed_root, quoted_dirty_price, solve_yield, yield_price_and_derivative,
 };
-use crate::rates::yieldtermstructure::primalcurve::PrimalCurve;
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar, tape::Tape},
     core::{
@@ -28,7 +27,9 @@ use crate::{
             callschedule::CallScheduleEntry, fixedratebond::FixedRateBondTrade,
         },
     },
-    rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
+    rates::yieldtermstructure::{
+        interestratestermstructure::InterestRatesTermStructure, primalcurve::PrimalCurve,
+    },
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
 };
@@ -89,16 +90,18 @@ fn resolve_leg<T: Scalar + From<DualFwd>>(
 ) -> Result<Leg<T>> {
     let mut resolved = leg.clone();
     for cashflow in resolved.cashflows_mut() {
-        let (index, start, end) = match cashflow {
+        let (index, start, end, fixing_date) = match cashflow {
             CashflowType::FloatingRateCoupon(coupon) => (
                 coupon.market_index().clone(),
                 coupon.accrual_start_date(),
                 coupon.accrual_end_date(),
+                coupon.fixing_date(),
             ),
             CashflowType::OptionEmbeddedCoupon(coupon) => (
                 coupon.market_index().clone(),
                 coupon.accrual_start_date(),
                 coupon.accrual_end_date(),
+                coupon.fixing_date(),
             ),
             _ => continue,
         };
@@ -130,7 +133,7 @@ fn resolve_leg<T: Scalar + From<DualFwd>>(
                 )?
             }
             _ => T::from(
-                ForwardRateRequest::new(index, start)
+                ForwardRateRequest::new(index, fixing_date)
                     .with_start_date(start)
                     .with_end_date(end)
                     .resolve_index_rate(
@@ -346,16 +349,18 @@ pub(super) fn contractual_market_request(
     }
     let mut fixings = Vec::new();
     for cashflow in trade.bond_leg().cashflows() {
-        let (index, start, end) = match cashflow {
+        let (index, start, end, fixing_date) = match cashflow {
             CashflowType::FloatingRateCoupon(coupon) => (
                 coupon.market_index(),
                 coupon.accrual_start_date(),
                 coupon.accrual_end_date(),
+                coupon.fixing_date(),
             ),
             CashflowType::OptionEmbeddedCoupon(coupon) => (
                 coupon.market_index(),
                 coupon.accrual_start_date(),
                 coupon.accrual_end_date(),
+                coupon.fixing_date(),
             ),
             _ => continue,
         };
@@ -380,8 +385,8 @@ pub(super) fn contractual_market_request(
                     continue;
                 }
             }
-            if start < evaluation_date {
-                fixings.push(FixingRequest::new(index.clone(), start));
+            if fixing_date < evaluation_date {
+                fixings.push(FixingRequest::new(index.clone(), fixing_date));
             }
         }
     }
@@ -520,7 +525,7 @@ where
         .filter(|request| match request {
             Request::Value
             | Request::Sensitivities
-            | Request::Cashflows
+            | Request::Cashflows(_)
             | Request::AccruedAmount(_, _) => true,
             Request::YieldToMaturity | Request::ModifiedDuration => {
                 E::INSTRUMENT_TYPE == InstrumentType::FixedRateBond
@@ -714,8 +719,12 @@ where
             Request::Sensitivities => {
                 results = results.with_sensitivities(sensitivities(&state)?);
             }
-            Request::Cashflows => {
-                results = results.with_cashflows(engine.handle_cashflows(trade, &mut state)?);
+            Request::Cashflows(from_evaluation_date) => {
+                results = results.with_cashflows(
+                    engine
+                        .handle_cashflows(trade, &mut state)?
+                        .with_payment_cutoff(from_evaluation_date.then_some(evaluation_date)),
+                );
             }
             Request::AccruedAmount(start, end) => {
                 results = results.with_accrued_amount(
@@ -1197,7 +1206,7 @@ mod tests {
             Request::YieldToMaturity,
             Request::ModifiedDuration,
             Request::ZSpread,
-            Request::Cashflows,
+            Request::Cashflows(true),
             Request::AccruedAmount(date, Date::new(2025, 2, 1)),
         ];
         let local = fixed_pricer().evaluate(&trade, &requests, &context)?;
@@ -1364,7 +1373,7 @@ mod tests {
             Request::Value,
             Request::ZSpread,
             Request::Sensitivities,
-            Request::Cashflows,
+            Request::Cashflows(true),
         ];
         let long_result = pricer.evaluate(&roundtrip, &requests, &provider)?;
         let short_result = pricer.evaluate(&short, &requests, &provider)?;

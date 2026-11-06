@@ -77,7 +77,7 @@ class CompositeLoanFundingTests(unittest.TestCase):
         instrument = loan()
         with funding_context() as context:
             result = context.evaluate(qs.Trade(instrument, REFERENCE),
-                                             [qs.Request.Value, qs.Request.Cashflows, qs.Request.FairRate(0)])
+                                             [qs.Request.Value, qs.Request.Cashflows(), qs.Request.FairRate(0)])
             expected = sum(row.amount * context.curve(FUNDING).discount_factor(row.payment_date)
                            for row in result.cashflows.itertuples(index=False))
             self.assertAlmostEqual(result.price, expected, places=8)
@@ -91,8 +91,8 @@ class CompositeLoanFundingTests(unittest.TestCase):
     def test_scenarios_rebuild_components_and_preserve_contract(self):
         instrument = loan(True)
         contract = instrument.to_dict()
-        base = value(instrument, requests=[qs.Request.Value, qs.Request.Cashflows])
-        stressed = value(instrument, requests=[qs.Request.Value, qs.Request.Cashflows], funding_shift=0.005)
+        base = value(instrument, requests=[qs.Request.Value, qs.Request.Cashflows()])
+        stressed = value(instrument, requests=[qs.Request.Value, qs.Request.Cashflows()], funding_shift=0.005)
         self.assertLess(stressed.price, base.price)
         self.assertEqual(stressed.cashflows.amount.tolist(), base.cashflows.amount.tolist())
         self.assertEqual(instrument.to_dict(), contract)

@@ -44,6 +44,8 @@ pub struct FloatingRateCoupon<T: Scalar> {
     payment_date: Date,
     day_counter: DayCounter,
     #[serde(default)]
+    fixing_date: Option<Date>,
+    #[serde(default)]
     overnight_conventions: Option<OvernightCouponConventions>,
 }
 
@@ -65,6 +67,7 @@ where
             .overnight_conventions
             .clone_from(&self.overnight_conventions);
         coupon.day_counter = self.day_counter;
+        coupon.fixing_date = self.fixing_date;
         let value = *self.fixing.read().unwrap();
         if let Some(fixing) = value {
             coupon.set_fixing(fixing);
@@ -303,7 +306,26 @@ where
             payment_date,
             day_counter,
             overnight_conventions: None,
+            fixing_date: None,
         }
+    }
+
+    /// Sets the contractual term-rate reset date, independently of accrual dates.
+    #[must_use]
+    pub const fn with_fixing_date(mut self, date: Date) -> Self {
+        self.fixing_date = Some(date);
+        self
+    }
+
+    /// Installs the contractual reset date while resolving an existing coupon.
+    pub const fn set_fixing_date(&mut self, date: Date) {
+        self.fixing_date = Some(date);
+    }
+
+    /// Returns the contractual term-rate fixing date, defaulting to accrual start.
+    #[must_use]
+    pub fn fixing_date(&self) -> Date {
+        self.fixing_date.unwrap_or(self.start_date)
     }
 
     /// Uses a contractual accrual day counter independently of the index quote.
@@ -725,6 +747,7 @@ impl From<FloatingRateCoupon<f64>> for FloatingRateCoupon<DualFwd> {
         );
         coupon.overnight_conventions = value.overnight_conventions;
         coupon.day_counter = value.day_counter;
+        coupon.fixing_date = value.fixing_date;
         if let Some(fixing) = fixing {
             coupon.set_fixing(DualFwd::new(fixing.value()));
         }
@@ -746,6 +769,7 @@ impl From<FloatingRateCoupon<DualFwd>> for FloatingRateCoupon<f64> {
         );
         coupon.overnight_conventions = value.overnight_conventions;
         coupon.day_counter = value.day_counter;
+        coupon.fixing_date = value.fixing_date;
         if let Some(fixing) = fixing {
             coupon.set_fixing(fixing.value());
         }

@@ -98,7 +98,7 @@ def constant_contracts() -> None:
     qs.Frequency.Monthly = qs.Frequency.Annual  # type: ignore[misc]
     qs.Currency.EUR = qs.Currency.USD  # type: ignore[misc]
     qs.OptionType.Call = qs.OptionType.Put  # type: ignore[misc]
-    qs.Request.Value = qs.Request.Cashflows  # type: ignore[misc]
+    qs.Request.Value = qs.Request.Cashflows()  # type: ignore[misc]
     qs.ScenarioType.Relative = qs.ScenarioType.Absolute  # type: ignore[misc]
 
 

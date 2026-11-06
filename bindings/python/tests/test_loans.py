@@ -101,7 +101,7 @@ class LoanWorkflowTests(unittest.TestCase):
         )]
         context.fixed_income_policy = qs.FixedIncomeDiscountPolicy({"EUR": "EURIBOR12m"})
         self.assertIsNone(context.pricer_for(trade))
-        requests = [qs.Request.Value, qs.Request.Cashflows, qs.Request.Sensitivities]
+        requests = [qs.Request.Value, qs.Request.Cashflows(), qs.Request.Sensitivities]
         with context:
             result = context.evaluate(trade, requests)
             self.assertGreater(result.cashflows.loc[result.cashflows.leg_index == 1, "amount"].sum(), 0)
@@ -300,7 +300,7 @@ class LoanWorkflowTests(unittest.TestCase):
     def test_cashflow_request_pv_sign_notional_and_request_order(self):
         instrument = build_floating_rate_loan()
         with build_pricing_context(instrument) as ctx:
-            result = evaluate_loan_trade(instrument, ctx, [qs.Request.Cashflows, qs.Request.Cashflows,
+            result = evaluate_loan_trade(instrument, ctx, [qs.Request.Cashflows(), qs.Request.Cashflows(),
                 qs.Request.FairRate(0), qs.Request.Sensitivities, qs.Request.Value])
             table = result.cashflows
             expected = sum(row.amount * ctx.curve("ESTR").discount_factor(row.payment_date)
@@ -316,7 +316,7 @@ class LoanWorkflowTests(unittest.TestCase):
             self.assertAlmostEqual(half.price, result.price / 2, places=7)
             self.assertEqual(instrument.notional, 100_000)
 
-    def test_market_moves_preserve_contractual_principal_and_annual_fixings(self):
+    def test_market_moves_recast_future_principal_and_preserve_known_fixings(self):
         instrument = build_floating_rate_loan()
         snapshot = instrument.to_dict()
         principal = []
@@ -326,7 +326,8 @@ class LoanWorkflowTests(unittest.TestCase):
                 principal.append(table.loc[table.type == "Redemption", "amount"].tolist())
                 coupons = table.loc[table.type == "FloatingRateCoupon"]
                 self.assertEqual(coupons.fixing.iloc[:12].tolist(), [0.04] * 12)
-        self.assertEqual(principal[0], principal[1])
+        self.assertEqual(principal[0][:12], principal[1][:12])
+        self.assertNotEqual(principal[0][12:], principal[1][12:])
         self.assertEqual(instrument.to_dict(), snapshot)
         requests = instrument.coupon_fixing_requests()
         self.assertEqual(len(requests), 2)

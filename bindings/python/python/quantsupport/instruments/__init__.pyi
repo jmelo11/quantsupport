@@ -403,7 +403,7 @@ class PrepaymentModelConfiguration:
 class Loan(Instrument):
     """Contractual cashflows and principal; valuation applies market/default/prepayment effects."""
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], currency: _CurrencyLike, repayment: LoanRepaymentStructure | str | Mapping[str, Any] | None=..., payment_frequency: Frequency | str | None=..., fixing_frequency: Frequency | str | None=..., prepayment: PrepaymentModelConfiguration | str | Mapping[str, Any] | None=..., credit_index: _IndexLike | None=..., recovery: float | None=..., fixing_lag: int | None=..., index_tenor: _PeriodLike | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., amortization_rate: float | None=..., context: _pricing.PricingContext | None=...) -> Self:
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], currency: _CurrencyLike, repayment: LoanRepaymentStructure | str | Mapping[str, Any] | None=..., payment_frequency: Frequency | str | None=..., fixing_frequency: Frequency | str | None=..., prepayment: PrepaymentModelConfiguration | str | Mapping[str, Any] | None=..., credit_index: _IndexLike | None=..., recovery: float | None=..., fixing_lag: int | None=..., index_tenor: _PeriodLike | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., amortization_rate: float | None=..., context: _pricing.PricingContext | None=..., date_generation_rule: DateGenerationRule | str | None=..., end_of_month: bool | None=..., first_coupon_date: _DateLike | None=..., next_to_last_coupon_date: _DateLike | None=...) -> Self:
         """Build a concrete loan using supplied terms and an optional construction context.
 
         Parameters
@@ -455,11 +455,20 @@ class Loan(Instrument):
         amortization_rate : float, optional
             Initial annual all-in decimal rate used to build principal. Default
             None uses the first fixed coupon, or resolves the initial floating
-            observation during build_using. Later coupons do not rebuild the
-            principal schedule.
+            observation during build_using. French projected principal is
+            recalculated at coupon/reset changes.
         context : PricingContext, optional
             Explicit context for an initial amortization observation. None raises
             UnresolvedProductErr when the supplied terms need market data.
+
+        first_coupon_date : Date or datetime.date or str, optional
+            Ends a short or long first coupon; later dates follow the regular grid.
+        next_to_last_coupon_date : Date or datetime.date or str, optional
+            Starts the final short or long coupon before maturity.
+        date_generation_rule : DateGenerationRule or str, optional
+            Backward aligns to maturity for a first stub; Forward aligns to origination.
+        end_of_month : bool, optional
+            Preserves month-end boundaries on the regular schedule.
 
         Raises
         ------
@@ -1404,7 +1413,7 @@ class FixedRateBond(Instrument):
         the first coupon from the regular schedule.
     """
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, rate: float, currency: _CurrencyLike, discount_index: _IndexLike | None=..., day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., rate_frequency: Frequency | str | None=..., payment_frequency: Frequency | str | None=..., payment_structure: PaymentStructure | str | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., date_generation_rule: DateGenerationRule | str | None=..., end_of_month: bool | None=..., first_coupon_date: _DateLike | None=...) -> Self:
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, rate: float, currency: _CurrencyLike, discount_index: _IndexLike | None=..., day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., rate_frequency: Frequency | str | None=..., payment_frequency: Frequency | str | None=..., payment_structure: PaymentStructure | str | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., date_generation_rule: DateGenerationRule | str | None=..., end_of_month: bool | None=..., first_coupon_date: _DateLike | None=..., next_to_last_coupon_date: _DateLike | None=...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -1525,6 +1534,11 @@ class FixedRateBond(Instrument):
     @property
     def first_coupon_date(self) -> Date | None:
         """Read-only contractual first_coupon_date. Collections are returned as copies."""
+        ...
+
+    @property
+    def next_to_last_coupon_date(self) -> Date | None:
+        """Read-only contractual next_to_last_coupon_date."""
         ...
 
     def keys(self) -> list[str]:
@@ -2614,7 +2628,7 @@ class FloatingRateNote(Instrument):
         the requested structure.
     """
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, spread: float, currency: _CurrencyLike, forward_index: _IndexLike, payment_frequency: Frequency | str | None=..., payment_structure: PaymentStructure | str | None=...) -> Self:
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, spread: float, currency: _CurrencyLike, forward_index: _IndexLike, payment_frequency: Frequency | str | None=..., payment_structure: PaymentStructure | str | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., date_generation_rule: DateGenerationRule | str | None=..., end_of_month: bool | None=..., first_coupon_date: _DateLike | None=..., next_to_last_coupon_date: _DateLike | None=...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -2688,6 +2702,36 @@ class FloatingRateNote(Instrument):
 
     def to_dict(self) -> dict[str, Any]:
         """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    @property
+    def calendar(self) -> Calendar | None:
+        """Read-only contractual calendar."""
+        ...
+
+    @property
+    def business_day_convention(self) -> BusinessDayConvention | None:
+        """Read-only contractual business_day_convention."""
+        ...
+
+    @property
+    def date_generation_rule(self) -> DateGenerationRule | None:
+        """Read-only contractual date_generation_rule."""
+        ...
+
+    @property
+    def end_of_month(self) -> bool | None:
+        """Read-only contractual end_of_month."""
+        ...
+
+    @property
+    def first_coupon_date(self) -> Date | None:
+        """Read-only contractual first_coupon_date."""
+        ...
+
+    @property
+    def next_to_last_coupon_date(self) -> Date | None:
+        """Read-only contractual next_to_last_coupon_date."""
         ...
 
     def keys(self) -> list[str]:
@@ -3942,7 +3986,7 @@ class MakeFixFloatCrossCurrencySwap(MakeInstrument[FixFloatCrossCurrencySwap]):
 class MakeFixedRateBond(MakeInstrument[FixedRateBond]):
     """Reusable maker for FixedRateBond. Both build methods return a concrete product."""
 
-    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, rate: float, currency: _CurrencyLike, discount_index: _IndexLike | None = ..., day_counter: DayCounter | str | None = ..., compounding: Compounding | str | None = ..., rate_frequency: Frequency | str | None = ..., payment_frequency: Frequency | str | None = ..., payment_structure: PaymentStructure | str | None = ..., calendar: Calendar | str | None = ..., business_day_convention: BusinessDayConvention | str | None = ..., date_generation_rule: DateGenerationRule | str | None = ..., end_of_month: bool | None = ..., first_coupon_date: _DateLike | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., first_coupon_tenor: _PeriodLike | None = ...) -> Self:
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, rate: float, currency: _CurrencyLike, discount_index: _IndexLike | None = ..., day_counter: DayCounter | str | None = ..., compounding: Compounding | str | None = ..., rate_frequency: Frequency | str | None = ..., payment_frequency: Frequency | str | None = ..., payment_structure: PaymentStructure | str | None = ..., calendar: Calendar | str | None = ..., business_day_convention: BusinessDayConvention | str | None = ..., date_generation_rule: DateGenerationRule | str | None = ..., end_of_month: bool | None = ..., first_coupon_date: _DateLike | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., first_coupon_tenor: _PeriodLike | None = ..., next_to_last_coupon_date: _DateLike | None = ..., next_to_last_coupon_tenor: _PeriodLike | None = ...) -> Self:
         """Stores copied construction parameters.
 
         Parameters
@@ -4091,7 +4135,7 @@ class MakeSteppedCouponBond(MakeInstrument[SteppedCouponBond]):
 class MakeFloatingRateNote(MakeInstrument[FloatingRateNote]):
     """Reusable maker for FloatingRateNote. Both build methods return a concrete product."""
 
-    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, spread: float, currency: _CurrencyLike, forward_index: _IndexLike, payment_frequency: Frequency | str | None = ..., payment_structure: PaymentStructure | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, spread: float, currency: _CurrencyLike, forward_index: _IndexLike, payment_frequency: Frequency | str | None = ..., payment_structure: PaymentStructure | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., calendar: Calendar | str | None = ..., business_day_convention: BusinessDayConvention | str | None = ..., date_generation_rule: DateGenerationRule | str | None = ..., end_of_month: bool | None = ..., first_coupon_date: _DateLike | None = ..., next_to_last_coupon_date: _DateLike | None = ..., first_coupon_tenor: _PeriodLike | None = ..., next_to_last_coupon_tenor: _PeriodLike | None = ...) -> Self:
         """Stores copied construction parameters.
 
         Parameters
@@ -4186,7 +4230,7 @@ class MakeFixedRateDeposit(MakeInstrument[FixedRateDeposit]):
 class MakeLoan(MakeInstrument[Loan]):
     """Reusable maker for Loan. Both build methods return a concrete product."""
 
-    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], currency: _CurrencyLike, repayment: LoanRepaymentStructure | str | Mapping[str, Any] | None = ..., payment_frequency: Frequency | str | None = ..., fixing_frequency: Frequency | str | None = ..., prepayment: PrepaymentModelConfiguration | str | Mapping[str, Any] | None = ..., credit_index: _IndexLike | None = ..., recovery: float | None = ..., fixing_lag: int | None = ..., index_tenor: _PeriodLike | None = ..., calendar: Calendar | str | None = ..., business_day_convention: BusinessDayConvention | str | None = ..., amortization_rate: float | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., prepayment_tenors: Sequence[Any] | None = ...) -> Self:
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], currency: _CurrencyLike, repayment: LoanRepaymentStructure | str | Mapping[str, Any] | None = ..., payment_frequency: Frequency | str | None = ..., fixing_frequency: Frequency | str | None = ..., prepayment: PrepaymentModelConfiguration | str | Mapping[str, Any] | None = ..., credit_index: _IndexLike | None = ..., recovery: float | None = ..., fixing_lag: int | None = ..., index_tenor: _PeriodLike | None = ..., calendar: Calendar | str | None = ..., business_day_convention: BusinessDayConvention | str | None = ..., amortization_rate: float | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., prepayment_tenors: Sequence[Any] | None = ..., date_generation_rule: DateGenerationRule | str | None = ..., end_of_month: bool | None = ..., first_coupon_date: _DateLike | None = ..., next_to_last_coupon_date: _DateLike | None = ..., first_coupon_tenor: _PeriodLike | None = ..., next_to_last_coupon_tenor: _PeriodLike | None = ...) -> Self:
         """Stores copied construction parameters.
 
         Parameters
@@ -4238,8 +4282,8 @@ class MakeLoan(MakeInstrument[Loan]):
         amortization_rate : float | None
             Initial annual all-in decimal rate used to build principal. Default
             None uses the first fixed coupon, or resolves the initial floating
-            observation during build_using. Later coupons do not rebuild the
-            principal schedule.
+            observation during build_using. French projected principal is
+            recalculated at coupon/reset changes.
         start_tenor : _PeriodLike | None
             Start offset from the context evaluation date. Omitted or None leaves this input unset.
         tenor : _PeriodLike | None

@@ -82,7 +82,7 @@ zero-rate curve. Two equal rate pillars specify that curve explicitly.
    with context:
        result = context.evaluate(trade, [
            qs.Request.Value, qs.Request.FairRate(0),
-           qs.Request.Cashflows, qs.Request.Sensitivities,
+           qs.Request.Cashflows(), qs.Request.Sensitivities,
        ])
        discount = context.curve("SOFR").discount_factor(reference + "5Y")
        print(result.price, result.fair_rate, discount)

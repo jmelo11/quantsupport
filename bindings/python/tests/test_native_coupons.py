@@ -51,7 +51,7 @@ class NativeCouponTests(unittest.TestCase):
         self.assertEqual(restored.to_dict(), loan.to_dict())
         self.assertEqual(loan.to_dict()["coupons"][0]["OptionEmbeddedCoupon"]["payoff"], payoff.to_dict())
         with build_pricing_context(restored) as context:
-            result = evaluate_loan_trade(restored, context, [qs.Request.Value, qs.Request.Cashflows])
+            result = evaluate_loan_trade(restored, context, [qs.Request.Value, qs.Request.Cashflows()])
         first = result.cashflows.loc[result.cashflows.type == "OptionEmbeddedCoupon"].iloc[0]
         self.assertAlmostEqual(first.amount, 100_000 * first.accrual_period * 0.085)
 

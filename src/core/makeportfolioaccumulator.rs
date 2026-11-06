@@ -19,7 +19,7 @@ use crate::{
 /// use quantsupport::prelude::*;
 ///
 /// let mut accumulator = MakePortfolioAccumulator::default()
-///     .with_requests(&[Request::Value, Request::Cashflows])
+///     .with_requests(&[Request::Value, Request::Cashflows(true)])
 ///     .with_cashflow_aggregator(NetCashflowAggregator::default())
 ///     .build()?;
 /// let result = EvaluationResults::new(Date::new(2026, 1, 15), "trade".into())

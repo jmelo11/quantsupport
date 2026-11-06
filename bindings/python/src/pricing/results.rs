@@ -132,7 +132,8 @@ impl EvaluationResults {
                 flows.add_cashflow(
                     Date::from_str(&row.payment_date, "%Y-%m-%d")
                         .map_err(crate::common::conversion::qs_err)?,
-                    row.cashflow_type.as_str().into(),
+                    quantsupport::prelude::CashflowKind::try_from(row.cashflow_type.as_str())
+                        .map_err(crate::common::conversion::qs_err)?,
                     row.amount,
                     row.fixing,
                     row.accrual_period,
@@ -460,6 +461,23 @@ impl EvaluationResults {
         )?;
         let extra = pyo3::types::PyDict::new(py);
         extra.set_item(
+            "fixing_date",
+            datetime_column(
+                py,
+                rows.iter()
+                    .map(|row| {
+                        row.coupon_details
+                            .as_ref()
+                            .and_then(|terms| terms.fixing_date())
+                            .map(|date| date.to_string())
+                    })
+                    .collect::<Vec<_>>()
+                    .into_pyobject(py)?
+                    .into_any(),
+            )?,
+        )?;
+
+        extra.set_item(
             "accrual_start",
             datetime_column(
                 py,
@@ -506,16 +524,6 @@ impl EvaluationResults {
                 .collect::<Vec<_>>(),
         )?;
         extra.set_item(
-            "fixing_index",
-            rows.iter()
-                .map(|row| {
-                    row.coupon_details
-                        .as_ref()
-                        .and_then(|terms| terms.fixing_index().map(ToString::to_string))
-                })
-                .collect::<Vec<_>>(),
-        )?;
-        extra.set_item(
             "rate",
             rows.iter()
                 .map(|row| row.coupon_details.as_ref().and_then(|terms| terms.rate()))
@@ -534,18 +542,6 @@ impl EvaluationResults {
                     row.coupon_details
                         .as_ref()
                         .map(|terms| format!("{:?}", terms.day_counter()))
-                })
-                .collect::<Vec<_>>(),
-        )?;
-        extra.set_item(
-            "rate_definition",
-            rows.iter()
-                .map(|row| {
-                    row.coupon_details.as_ref().and_then(|terms| {
-                        terms
-                            .rate_definition()
-                            .map(|definition| format!("{definition:?}"))
-                    })
                 })
                 .collect::<Vec<_>>(),
         )?;

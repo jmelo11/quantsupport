@@ -1,10 +1,25 @@
 //! Preserve coupon economics while compressing compatible cashflows.
 
-use crate::instruments::cashflows::{
-    optionembeddedcoupon::OptionEmbeddedCoupon, payoffops::PayoffOps,
+use crate::{
+    core::evaluationresults::{CashflowKind, CashflowsTable},
+    currencies::currency::Currency,
+    indices::marketindex::MarketIndex,
+    instruments::{
+        cashflows::{
+            cashflowtype::CashflowType, fixedratecoupon::FixedRateCoupon,
+            floatingratecoupon::FloatingRateCoupon, optionembeddedcoupon::OptionEmbeddedCoupon,
+            payoffops::PayoffOps,
+        },
+        rates::oisconventions::OvernightCouponConventions,
+    },
+    math::compensatedsum::CompensatedSum,
+    rates::{
+        compounding::Compounding,
+        interestrate::{InterestRate, RateDefinition},
+    },
+    time::{date::Date, daycounter::DayCounter, enums::Frequency},
+    utils::errors::{QSError, Result},
 };
-use crate::math::compensatedsum::CompensatedSum;
-use crate::{prelude::*, utils::errors::Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -15,11 +30,10 @@ pub struct CouponDetails {
     accrual_start: Date,
     /// Contractual accrual end date.
     accrual_end: Date,
-    /// Contractual floating index; absent for fixed coupons.
-    market_index: Option<MarketIndex>,
-    /// Leg-level forecasting/fixing index override, when supplied.
     #[serde(default)]
-    forward_index: Option<MarketIndex>,
+    fixing_date: Option<Date>,
+    /// Effective floating index; absent for fixed coupons.
+    market_index: Option<MarketIndex>,
     /// Signed contractual principal, including the position/leg direction.
     notional: f64,
     /// Annual decimal fixed coupon rate, when fixed.
@@ -28,8 +42,6 @@ pub struct CouponDetails {
     spread: Option<f64>,
     /// Contractual accrual day count.
     day_counter: DayCounter,
-    /// Original fixed-rate conventions.
-    rate_definition: Option<RateDefinition>,
     /// Overnight observation, averaging and spread-compounding rules.
     overnight_conventions: Option<OvernightCouponConventions>,
     /// Original option payoff; distinct payoffs remain separate.
@@ -48,24 +60,34 @@ impl CouponDetails {
         Self {
             accrual_start,
             accrual_end,
+            fixing_date: None,
             market_index: None,
-            forward_index: None,
             notional,
             rate: None,
             spread: None,
             day_counter,
-            rate_definition: None,
             overnight_conventions: None,
             payoff: None,
         }
     }
 
-    /// Sets a fixed coupon quote and its contractual day-count definition.
+    /// Records the contractual fixing date of a term-rate coupon.
     #[must_use]
-    pub const fn with_fixed_rate(mut self, rate: InterestRate<f64>) -> Self {
-        self.rate = Some(rate.rate());
-        self.rate_definition = Some(rate.rate_definition());
-        self.day_counter = rate.day_counter();
+    pub const fn with_fixing_date(mut self, date: Option<Date>) -> Self {
+        self.fixing_date = date;
+        self
+    }
+
+    /// Returns the contractual fixing date, absent for fixed and overnight coupons.
+    #[must_use]
+    pub const fn fixing_date(&self) -> Option<Date> {
+        self.fixing_date
+    }
+
+    /// Sets the annual decimal fixed coupon quote.
+    #[must_use]
+    pub const fn with_fixed_rate(mut self, rate: f64) -> Self {
+        self.rate = Some(rate);
         self
     }
 
@@ -74,13 +96,6 @@ impl CouponDetails {
     pub fn with_floating_rate(mut self, index: MarketIndex, spread: f64) -> Self {
         self.market_index = Some(index);
         self.spread = Some(spread);
-        self
-    }
-
-    /// Sets the optional forecasting/fixing index override.
-    #[must_use]
-    pub fn with_forward_index(mut self, index: Option<MarketIndex>) -> Self {
-        self.forward_index = index;
         self
     }
 
@@ -192,22 +207,10 @@ impl CouponDetails {
         self.day_counter
     }
 
-    /// Returns the original fixed rate convention.
-    #[must_use]
-    pub const fn rate_definition(&self) -> Option<RateDefinition> {
-        self.rate_definition
-    }
-
     /// Returns the contractual floating index, when present.
     #[must_use]
     pub const fn market_index(&self) -> Option<&MarketIndex> {
         self.market_index.as_ref()
-    }
-
-    /// Returns the forecasting index override, when present.
-    #[must_use]
-    pub const fn forward_index(&self) -> Option<&MarketIndex> {
-        self.forward_index.as_ref()
     }
 
     /// Returns the overnight observation conventions, when present.
@@ -220,12 +223,6 @@ impl CouponDetails {
     #[must_use]
     pub const fn payoff(&self) -> Option<&PayoffOps> {
         self.payoff.as_ref()
-    }
-
-    /// Returns the leg forecasting index, falling back to the contractual index.
-    #[must_use]
-    pub fn fixing_index(&self) -> Option<&MarketIndex> {
-        self.forward_index.as_ref().or(self.market_index.as_ref())
     }
 
     /// Reconstructs an equivalent numeric coupon from reported contractual terms.
@@ -246,6 +243,9 @@ impl CouponDetails {
                     payoff.clone(),
                 )
                 .with_day_counter(self.day_counter);
+                if let Some(date) = self.fixing_date {
+                    coupon.set_fixing_date(date);
+                }
                 if let Some(fixing) = fixing {
                     coupon.set_fixing(fixing);
                 }
@@ -260,6 +260,9 @@ impl CouponDetails {
                 payment_date,
             )
             .with_day_counter(self.day_counter);
+            if let Some(date) = self.fixing_date {
+                coupon.set_fixing_date(date);
+            }
             if let Some(conventions) = &self.overnight_conventions {
                 coupon.set_overnight_conventions(conventions.clone())?;
             }
@@ -271,12 +274,14 @@ impl CouponDetails {
             let rate = self
                 .rate
                 .ok_or_else(|| QSError::ValueNotSetErr("Fixed coupon rate".into()))?;
-            let definition = self
-                .rate_definition
-                .ok_or_else(|| QSError::ValueNotSetErr("Fixed coupon rate definition".into()))?;
             let coupon = FixedRateCoupon::new(
                 self.notional,
-                Box::new(InterestRate::from_rate_definition(rate, definition)),
+                Box::new(InterestRate::new(
+                    rate,
+                    Compounding::Simple,
+                    Frequency::Annual,
+                    self.day_counter,
+                )),
                 self.accrual_start,
                 self.accrual_end,
                 payment_date,
@@ -323,8 +328,8 @@ impl CashflowAggregator for GrossCashflowAggregator {
 
 /// Nets compatible payments and receipts, deriving coupon quotes from total interest.
 ///
-/// Principal advances and repayments within one reported leg on the same date
-/// are combined as capital.
+/// Principal advances and repayments retain their contractual kinds. Compatible
+/// signed payments are netted within each kind and reported leg.
 /// If net principal is zero, interest is retained without synthetic coupon terms;
 /// an implied rate is undefined for that row.
 #[derive(Default)]
@@ -352,12 +357,11 @@ enum Grouping {
 /// Contract terms that must agree before coupons can share an equivalent quote.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct CouponIdentity {
+    fixing_date: Option<Date>,
     start: Date,
     end: Date,
     index: Option<MarketIndex>,
-    forward_index: Option<MarketIndex>,
     day_counter: DayCounter,
-    definition: Option<RateDefinition>,
     overnight: Option<OvernightCouponConventions>,
     payoff: Option<PayoffOps>,
     rate: Option<u64>,
@@ -408,12 +412,7 @@ impl CashflowCompressor {
     fn accumulate_cashflows(&mut self, flows: &CashflowsTable, grouping: Grouping) -> Result<()> {
         for flow in flows.rows() {
             self.serial += 1;
-            let mut kind = flow.kind.clone();
-            if matches!(grouping, Grouping::Net)
-                && matches!(kind, CashflowKind::Redemption | CashflowKind::Disbursement)
-            {
-                kind = CashflowKind::Capital;
-            }
+            let kind = flow.kind.clone();
             let details = flow.coupon_details;
             let equivalent_rate = matches!(kind, CashflowKind::FixedRateCoupon)
                 && details.is_some_and(|terms| terms.rate.is_some());
@@ -425,12 +424,11 @@ impl CashflowCompressor {
                         .is_some_and(OvernightCouponConventions::compound_spread_daily)
                 });
             let coupon = details.map(|terms| CouponIdentity {
+                fixing_date: terms.fixing_date,
                 start: terms.accrual_start,
                 end: terms.accrual_end,
                 index: terms.market_index.clone(),
-                forward_index: terms.forward_index.clone(),
                 day_counter: terms.day_counter,
-                definition: terms.rate_definition,
                 overnight: terms.overnight_conventions.clone(),
                 payoff: terms.payoff.clone(),
                 rate: if equivalent_rate {
@@ -444,14 +442,8 @@ impl CashflowCompressor {
                     terms.spread.map(f64::to_bits)
                 },
             });
-            let known_without_terms = matches!(
-                kind,
-                CashflowKind::Redemption
-                    | CashflowKind::Disbursement
-                    | CashflowKind::Capital
-                    | CashflowKind::ConstantAmount
-                    | CashflowKind::Interest
-            );
+            let known_without_terms =
+                matches!(kind, CashflowKind::Redemption | CashflowKind::Disbursement);
             let identity = CashflowIdentity {
                 date: flow.payment_date,
                 currency: flow.currency,
@@ -578,19 +570,19 @@ impl CashflowCompressor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{core::portfolio::summarize_cashflows, instruments::cashflows::cashflow::Cashflow};
 
     fn terms(index: Option<MarketIndex>, notional: f64, quote: f64) -> CouponDetails {
         let floating = index.is_some();
         CouponDetails {
+            fixing_date: None,
             accrual_start: Date::new(2026, 1, 15),
             accrual_end: Date::new(2027, 1, 15),
             market_index: index,
-            forward_index: None,
             notional,
             rate: (!floating).then_some(quote),
             spread: floating.then_some(quote),
             day_counter: DayCounter::Actual360,
-            rate_definition: (!floating).then_some(RateDefinition::default()),
             overnight_conventions: None,
             payoff: None,
         }
@@ -609,7 +601,7 @@ mod tests {
         };
         flows.add_cashflow(
             payment,
-            kind.into(),
+            CashflowKind::try_from(kind)?,
             amount,
             fixing,
             details
@@ -721,8 +713,11 @@ mod tests {
         changed.day_counter = DayCounter::Actual365;
         add(&mut flows, changed, Some(0.03))?;
         let mut changed = base.clone();
-        changed.forward_index = Some(MarketIndex::ESTR);
-        assert_eq!(changed.fixing_index(), Some(&MarketIndex::ESTR));
+        changed.market_index = Some(MarketIndex::ESTR);
+        assert_eq!(changed.market_index(), Some(&MarketIndex::ESTR));
+        add(&mut flows, changed, Some(0.03))?;
+        let mut changed = base.clone();
+        changed.fixing_date = Some(Date::new(2026, 1, 13));
         add(&mut flows, changed, Some(0.03))?;
         let mut changed = base.clone();
         changed.overnight_conventions =
@@ -738,7 +733,7 @@ mod tests {
         }
         let mut compressor = GrossCashflowAggregator::default();
         compressor.accumulate_cashflows(&flows)?;
-        assert_eq!(compressor.into_cashflows_table()?.payment_dates().len(), 8);
+        assert_eq!(compressor.into_cashflows_table()?.payment_dates().len(), 9);
         Ok(())
     }
 
@@ -755,7 +750,7 @@ mod tests {
         for _ in 0..2 {
             flows.add_cashflow(
                 Date::new(2027, 1, 17),
-                "FloatingRateCoupon".into(),
+                CashflowKind::FloatingRateCoupon,
                 3.0,
                 Some(0.03),
                 1.0,
@@ -912,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    fn net_capital_offsets_advances_and_repayments_and_retains_currencies() -> Result<()> {
+    fn net_aggregation_preserves_advances_repayments_and_currencies() -> Result<()> {
         let mut flows = CashflowsTable::new();
         for (kind, amount, currency) in [
             (CashflowKind::Redemption, 100.0, Currency::USD),
@@ -936,10 +931,17 @@ mod tests {
         let net = net.into_cashflows_table()?;
         assert_eq!(
             net.cashflow_types(),
-            &[CashflowKind::Capital, CashflowKind::Capital]
+            &[
+                CashflowKind::Disbursement,
+                CashflowKind::Redemption,
+                CashflowKind::Disbursement
+            ]
         );
-        assert_eq!(net.currencies(), &[Currency::EUR, Currency::USD]);
-        assert_eq!(net.amounts(), &[-10.0, 20.0]);
+        assert_eq!(
+            net.currencies(),
+            &[Currency::EUR, Currency::USD, Currency::USD]
+        );
+        assert_eq!(net.amounts(), &[-10.0, 100.0, -80.0]);
         Ok(())
     }
 

@@ -29,9 +29,11 @@ class TradeInstrumentTests(unittest.TestCase):
             summary = result.cashflow_summary
             self.assertEqual(list(summary.columns), ["payment_date", "currency", "interest", "capital", "other", "total"])
             self.assertTrue((summary.currency == "USD").all())
-            self.assertAlmostEqual(summary.capital.sum(), 0.0)
+            self.assertAlmostEqual(summary.capital.sum(), 150_000.0)
+            complete = context.evaluate(portfolio, [qs.Request.Cashflows(from_evaluation_date=False)])
+            self.assertAlmostEqual(complete.cashflow_summary.capital.sum(), 0.0)
             self.assertGreater(summary.interest.sum(), 0.0)
-            self.assertEqual(set(result.cashflows.type), {"FixedRateCoupon", "Redemption", "Disbursement"})
+            self.assertEqual(set(result.cashflows.type), {"FixedRateCoupon", "Redemption"})
             coupons = result.cashflows[result.cashflows.type == "FixedRateCoupon"]
             for column in ["payment_date", "accrual_start", "accrual_end"]:
                 self.assertTrue(pd.api.types.is_datetime64_any_dtype(result.cashflows[column]))

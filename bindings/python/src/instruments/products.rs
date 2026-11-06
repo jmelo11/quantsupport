@@ -838,6 +838,7 @@ pub struct FixedRateBond {
     pub date_generation_rule: Option<DateGenerationRule>,
     pub end_of_month: Option<bool>,
     pub first_coupon_date: Option<Date>,
+    pub next_to_last_coupon_date: Option<Date>,
 }
 
 macro_rules! build_fixed_rate_bond_instrument {
@@ -870,6 +871,9 @@ macro_rules! build_fixed_rate_bond_instrument {
         }
         if let Some(enabled) = $self.end_of_month {
             builder = builder.with_end_of_month(enabled);
+        }
+        if let Some(date) = $self.next_to_last_coupon_date {
+            builder = builder.with_next_to_last_coupon_date(date);
         }
         if let Some(date) = $self.first_coupon_date {
             builder = builder.with_first_coupon_date(date);
@@ -937,6 +941,7 @@ impl FixedRateBond {
         date_generation_rule = None,
         end_of_month = None,
         first_coupon_date = None,
+        next_to_last_coupon_date = None,
     ))]
     fn new(
         identifier: String,
@@ -956,6 +961,7 @@ impl FixedRateBond {
         date_generation_rule: Option<&Bound<'_, PyAny>>,
         end_of_month: Option<bool>,
         first_coupon_date: Option<&Bound<'_, PyAny>>,
+        next_to_last_coupon_date: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyClassInitializer<Self>> {
         Ok(
             PyClassInitializer::from(Instrument::new(identifier.clone())).add_subclass(Self {
@@ -995,6 +1001,7 @@ impl FixedRateBond {
                     .transpose()?,
                 end_of_month,
                 first_coupon_date: first_coupon_date.map(extract_date).transpose()?,
+                next_to_last_coupon_date: next_to_last_coupon_date.map(extract_date).transpose()?,
             }),
         )
     }
@@ -1008,7 +1015,7 @@ impl FixedRateBond {
             "rate_frequency": self.rate_frequency, "payment_frequency": self.payment_frequency,
             "payment_structure": format!("{:?}", crate::common::enums::PaymentStructure::from(self.payment_structure)),
             "calendar": self.calendar, "business_day_convention": self.business_day_convention, "date_generation_rule": self.date_generation_rule,
-            "end_of_month": self.end_of_month, "first_coupon_date": self.first_coupon_date
+            "end_of_month": self.end_of_month, "first_coupon_date": self.first_coupon_date, "next_to_last_coupon_date": self.next_to_last_coupon_date
         })).map_err(qs_err)
     }
 
@@ -1244,11 +1251,17 @@ pub struct FloatingRateNote {
     pub currency: Currency,
     pub payment_frequency: Frequency,
     pub payment_structure: PaymentStructure,
+    pub calendar: Option<Calendar>,
+    pub business_day_convention: Option<BusinessDayConvention>,
+    pub date_generation_rule: Option<DateGenerationRule>,
+    pub end_of_month: Option<bool>,
+    pub first_coupon_date: Option<Date>,
+    pub next_to_last_coupon_date: Option<Date>,
 }
 
 macro_rules! build_frn_instrument {
     ($self:expr, $position:expr, $t:ty) => {{
-        MakeFloatingRateNote::<$t>::default()
+        let mut builder = MakeFloatingRateNote::<$t>::default()
             .with_identifier($self.identifier.clone())
             .with_start_date($self.start_date)
             .with_maturity_date($self.maturity_date)
@@ -1258,9 +1271,26 @@ macro_rules! build_frn_instrument {
             .with_currency($self.currency)
             .with_side($position.side())
             .with_payment_frequency($self.payment_frequency)
-            .with_payment_structure($self.payment_structure)
-            .build()
-            .map_err(qs_err)
+            .with_payment_structure($self.payment_structure);
+        if let Some(value) = &$self.calendar {
+            builder = builder.with_calendar(value.clone());
+        }
+        if let Some(value) = $self.business_day_convention {
+            builder = builder.with_business_day_convention(value);
+        }
+        if let Some(value) = $self.date_generation_rule {
+            builder = builder.with_date_generation_rule(value);
+        }
+        if let Some(value) = $self.end_of_month {
+            builder = builder.with_end_of_month(value);
+        }
+        if let Some(value) = $self.first_coupon_date {
+            builder = builder.with_first_coupon_date(value);
+        }
+        if let Some(value) = $self.next_to_last_coupon_date {
+            builder = builder.with_next_to_last_coupon_date(value);
+        }
+        builder.build().map_err(qs_err)
     }};
 }
 
@@ -1302,6 +1332,8 @@ impl FloatingRateNote {
         forward_index,
         payment_frequency = None,
         payment_structure = None,
+        calendar = None, business_day_convention = None, date_generation_rule = None,
+        end_of_month = None, first_coupon_date = None, next_to_last_coupon_date = None,
     ))]
     fn new(
         identifier: String,
@@ -1313,10 +1345,26 @@ impl FloatingRateNote {
         forward_index: &Bound<'_, PyAny>,
         payment_frequency: Option<&Bound<'_, PyAny>>,
         payment_structure: Option<&Bound<'_, PyAny>>,
+        calendar: Option<&Bound<'_, PyAny>>,
+        business_day_convention: Option<&Bound<'_, PyAny>>,
+        date_generation_rule: Option<&Bound<'_, PyAny>>,
+        end_of_month: Option<bool>,
+        first_coupon_date: Option<&Bound<'_, PyAny>>,
+        next_to_last_coupon_date: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyClassInitializer<Self>> {
         Ok(
             PyClassInitializer::from(Instrument::new(identifier.clone())).add_subclass(Self {
                 identifier: identifier.clone(),
+                calendar: calendar.map(extract_calendar).transpose()?,
+                business_day_convention: business_day_convention
+                    .map(extract_business_day_convention)
+                    .transpose()?,
+                date_generation_rule: date_generation_rule
+                    .map(extract_date_generation_rule)
+                    .transpose()?,
+                end_of_month,
+                first_coupon_date: first_coupon_date.map(extract_date).transpose()?,
+                next_to_last_coupon_date: next_to_last_coupon_date.map(extract_date).transpose()?,
                 start_date: extract_date(start_date)?,
                 maturity_date: extract_date(maturity_date)?,
                 notional,
@@ -2359,6 +2407,7 @@ contract_getters! { FixedRateBond, this, py;
     date_generation_rule: Option<crate::common::enums::DateGenerationRule> => this.date_generation_rule.clone().map(|value| value.into());
     end_of_month: Option<bool> => this.end_of_month.clone().map(|value| value);
     first_coupon_date: Option<crate::time::Date> => this.first_coupon_date.clone().map(|value| crate::time::Date { inner: value });
+    next_to_last_coupon_date: Option<crate::time::Date> => this.next_to_last_coupon_date.map(|inner| crate::time::Date { inner });
 }
 
 contract_getters! { SteppedCouponBond, this, py;
@@ -2390,6 +2439,13 @@ contract_getters! { FloatingRateNote, this, py;
     currency: crate::common::enums::Currency => this.currency.into();
     payment_frequency: crate::common::enums::Frequency => this.payment_frequency.into();
     payment_structure: crate::common::enums::PaymentStructure => this.payment_structure.into();
+    calendar: Option<crate::time::Calendar> => this.calendar.clone().map(|inner| crate::time::Calendar { inner });
+    business_day_convention: Option<crate::common::enums::BusinessDayConvention> => this.business_day_convention.map(Into::into);
+    date_generation_rule: Option<crate::common::enums::DateGenerationRule> => this.date_generation_rule.map(Into::into);
+    end_of_month: Option<bool> => this.end_of_month;
+    first_coupon_date: Option<crate::time::Date> => this.first_coupon_date.map(|inner| crate::time::Date { inner });
+    next_to_last_coupon_date: Option<crate::time::Date> => this.next_to_last_coupon_date.map(|inner| crate::time::Date { inner });
+
 }
 
 contract_getters! { FixedRateDeposit, this, py;
@@ -2606,6 +2662,9 @@ impl FloatingRateNote {
             "forward_index": self.forward_index,
             "currency": self.currency,
             "payment_frequency": self.payment_frequency,
+            "calendar": self.calendar, "business_day_convention": self.business_day_convention,
+            "date_generation_rule": self.date_generation_rule, "end_of_month": self.end_of_month,
+            "first_coupon_date": self.first_coupon_date, "next_to_last_coupon_date": self.next_to_last_coupon_date,
             "payment_structure": format!("{:?}", crate::common::enums::PaymentStructure::from(self.payment_structure)),
         })).map_err(qs_err)
     }

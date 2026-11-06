@@ -44,7 +44,7 @@ position = qs.Trade(swap, "2026-01-02", qs.Side.LongReceive)
 context = qs.PricingContext(quotes=quotes, curves=[curve])
 with context:
     result = context.evaluate(
-        position, [qs.Request.Value, qs.Request.Cashflows, qs.Request.Sensitivities]
+        position, [qs.Request.Value, qs.Request.Cashflows(), qs.Request.Sensitivities]
     )
     print(result.price)
     print(result.cashflows)

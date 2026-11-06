@@ -95,7 +95,28 @@ QuantSupportError
     Sensitivities: Final[Request]
     ZSpread: Final[Request]
     OAS: Final[Request]
-    Cashflows: Final[Request]
+
+    @staticmethod
+    def Cashflows(from_evaluation_date: bool = True) -> Request:
+        """Select the cashflow reporting window.
+
+Parameters
+----------
+from_evaluation_date : bool, optional
+    True reports payments strictly after evaluation. False includes the complete
+    schedule from origination. Defaults to True; valuation is unaffected.
+
+Returns
+-------
+Request
+    A parameterized cashflow request, matching Rust's Cashflows(bool) variant.
+"""
+        ...
+
+    @property
+    def from_evaluation_date(self) -> bool | None:
+        """Whether Cashflows reports only payments strictly after evaluation."""
+        ...
 
     @staticmethod
     def FairRate(index: int = 0) -> Request:
@@ -1901,7 +1922,7 @@ pandas.DataFrame or None
     Columns ``payment_date``, ``type``, ``amount``, ``fixing``, ``accrual_period``,
     ``currency``, ``caplet_strike``, ``floorlet_strike``, ``leg_index``,
     ``accrual_start``, ``accrual_end``, ``market_index``, ``notional``,
-    ``fixing_index``, ``rate``, ``spread``, ``day_counter``, ``rate_definition``,
+    ``fixing_date``, ``rate``, ``spread``, ``day_counter``,
     ``overnight_conventions``, and ``payoff``. Contractual coupon terms retain
     signed notionals and compatible weighted rates/spreads after portfolio
     aggregation.

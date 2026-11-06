@@ -6,7 +6,7 @@ pub(super) fn cashflows_output(
     transpose: Option<bool>,
     headers: Option<bool>,
 ) -> Result<*mut XLOPER12, XllError> {
-    const COLUMNS: usize = 9;
+    const COLUMNS: usize = 10;
     let rows = table.payment_dates().len() + 1;
     let mut cells = Vec::with_capacity(rows * COLUMNS);
     for header in [
@@ -14,6 +14,7 @@ pub(super) fn cashflows_output(
         "Type",
         "Amount",
         "Fixing",
+        "Fixing date",
         "Accrual",
         "Currency",
         "Floor",
@@ -27,6 +28,12 @@ pub(super) fn cashflows_output(
         cells.push(XLOPER12::from_str(&table.cashflow_types()[row].to_string()));
         cells.push(XLOPER12::from_f64(table.amounts()[row]));
         cells.push(table.fixing()[row].map_or_else(XLOPER12::nil, XLOPER12::from_f64));
+        cells.push(
+            table.coupon_details()[row]
+                .as_ref()
+                .and_then(|terms| terms.fixing_date())
+                .map_or_else(XLOPER12::nil, |date| XLOPER12::from_str(&date.to_string())),
+        );
         cells.push(XLOPER12::from_f64(table.accrual_periods()[row]));
         cells.push(XLOPER12::from_str(table.currencies()[row].as_str()));
         cells.push(table.floorlet_strikes()[row].map_or_else(XLOPER12::nil, XLOPER12::from_f64));

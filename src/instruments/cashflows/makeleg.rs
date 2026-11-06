@@ -87,11 +87,13 @@ pub enum PaymentStructure {
 pub struct MakeLeg<T: Scalar> {
     start_tenor: Option<Period>,
     first_coupon_tenor: Option<Period>,
+    next_to_last_coupon_tenor: Option<Period>,
     // common fields
     leg_id: Option<usize>,
     start_date: Option<Date>,
     end_date: Option<Date>,
     first_coupon_date: Option<Date>,
+    next_to_last_coupon_date: Option<Date>,
     payment_frequency: Option<Frequency>,
     tenor: Option<Period>,
     currency: Option<Currency>,
@@ -134,10 +136,12 @@ where
         Self {
             start_tenor: None,
             first_coupon_tenor: None,
+            next_to_last_coupon_tenor: None,
             leg_id: None,
             start_date: None,
             end_date: None,
             first_coupon_date: None,
+            next_to_last_coupon_date: None,
             payment_frequency: None,
             tenor: None,
             currency: None,
@@ -669,6 +673,24 @@ where
     redemptions
 }
 
+impl<T: Scalar> MakeLeg<T> {
+    /// Sets the last regular coupon boundary before maturity.
+    #[must_use]
+    pub const fn with_next_to_last_coupon_date(mut self, date: Option<Date>) -> Self {
+        self.next_to_last_coupon_date = date;
+        self.next_to_last_coupon_tenor = None;
+        self
+    }
+
+    /// Sets the last regular boundary relative to maturity.
+    #[must_use]
+    pub const fn with_next_to_last_coupon_tenor(mut self, tenor: Period) -> Self {
+        self.next_to_last_coupon_tenor = Some(tenor);
+        self.next_to_last_coupon_date = None;
+        self
+    }
+}
+
 /// Computes a numeric compound factor from a rate convention and supplied year fraction.
 fn compound_factor_from_yf_value<T>(rate: InterestRate<T>, year_fraction: f64) -> f64
 where
@@ -703,6 +725,7 @@ impl<T: Scalar> MakeInstrument for MakeLeg<T> {
     fn is_resolved(&self) -> bool {
         self.start_tenor.is_none()
             && self.first_coupon_tenor.is_none()
+            && self.next_to_last_coupon_tenor.is_none()
             && self.tenor.is_none()
             && self.redemptions_tenors.is_empty()
             && self.disbursements_tenors.is_empty()
@@ -719,7 +742,14 @@ impl<T: Scalar> MakeInstrument for MakeLeg<T> {
                 "MakeLeg has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
             ));
         }
-        if [self.start_date, self.end_date, self.first_coupon_date].contains(&Some(Date::empty())) {
+        if [
+            self.start_date,
+            self.end_date,
+            self.first_coupon_date,
+            self.next_to_last_coupon_date,
+        ]
+        .contains(&Some(Date::empty()))
+        {
             return Err(QSError::InvalidValueErr(
                 "MakeLeg dates must not be empty".into(),
             ));
@@ -772,6 +802,11 @@ impl<T: Scalar> MakeInstrument for MakeLeg<T> {
                             .unwrap_or(DateGenerationRule::Forward),
                     );
 
+                let schedule_builder = if let Some(date) = self.next_to_last_coupon_date {
+                    schedule_builder.with_next_to_last_date(date)
+                } else {
+                    schedule_builder
+                };
                 let schedule = if let Some(date) = self.first_coupon_date {
                     if date > start_date {
                         schedule_builder.with_first_date(date).build()?
@@ -1003,6 +1038,11 @@ impl<T: Scalar> MakeInstrument for MakeLeg<T> {
                             .unwrap_or(DateGenerationRule::Backward),
                     );
 
+                let schedule_builder = if let Some(date) = self.next_to_last_coupon_date {
+                    schedule_builder.with_next_to_last_date(date)
+                } else {
+                    schedule_builder
+                };
                 let schedule = if let Some(date) = self.first_coupon_date {
                     if date > start_date {
                         schedule_builder.with_first_date(date).build()?
@@ -1180,6 +1220,11 @@ impl<T: Scalar> MakeInstrument for MakeLeg<T> {
                             .unwrap_or(DateGenerationRule::Backward),
                     );
 
+                let schedule_builder = if let Some(date) = self.next_to_last_coupon_date {
+                    schedule_builder.with_next_to_last_date(date)
+                } else {
+                    schedule_builder
+                };
                 let schedule = if let Some(date) = self.first_coupon_date {
                     if date > start_date {
                         schedule_builder.with_first_date(date).build()?
@@ -1383,33 +1428,43 @@ impl<T: Scalar> MakeInstrument for MakeLeg<T> {
             )?);
         }
         resolved.first_coupon_tenor = None;
-        if !self.disbursements_tenors.is_empty() {
-            let start = resolved
-                .start_date
-                .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
-            let mut values = HashMap::new();
-            for (tenor, amount) in &self.disbursements_tenors {
-                let date = date_calendar.advance(
-                    start,
-                    *tenor,
-                    Some(date_convention),
-                    date_end_of_month,
-                )?;
-                if values.insert(date, *amount).is_some() {
-                    return Err(QSError::InvalidValueErr(
-                        "Duplicate resolved disbursements date".into(),
-                    ));
-                }
-            }
-            resolved.disbursements = Some(values);
-            resolved.disbursements_tenors.clear();
+        if self.next_to_last_coupon_date.is_some() || self.next_to_last_coupon_tenor.is_some() {
+            resolved.next_to_last_coupon_date = Some(resolve_date(
+                self.next_to_last_coupon_date,
+                self.next_to_last_coupon_tenor,
+                resolved
+                    .end_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("maturity_date".into()))?,
+                "next_to_last_coupon_date",
+                date_calendar,
+                date_convention,
+                date_end_of_month,
+            )?);
         }
-        if !self.redemptions_tenors.is_empty() {
+        resolved.next_to_last_coupon_tenor = None;
+
+        for (tenors, dates, unresolved, name) in [
+            (
+                &self.disbursements_tenors,
+                &mut resolved.disbursements,
+                &mut resolved.disbursements_tenors,
+                "disbursements",
+            ),
+            (
+                &self.redemptions_tenors,
+                &mut resolved.redemptions,
+                &mut resolved.redemptions_tenors,
+                "redemptions",
+            ),
+        ] {
+            if tenors.is_empty() {
+                continue;
+            }
             let start = resolved
                 .start_date
                 .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
             let mut values = HashMap::new();
-            for (tenor, amount) in &self.redemptions_tenors {
+            for (tenor, amount) in tenors {
                 let date = date_calendar.advance(
                     start,
                     *tenor,
@@ -1417,13 +1472,13 @@ impl<T: Scalar> MakeInstrument for MakeLeg<T> {
                     date_end_of_month,
                 )?;
                 if values.insert(date, *amount).is_some() {
-                    return Err(QSError::InvalidValueErr(
-                        "Duplicate resolved redemptions date".into(),
-                    ));
+                    return Err(QSError::InvalidValueErr(format!(
+                        "Duplicate resolved {name} date"
+                    )));
                 }
             }
-            resolved.redemptions = Some(values);
-            resolved.redemptions_tenors.clear();
+            *dates = Some(values);
+            unresolved.clear();
         }
         Ok(resolved)
     }

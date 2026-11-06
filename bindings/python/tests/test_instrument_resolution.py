@@ -68,7 +68,7 @@ class InstrumentConstructionTests(unittest.TestCase):
             self.assertGreater(relative.build_using(context).payment_date,
                 qs.Date(2027, 8, 24))
 
-    def test_floating_loan_construction_freezes_principal_and_serialization(self):
+    def test_floating_loan_preserves_contract_and_recasts_projection(self):
         maker = qs.MakeLoan(identifier="LOAN", start_date="2026-02-24", maturity_date="2028-02-24",
             notional=100_000, coupons=[qs.FloatingRateCoupon("EURIBOR12m", 0.01)], currency="EUR")
         self.assertFalse(maker.is_resolved())
@@ -85,7 +85,8 @@ class InstrumentConstructionTests(unittest.TestCase):
             fresh = maker.build_using(high)
             old_result = high.evaluate(trade, ["Value", "Cashflows"])
             fresh_result = high.evaluate(qs.Trade(fresh, "2026-02-24"), ["Value", "Cashflows"])
-            self.assertNotEqual(old_result.cashflows.amount.tolist(), fresh_result.cashflows.amount.tolist())
+            self.assertNotEqual(loan.amortization_rate, fresh.amortization_rate)
+            assert_frame_equal(old_result.cashflows, fresh_result.cashflows)
             repeated = high.evaluate(trade, ["Value", "Cashflows"])
             assert_frame_equal(old_result.cashflows, repeated.cashflows)
         self.assertEqual(loan.to_dict(), before)

@@ -49,7 +49,7 @@ pub fn qs_evaluate(
     })
     .map_err(value_error)?;
     match request {
-        Request::Cashflows => super::output::cashflows_output(
+        Request::Cashflows(_) => super::output::cashflows_output(
             results
                 .cashflows()
                 .ok_or_else(|| not_found("pricer did not return cashflows"))?,

@@ -1,8 +1,8 @@
 //! Native loan construction and valuation shared by worksheet boundaries and tests.
 
 use quantsupport::prelude::{
-    BusinessDayConvention, Calendar, CashflowType, Compounding, Currency, Date, DayCounter,
-    DualFwd, FixedRateCoupon, Frequency, InterestRate, Loan, LoanRepaymentStructure,
+    BusinessDayConvention, Calendar, CashflowType, Compounding, Currency, Date, DateGenerationRule,
+    DayCounter, DualFwd, FixedRateCoupon, Frequency, InterestRate, Loan, LoanRepaymentStructure,
     MakeInstrument, MakeLoan, MakeSchedule, MarketDataProvider, MarketIndex, Period,
     PrepaymentModelConfiguration,
 };
@@ -14,6 +14,10 @@ use std::result::Result;
 #[serde(default, deny_unknown_fields)]
 pub struct LoanOptions {
     pub balloon_fraction: Option<f64>,
+    pub date_generation_rule: Option<DateGenerationRule>,
+    pub first_coupon_date: Option<Date>,
+    pub next_to_last_coupon_date: Option<Date>,
+    pub end_of_month: Option<bool>,
     pub prepayment: Option<PrepaymentModelConfiguration>,
     pub credit_index: Option<MarketIndex>,
     pub recovery: Option<f64>,
@@ -28,6 +32,28 @@ pub struct LoanOptions {
     pub introductory_periods: Option<usize>,
     pub introductory_rate: Option<f64>,
     pub coupon_segments: Option<Vec<CouponSegment>>,
+}
+
+impl LoanOptions {
+    fn payment_count(&self, start: Date, end: Date, frequency: Frequency) -> Result<usize, String> {
+        let mut schedule = MakeSchedule::new(start, end)
+            .with_frequency(frequency)
+            .with_rule(
+                self.date_generation_rule
+                    .unwrap_or(DateGenerationRule::Forward),
+            )
+            .end_of_month(self.end_of_month.unwrap_or(false));
+        if let Some(date) = self.first_coupon_date {
+            schedule = schedule.with_first_date(date);
+        }
+        if let Some(date) = self.next_to_last_coupon_date {
+            schedule = schedule.with_next_to_last_date(date);
+        }
+        schedule
+            .build()
+            .map(|schedule| schedule.dates().len().saturating_sub(1))
+            .map_err(|error| error.to_string())
+    }
 }
 
 /// A contiguous contractual coupon level; the final segment can fill maturity.
@@ -113,11 +139,11 @@ impl LoanTerms {
                         .into(),
                 );
             }
-            let schedule = MakeSchedule::new(self.start_date, self.maturity_date)
-                .with_frequency(self.payment_frequency)
-                .build()
-                .map_err(|error| error.to_string())?;
-            let payments = schedule.dates().len().saturating_sub(1);
+            let payments = options.payment_count(
+                self.start_date,
+                self.maturity_date,
+                self.payment_frequency,
+            )?;
             let mut coupons = Vec::new();
             if segments.is_empty() {
                 return Err("coupon_segments cannot be empty".into());
@@ -146,11 +172,12 @@ impl LoanTerms {
                 (None, None) => vec![coupon],
                 (Some(periods), Some(rate)) if periods > 0 => {
                     // Bound allocation by the actual contractual schedule before creating templates.
-                    let schedule = MakeSchedule::new(self.start_date, self.maturity_date)
-                        .with_frequency(self.payment_frequency)
-                        .build()
-                        .map_err(|error| error.to_string())?;
-                    if periods >= schedule.dates().len().saturating_sub(1) {
+                    let payments = options.payment_count(
+                        self.start_date,
+                        self.maturity_date,
+                        self.payment_frequency,
+                    )?;
+                    if periods >= payments {
                         return Err(
                             "introductory_periods must leave at least one floating payment".into(),
                         );
@@ -228,6 +255,18 @@ impl LoanTerms {
         }
         if let Some(value) = options.business_day_convention {
             builder = builder.with_business_day_convention(value);
+        }
+        if let Some(rule) = options.date_generation_rule {
+            builder = builder.with_date_generation_rule(rule);
+        }
+        if let Some(date) = options.first_coupon_date {
+            builder = builder.with_first_coupon_date(date);
+        }
+        if let Some(date) = options.next_to_last_coupon_date {
+            builder = builder.with_next_to_last_coupon_date(date);
+        }
+        if let Some(flag) = options.end_of_month {
+            builder = builder.with_end_of_month(flag);
         }
         Ok(builder)
     }
@@ -396,7 +435,7 @@ mod tests {
                     &context,
                     &[
                         Request::Value,
-                        Request::Cashflows,
+                        Request::Cashflows(true),
                         Request::FairRate(0),
                         Request::Sensitivities,
                     ],
@@ -532,7 +571,7 @@ mod tests {
             let original_options = input.options.clone();
             let loan = input.build("mixed").unwrap();
             let before = loan
-                .evaluate(&context, &[Request::Value, Request::Cashflows])
+                .evaluate(&context, &[Request::Value, Request::Cashflows(true)])
                 .unwrap();
             let rates: Vec<_> = (0..4)
                 .map(|target| {
@@ -563,7 +602,7 @@ mod tests {
                 .unwrap();
             assert!((price - 250_000.0).abs() < 1e-5, "{rebuild}: {price}");
             let after = loan
-                .evaluate(&context, &[Request::Value, Request::Cashflows])
+                .evaluate(&context, &[Request::Value, Request::Cashflows(true)])
                 .unwrap();
             assert_eq!(before.price(), after.price());
             assert_eq!(
@@ -614,7 +653,7 @@ mod tests {
             serde_json::from_str(r#"{"amortization_rate":0.05,"floor":0.02,"cap":0.045}"#).unwrap();
         let bounded = bounded.build("bounded").unwrap();
         let results = bounded
-            .evaluate(&context, &[Request::Value, Request::Cashflows])
+            .evaluate(&context, &[Request::Value, Request::Cashflows(true)])
             .unwrap();
         assert!(results.price().unwrap().is_finite());
         assert!(bounded.evaluate(&context, &[Request::FairRate(0)]).is_err());
@@ -625,7 +664,7 @@ mod tests {
         let results = introductory
             .build("introductory")
             .unwrap()
-            .evaluate(&context, &[Request::Value, Request::Cashflows])
+            .evaluate(&context, &[Request::Value, Request::Cashflows(true)])
             .unwrap();
         assert!(results.price().unwrap().is_finite());
 
@@ -677,7 +716,7 @@ mod tests {
                 &credit_context,
                 &[
                     Request::Value,
-                    Request::Cashflows,
+                    Request::Cashflows(true),
                     Request::FairRate(0),
                     Request::Sensitivities,
                 ],

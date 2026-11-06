@@ -199,7 +199,11 @@ mod tests {
     #[test]
     fn deposits_aggregate_standard_results_with_bounded_ad_storage() {
         let (mut registry, context, pricer, trade) = setup();
-        let requests = [Request::Value, Request::Sensitivities, Request::Cashflows];
+        let requests = [
+            Request::Value,
+            Request::Sensitivities,
+            Request::Cashflows(true),
+        ];
         let single = registry
             .pricer(&pricer)
             .unwrap()
@@ -244,7 +248,7 @@ mod tests {
         assert_eq!(actual.instrument_keys().len(), 1);
         assert!((actual.exposure()[0] - expected.exposure()[0] * members as f64).abs() < 1e-7);
         let flows = result.cashflows().unwrap();
-        assert_eq!(flows.payment_dates().len(), 3);
+        assert_eq!(flows.payment_dates().len(), 2);
         let coupon = flows.coupon_details().iter().flatten().next().unwrap();
         assert_eq!(coupon.notional(), 1000.0 * members as f64);
         let expected_rate = single
@@ -259,10 +263,9 @@ mod tests {
             .unwrap();
         assert!((coupon.rate().unwrap() - expected_rate).abs() < 1e-14);
         let rows = summarize_cashflows(flows).unwrap();
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].capital(), -1000.0 * members as f64);
-        assert_eq!(rows[1].capital(), 1000.0 * members as f64);
-        assert!(rows[1].interest() > 0.0);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].capital(), 1000.0 * members as f64);
+        assert!(rows[0].interest() > 0.0);
     }
 
     #[test]

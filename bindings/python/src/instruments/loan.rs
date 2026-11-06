@@ -4,8 +4,8 @@ use crate::{
     common::{
         conversion::{
             dataframe, datetime_column, extract_business_day_convention, extract_calendar,
-            extract_currency, extract_date, extract_frequency, extract_market_index,
-            extract_period, from_py, qs_err,
+            extract_currency, extract_date, extract_date_generation_rule, extract_frequency,
+            extract_market_index, extract_period, from_py, qs_err,
         },
         enums::Currency,
     },
@@ -28,7 +28,8 @@ use std::collections::HashSet;
 /// A native loan contract; rates and CPRs are fractions, not percentages.
 ///
 /// Floating amortizing principal needs an explicit initial amortization rate or
-/// construction context. The built principal schedule stays fixed. Market rates,
+/// construction context. The contractual leg is retained while French projected
+/// principal is recalculated at coupon/reset changes. Market rates,
 /// prepayment, and default are applied during valuation through ``Trade`` and
 /// ``PricingContext``. Dates and enums accept their typed values
 /// or string representations; coupons, repayment, and prepayment terms also accept
@@ -75,7 +76,15 @@ use std::collections::HashSet;
 /// amortization_rate : float, optional
 ///     Optional initial annual all-in decimal rate for principal construction.
 ///     Blank uses the first fixed coupon, or resolves the first floating
-///     observation during build_using. Contractual principal stays fixed.
+///     observation during build_using. French valuation re-amortizes at resets.
+/// first_coupon_date : Date, datetime.date or str, optional
+///     Ends the first coupon, allowing a short or long initial period.
+/// next_to_last_coupon_date : Date, datetime.date or str, optional
+///     Starts the final coupon, allowing a short or long final period.
+/// date_generation_rule : DateGenerationRule or str, optional
+///     Backward aligns to maturity for a first stub; Forward aligns to origination.
+/// end_of_month : bool, optional
+///     Preserves month-end alignment of regular accrual boundaries.
 ///
 /// Raises
 /// ------
@@ -128,7 +137,8 @@ impl Loan {
         repayment = None, payment_frequency = None, fixing_frequency = None,
         prepayment = None, credit_index = None, recovery = None,
         fixing_lag = None, index_tenor = None, calendar = None, business_day_convention = None,
-        amortization_rate = None, context = None))]
+        amortization_rate = None, context = None, date_generation_rule = None, end_of_month = None,
+        first_coupon_date = None, next_to_last_coupon_date = None))]
     fn new(
         identifier: String,
         start_date: &Bound<'_, PyAny>,
@@ -148,6 +158,10 @@ impl Loan {
         business_day_convention: Option<&Bound<'_, PyAny>>,
         amortization_rate: Option<f64>,
         context: Option<PyRef<'_, PricingContext>>,
+        date_generation_rule: Option<&Bound<'_, PyAny>>,
+        end_of_month: Option<bool>,
+        first_coupon_date: Option<&Bound<'_, PyAny>>,
+        next_to_last_coupon_date: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyClassInitializer<Self>> {
         let coupons = CouponDefinition::list_from_py(coupons, "Loan.coupons")?;
         let start_date = extract_date(start_date)?;
@@ -167,6 +181,11 @@ impl Loan {
         let business_day_convention = business_day_convention
             .map(extract_business_day_convention)
             .transpose()?;
+        let date_generation_rule = date_generation_rule
+            .map(extract_date_generation_rule)
+            .transpose()?;
+        let first_coupon_date = first_coupon_date.map(extract_date).transpose()?;
+        let next_to_last_coupon_date = next_to_last_coupon_date.map(extract_date).transpose()?;
         let mut construction_parameters = serde_json::json!({
             "identifier": identifier, "start_date": start_date, "maturity_date": maturity_date,
             "notional": notional, "coupons": coupons.iter().map(CouponDefinition::specification).collect::<PyResult<Vec<_>>>()?,
@@ -176,6 +195,8 @@ impl Loan {
             "recovery": recovery, "fixing_lag": fixing_lag, "index_tenor": index_tenor,
             "calendar": calendar, "business_day_convention": business_day_convention,
             "amortization_rate": amortization_rate,
+            "date_generation_rule": date_generation_rule, "end_of_month": end_of_month,
+            "first_coupon_date": first_coupon_date, "next_to_last_coupon_date": next_to_last_coupon_date,
         });
         let mut builder = MakeLoan::default()
             .with_identifier(identifier.clone())
@@ -222,6 +243,18 @@ impl Loan {
         if let Some(value) = amortization_rate {
             builder = builder.with_initial_amortization_rate(value);
         }
+        if let Some(rule) = date_generation_rule {
+            builder = builder.with_date_generation_rule(rule);
+        }
+        if let Some(enabled) = end_of_month {
+            builder = builder.with_end_of_month(enabled);
+        }
+        if let Some(date) = first_coupon_date {
+            builder = builder.with_first_coupon_date(date);
+        }
+        if let Some(date) = next_to_last_coupon_date {
+            builder = builder.with_next_to_last_coupon_date(date);
+        }
         let inner = match context {
             Some(context) => builder
                 .build_using(&context.market_view()?)
@@ -256,7 +289,7 @@ impl Loan {
     /// Rows retain contractual reset order
     /// and are deduplicated by index/fixing date. A fixed loan has no rows.
     /// This lists contractual resets; the pricer determines which past fixings
-    /// are required for unpaid coupons at a particular evaluation date.
+    /// are required to replay the loan from origination.
     fn coupon_fixing_requests<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let loan = &self.inner;
         let mut seen = HashSet::new();

@@ -2,9 +2,9 @@
   "title": "Trade cashflows",
   "message": "Signed, undiscounted amounts in each row's currency. Rates are decimal; leg indices start at 0.",
   "curves": [],
-  "columns": ["Payment date", "Type", "Amount", "Currency", "Fixing", "Accrual period", "Floor strike", "Cap strike", "Leg index", "Accrual start", "Accrual end", "Fixing index", "Coupon index", "Signed notional", "Coupon rate", "Spread", "Day count", "Rate conventions", "Overnight conventions", "Payoff"],
-  "rows": [["2027-01-15", "Coupon café", "-1234.5", "EUR", "", "1", "", "", "1", "", "", "", "", "", "", "", "", "", "", ""]],
-  "numeric_columns": [2, 4, 5, 6, 7, 8, 13, 14, 15],
+  "columns": ["Payment date", "Type", "Amount", "Currency", "Fixing", "Accrual period", "Floor strike", "Cap strike", "Leg index", "Accrual start", "Accrual end", "Coupon index", "Signed notional", "Coupon rate", "Spread", "Day count", "Overnight conventions", "Payoff", "Fixing date"],
+  "rows": [["2027-01-15", "FixedRateCoupon", "-1234.5", "EUR", "", "1", "", "", "1", "", "", "", "", "", "", "", "", "", ""]],
+  "numeric_columns": [2, 4, 5, 6, 7, 8, 12, 13, 14],
   "parameters": [],
   "error": ""
 }

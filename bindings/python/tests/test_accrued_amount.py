@@ -45,7 +45,7 @@ class AccruedAmountTests(unittest.TestCase):
         request = qs.Request.AccruedAmount(date(2026, 3, 1), "2026-04-01")
         with market() as context:
             standalone = context.evaluate(deposit(), [request])
-            combined = context.evaluate(deposit(), [qs.Request.Cashflows, request])
+            combined = context.evaluate(deposit(), [qs.Request.Cashflows(), request])
             for side, notional, scale in [(qs.Side.PayShort, 250, -0.25), (qs.Side.LongReceive, 0, 0)]:
                 with self.subTest(side=side, notional=notional):
                     position = qs.Trade(deposit().instrument, REFERENCE, side, notional=notional)
@@ -57,7 +57,7 @@ class AccruedAmountTests(unittest.TestCase):
         self.assertIsNone(standalone.cashflows)
         self.assertEqual(combined.accrued_amount, standalone.accrued_amount)
         self.assertIsNone(combined.price)
-        self.assertEqual(set(combined.cashflows.type), {"Disbursement", "FixedRateCoupon", "Redemption"})
+        self.assertEqual(set(combined.cashflows.type), {"FixedRateCoupon", "Redemption"})
 
     def test_coupon_accrual_accepts_python_native_and_string_dates(self):
         dates = dict(notional=1000, accrual_start_date=REFERENCE,
@@ -98,8 +98,8 @@ class AccruedAmountTests(unittest.TestCase):
                             request = qs.Request.AccruedAmount(start, end)
                             standalone = context.evaluate(trade, [request])
                             self.assertIsNone(standalone.cashflows)
-                            for requests in ([request, qs.Request.Cashflows],
-                                             [qs.Request.Cashflows, request]):
+                            for requests in ([request, qs.Request.Cashflows()],
+                                             [qs.Request.Cashflows(), request]):
                                 result = context.evaluate(trade, requests)
                                 self.assertAlmostEqual(result.accrued_amount, standalone.accrued_amount)
                                 self.assertIsNotNone(result.cashflows)
