@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use quantsupport::prelude::{
-    BusinessDayConvention, Calendar, Date, Frequency, MarketIndex, Period,
+    BusinessDayConvention, Calendar, Date, DateGenerationRule, Frequency, MarketIndex, Period,
     PrepaymentModelConfiguration,
 };
 
@@ -90,6 +90,10 @@ pub fn options(
                 | "indextenor"
                 | "calendar"
                 | "businessdayconvention"
+                | "dategenerationrule"
+                | "firstcoupondate"
+                | "nexttolastcoupondate"
+                | "endofmonth"
                 | "floor"
                 | "cap"
                 | "introductoryperiods"
@@ -138,6 +142,21 @@ pub fn options(
                         .map_err(|e| e.to_string())?,
                 )
             }
+            "dategenerationrule" => {
+                options.date_generation_rule = Some(
+                    DateGenerationRule::try_from(value.text(name)?.to_owned())
+                        .map_err(|e| e.to_string())?,
+                )
+            }
+            "firstcoupondate" => {
+                options.first_coupon_date =
+                    Some(Date::from_str(value.text(name)?, "%Y-%m-%d").map_err(|e| e.to_string())?)
+            }
+            "nexttolastcoupondate" => {
+                options.next_to_last_coupon_date =
+                    Some(Date::from_str(value.text(name)?, "%Y-%m-%d").map_err(|e| e.to_string())?)
+            }
+            "endofmonth" => options.end_of_month = Some(value.flag(name)?),
             "floor" => options.floor = Some(value.number(name)?),
             "cap" => options.cap = Some(value.number(name)?),
             "introductoryperiods" => options.introductory_periods = Some(value.count(name)?),
@@ -302,6 +321,10 @@ mod tests {
             setting("Index tenor", text("12M")),
             setting("Calendar", text("TARGET")),
             setting("Business day convention", text("Following")),
+            setting("Date generation rule", text("Backward")),
+            setting("First coupon date", text("2026-02-01")),
+            setting("Next to last coupon date", text("2027-12-01")),
+            setting("End of month", Boolean(true)),
             setting("Floor", Blank),
             vec![Blank, Blank],
         ];
@@ -319,6 +342,16 @@ mod tests {
             Some(MarketIndex::Credit("BORROWER".into()))
         );
         assert_eq!(options.fixing_frequency, Some(Frequency::Annual));
+        assert_eq!(
+            options.date_generation_rule,
+            Some(DateGenerationRule::Backward)
+        );
+        assert_eq!(options.first_coupon_date, Some(Date::new(2026, 2, 1)));
+        assert_eq!(
+            options.next_to_last_coupon_date,
+            Some(Date::new(2027, 12, 1))
+        );
+        assert_eq!(options.end_of_month, Some(true));
         assert_eq!(options.fixing_lag, Some(2));
         assert_eq!(options.index_tenor.unwrap().to_string(), "12M");
         assert!(options.calendar.is_some());

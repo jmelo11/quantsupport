@@ -5,6 +5,7 @@ use crate::{
     ad::{dual::DualFwd, scalar::Scalar, tape::Tape},
     core::{
         collateral::DiscountPolicy,
+        elements::curveelement::{CreditCurveElement, DiscountCurveElement},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::{AssetClass, Instrument},
         marketdatahandling::{
@@ -36,6 +37,7 @@ use crate::{
         },
         fixedincome::{
             loan::{Loan, LoanTrade},
+            loanrepaymentstructure::{level_installment, LoanRepaymentStructure},
             makeloan::calculate_contractual_opening_balances,
         },
     },
@@ -48,14 +50,17 @@ use crate::{
     time::{date::Date, daycounter::DayCounter, enums::TimeUnit, period::Period},
     utils::errors::{QSError, Result},
 };
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 
 /// Prices the existing loan leg.
 ///
 /// Configure a discount policy before valuation; its currency mapping selects
 /// the curve independently of the contract.
-/// Market changes leave contractual notionals fixed.
-/// Prepayment and credit affect projected receipts only. `Request::Cashflows`
+/// French installments are recalculated at each contractual rate/reset change.
+/// Prepayment and credit affect projected receipts only. `Request::Cashflows(true)`
 /// uses the shared handler; legs 0/1/2 represent scheduled receipts, prepayment,
 /// and recovery, all using the library's existing cashflow variants.
 #[derive(Default)]
@@ -116,8 +121,8 @@ impl LoanPricer {
     /// Defaults to `false`. Rebuilding requires repayment metadata and uses
     /// the first trial coupon's all-in rate as the initial amortization rate.
     /// Once solved, that first rate remains fixed during later segment solves.
-    /// Neither mode changes the instrument
-    /// or the principal schedule used by `Value` and `Sensitivities`.
+    /// Both modes retain the instrument. Ordinary valuation and sensitivities
+    /// apply the contractual French reset rule.
     #[must_use]
     pub const fn with_fair_rate_amortization_rebuild(mut self, enabled: bool) -> Self {
         self.rebuild_amortization_for_fair_rate = enabled;
@@ -135,15 +140,15 @@ impl LoanPricer {
             .accept(loan)
     }
 
-    /// Loads curves and historical resets needed by unpaid coupons into a new state.
+    /// Loads curves and historical resets needed to replay the loan from origination into a new state.
     ///
     /// Past fixing dates require stored observations. A fixing on the evaluation
-    /// date may be absent and forecast instead; already paid coupons do not
-    /// require historical fixings. Future rates are read from projection curves.
+    /// date may be absent and forecast instead; settled coupons also require their historical resets
+    /// when reconstructing amortization and prepayment. Future rates are read from projection curves.
     ///
     /// # Errors
     /// Rejects missing discount policies/refinancing indices and propagates market-data
-    /// errors, including missing historical fixings for unpaid coupons.
+    /// errors, including missing historical fixings from origination.
     fn load_loan_valuation_state(
         &self,
         trade: &LoanTrade<DualFwd>,
@@ -153,32 +158,11 @@ impl LoanPricer {
         let request = self.market_data_request(trade).ok_or_else(|| {
             QSError::ValueNotSetErr("Loan refinancing benchmark or discount policy".into())
         })?;
-        let needed_observations = trade
-            .instrument()
-            .contractual_leg()
-            .cashflows()
-            .iter()
-            .filter_map(|cashflow| match cashflow {
-                CashflowType::FixedRateCoupon(coupon) => Some(coupon.payment_date()),
-                CashflowType::FloatingRateCoupon(coupon) => Some(coupon.payment_date()),
-                CashflowType::OptionEmbeddedCoupon(coupon) => Some(coupon.payment_date()),
-                _ => None,
-            })
-            .zip(trade.instrument().coupon_rate_observations())
-            .filter(|(payment, _)| *payment > ctx.evaluation_date())
-            .filter_map(|(_, observation)| observation.as_ref())
-            .map(|request| (request.market_index(), request.fixing_date()))
-            .collect::<HashSet<_>>();
         let fixings = request
             .fixings_request()
             .into_iter()
             .flatten()
-            .filter(|request| {
-                ctx.anchor_fixings()
-                    && request.date() < ctx.evaluation_date()
-                    && needed_observations
-                        .contains(&(request.market_index().clone(), request.date()))
-            })
+            .filter(|request| ctx.anchor_fixings() && request.date() < ctx.evaluation_date())
             .map(|request| FixingRequest::new(request.market_index().clone(), request.date()))
             .collect();
         let request = request.with_fixings_request(fixings);
@@ -220,7 +204,7 @@ impl LoanPricer {
             .map(N::from)
     }
 
-    /// Clones the contractual cashflows and installs fixings on unpaid coupons.
+    /// Clones the contractual cashflows and installs every contractual coupon fixing.
     ///
     /// Coupons sharing an index, fixing date, and observation interval reuse one
     /// resolved rate. The loan's cashflows, notionals, and observations are kept.
@@ -235,22 +219,19 @@ impl LoanPricer {
         let mut observations = loan.coupon_rate_observations().iter();
         let mut resolved = HashMap::new();
         for cashflow in &mut cashflows {
-            let payment_date = match cashflow {
+            match cashflow {
                 CashflowType::FixedRateCoupon(_) => {
                     observations.next();
                     continue;
                 }
-                CashflowType::FloatingRateCoupon(coupon) => coupon.payment_date(),
-                CashflowType::OptionEmbeddedCoupon(coupon) => coupon.payment_date(),
+                CashflowType::FloatingRateCoupon(_) | CashflowType::OptionEmbeddedCoupon(_) => {}
                 _ => continue,
-            };
+            }
             let request = observations
                 .next()
                 .and_then(Option::as_ref)
                 .ok_or_else(|| QSError::ValueNotSetErr("Loan coupon observation".into()))?;
-            if payment_date <= state.evaluation_date {
-                continue;
-            }
+
             let key = (
                 request.market_index(),
                 request.fixing_date(),
@@ -265,8 +246,14 @@ impl LoanPricer {
                 rate
             };
             match cashflow {
-                CashflowType::FloatingRateCoupon(coupon) => coupon.set_fixing(rate),
-                CashflowType::OptionEmbeddedCoupon(coupon) => coupon.set_fixing(rate),
+                CashflowType::FloatingRateCoupon(coupon) => {
+                    coupon.set_fixing_date(request.fixing_date());
+                    coupon.set_fixing(rate);
+                }
+                CashflowType::OptionEmbeddedCoupon(coupon) => {
+                    coupon.set_fixing_date(request.fixing_date());
+                    coupon.set_fixing(rate);
+                }
                 _ => {}
             }
         }
@@ -298,336 +285,6 @@ impl LoanPricer {
             .with_start_date(date)
             .with_end_date(date.advance(tenor.length(), tenor.units())?);
         Self::resolve_index_rate_observation(state, &request)
-    }
-
-    /// Projects expected receipts from resolved coupons into separate reporting legs.
-    ///
-    /// Processes resolved coupons strictly after the evaluation date. Scheduled
-    /// principal is paid before conditional prepayment; default recovery uses
-    /// opening principal and is paid at the period's payment date. Survival is
-    /// conditional on the evaluation date. A full monthly prepayment interval
-    /// uses 1/12 year; partial and irregular intervals use Actual/365.
-    ///
-    /// Returns signed receipt PV, excluding the initial advance, and reporting
-    /// legs 0/1/2 for scheduled receipts, prepayments, and recoveries. PV retains
-    /// AD dependencies in survival and prepayment weights; reporting notionals
-    /// and principal amounts are `f64` values, with direction carried by each leg.
-    ///
-    /// # Errors
-    /// Propagates unavailable rates/curves, rejects invalid survival or
-    /// prepayment probabilities, and rejects a nonfinite projected value.
-    fn calculate_expected_receipts_and_present_value(
-        &self,
-        trade: &LoanTrade<DualFwd>,
-        state: &LoanValuationState,
-        cashflows: &[CashflowType<DualFwd>],
-    ) -> Result<(DualFwd, Vec<Leg<DualFwd>>)> {
-        self.project_expected_receipts(trade, state, cashflows, true)
-    }
-
-    /// Shares receipt projection between numeric accrual and differentiable PV.
-    #[allow(clippy::too_many_lines)]
-    fn project_expected_receipts<N: Scalar + From<DualFwd>>(
-        &self,
-        trade: &LoanTrade<N>,
-        state: &LoanValuationState,
-        cashflows: &[CashflowType<N>],
-        discounted: bool,
-    ) -> Result<(N, Vec<Leg<N>>)>
-    where
-        FixedRateCoupon<N>: Cashflow<N>,
-        FloatingRateCoupon<N>: Cashflow<N>,
-        OptionEmbeddedCoupon<N>: NonLinearCoupon<N>,
-    {
-        let loan = trade.instrument();
-        let curve = discounted
-            .then(|| state.get_discount_curve_element(&self.select_discount_curve_index(loan)?))
-            .transpose()?;
-        let anchor = curve
-            .map(|element| {
-                element
-                    .curve()
-                    .discount_factor(state.evaluation_date)
-                    .map(N::from)
-            })
-            .transpose()?
-            .unwrap_or_else(N::one);
-        let credit = loan
-            .credit_curve_index()
-            .map(|index| state.get_credit_curve_element(index))
-            .transpose()?;
-        let credit_anchor = credit
-            .map(|element| {
-                element
-                    .curve()
-                    .discount_factor(state.evaluation_date)
-                    .map(N::from)
-            })
-            .transpose()?
-            .unwrap_or_else(N::one);
-        if credit_anchor.value() <= 0.0 || !credit_anchor.value().is_finite() {
-            return Err(QSError::InvalidValueErr(
-                "Invalid loan survival anchor".into(),
-            ));
-        }
-        let mut previous_survival = credit
-            .map(|element| {
-                element
-                    .curve()
-                    .discount_factor(loan.start_date().max(state.evaluation_date))
-                    .map(N::from)
-            })
-            .transpose()?
-            .unwrap_or_else(N::one)
-            .div_val(credit_anchor);
-        let mut scheduled = Vec::new();
-        let mut prepaid = Vec::new();
-        let mut recovered = Vec::new();
-        let mut factor = N::one();
-        let mut value = N::zero();
-        let principal_by_date = cashflows
-            .iter()
-            .filter_map(|cashflow| {
-                if let CashflowType::Redemption(principal) = cashflow {
-                    Some((principal.payment_date(), principal.amount()))
-                } else {
-                    None
-                }
-            })
-            .try_fold(
-                HashMap::<Date, f64>::new(),
-                |mut amounts, (date, amount)| {
-                    *amounts.entry(date).or_default() += amount?;
-                    Ok::<_, QSError>(amounts)
-                },
-            )?;
-        for cashflow in cashflows {
-            if factor.value() == 0.0 {
-                break;
-            }
-            let past = match cashflow {
-                CashflowType::FixedRateCoupon(coupon) => {
-                    coupon.payment_date() <= state.evaluation_date
-                }
-                CashflowType::FloatingRateCoupon(coupon) => {
-                    coupon.payment_date() <= state.evaluation_date
-                }
-                CashflowType::OptionEmbeddedCoupon(coupon) => {
-                    coupon.payment_date() <= state.evaluation_date
-                }
-                _ => true,
-            };
-            if past {
-                continue;
-            }
-            let (start, end, payment, opening, day_counter, rate, amount) = match cashflow {
-                CashflowType::FixedRateCoupon(coupon) => (
-                    coupon.accrual_start_date(),
-                    coupon.accrual_end_date(),
-                    coupon.payment_date(),
-                    coupon.notional(),
-                    coupon.rate().day_counter(),
-                    coupon.rate().rate(),
-                    coupon.amount()?,
-                ),
-                CashflowType::FloatingRateCoupon(coupon) => (
-                    coupon.accrual_start_date(),
-                    coupon.accrual_end_date(),
-                    coupon.payment_date(),
-                    coupon.notional(),
-                    coupon.day_counter(),
-                    coupon
-                        .fixing()
-                        .ok_or_else(|| QSError::ValueNotSetErr("Loan fixing".into()))?
-                        .add_val(coupon.spread()),
-                    coupon.amount()?,
-                ),
-                CashflowType::OptionEmbeddedCoupon(coupon) => {
-                    let fixing = coupon
-                        .fixing()
-                        .ok_or_else(|| QSError::ValueNotSetErr("Loan fixing".into()))?;
-                    (
-                        coupon.accrual_start_date(),
-                        coupon.accrual_end_date(),
-                        coupon.payment_date(),
-                        coupon.notional(),
-                        coupon.day_counter()?,
-                        coupon.payoff_ops().eval(fixing)?.add_val(coupon.spread()),
-                        coupon.accrued_amount(
-                            coupon.accrual_start_date(),
-                            coupon.accrual_end_date(),
-                        )?,
-                    )
-                }
-                _ => continue,
-            };
-            let principal = principal_by_date.get(&payment).copied().unwrap_or(0.0);
-            if payment <= state.evaluation_date {
-                continue;
-            }
-            let remaining = (opening - principal).max(0.0);
-            let survival = credit
-                .map(|element| element.curve().discount_factor(payment).map(N::from))
-                .transpose()?
-                .unwrap_or_else(N::one)
-                .div_val(credit_anchor);
-            if !survival.value().is_finite()
-                || survival.value() < 0.0
-                || survival.value() > previous_survival.value() + 1e-10
-            {
-                return Err(QSError::InvalidValueErr(
-                    "Loan survival must be nonnegative and nonincreasing".into(),
-                ));
-            }
-            let probability = if remaining == 0.0 || end <= state.evaluation_date {
-                N::zero()
-            } else {
-                let refinancing_benchmark_rate =
-                    if loan.prepayment_model().requires_refinancing_benchmark() {
-                        self.observe_refinancing_benchmark_rate(
-                            state,
-                            start.max(state.evaluation_date),
-                        )?
-                    } else {
-                        N::zero()
-                    };
-                let prepayment_start = start.max(state.evaluation_date);
-                let period_fraction = if prepayment_start.advance(1, TimeUnit::Months)? == end {
-                    1.0 / 12.0
-                } else {
-                    DayCounter::Actual365.year_fraction(prepayment_start, end)
-                };
-                loan.prepayment_model().conditional_prepayment_probability(
-                    &PrepaymentModelState::new(
-                        prepayment_start,
-                        end,
-                        period_fraction,
-                        N::scalar(remaining).mul_val(factor),
-                        rate,
-                        refinancing_benchmark_rate,
-                    ),
-                )?
-            };
-            if !probability.value().is_finite() || !(0.0..=1.0).contains(&probability.value()) {
-                return Err(QSError::InvalidValueErr(
-                    "Loan prepayment function must return a probability in [0, 1]".into(),
-                ));
-            }
-            let weighted = factor.mul_val(survival);
-            let interest = amount.mul_val(weighted);
-            let redemption = N::scalar(principal).mul_val(weighted);
-            let prepayment = N::scalar(remaining).mul_val(probability).mul_val(weighted);
-            let recovery = previous_survival
-                .sub_val(survival)
-                .mul_val(N::scalar(opening * loan.recovery_fraction()))
-                .mul_val(factor);
-            if let Some(curve) = curve {
-                let discount = N::from(curve.curve().discount_factor(payment)?).div_val(anchor);
-                value = value.add_val(
-                    interest
-                        .add_val(redemption)
-                        .add_val(prepayment)
-                        .add_val(recovery)
-                        .mul_val(discount),
-                );
-            }
-            // Reporting cashflows retain existing variants and f64 notionals.
-            // The shared report handler applies the reporting legs' side once.
-            // PV uses the AD weights above, including prepayment and credit risk.
-            let reporting_notional = opening * weighted.value();
-            match cashflow {
-                CashflowType::FixedRateCoupon(coupon) => {
-                    scheduled.push(CashflowType::FixedRateCoupon(FixedRateCoupon::new(
-                        reporting_notional,
-                        Box::new(*coupon.rate()),
-                        start,
-                        end,
-                        payment,
-                    )));
-                }
-                CashflowType::FloatingRateCoupon(coupon) => {
-                    let projected = FloatingRateCoupon::new(
-                        reporting_notional,
-                        coupon.spread(),
-                        coupon.market_index().clone(),
-                        start,
-                        end,
-                        payment,
-                    )
-                    .with_day_counter(day_counter);
-                    projected.set_fixing(
-                        coupon
-                            .fixing()
-                            .ok_or_else(|| QSError::ValueNotSetErr("Loan fixing".into()))?,
-                    );
-                    scheduled.push(CashflowType::FloatingRateCoupon(projected));
-                }
-                CashflowType::OptionEmbeddedCoupon(coupon) => {
-                    scheduled.push(CashflowType::OptionEmbeddedCoupon(
-                        OptionEmbeddedCoupon::new(
-                            reporting_notional,
-                            coupon.market_index().clone(),
-                            coupon.spread(),
-                            start,
-                            end,
-                            payment,
-                            coupon.payoff_ops().clone(),
-                        )
-                        .with_day_counter(day_counter)
-                        .with_fixing(
-                            coupon
-                                .fixing()
-                                .ok_or_else(|| QSError::ValueNotSetErr("Loan fixing".into()))?,
-                        ),
-                    ));
-                }
-                _ => {}
-            }
-            if redemption.value() != 0.0 {
-                scheduled.push(CashflowType::Redemption(SimpleCashflow::new(
-                    redemption.value(),
-                    payment,
-                )));
-            }
-            if prepayment.value() != 0.0 {
-                prepaid.push(CashflowType::Redemption(SimpleCashflow::new(
-                    prepayment.value(),
-                    payment,
-                )));
-            }
-            if recovery.value() != 0.0 {
-                recovered.push(CashflowType::ConstantAmount(SimpleCashflow::new(
-                    recovery.value(),
-                    payment,
-                )));
-            }
-            factor = factor.mul_val(N::one().sub_val(probability));
-            previous_survival = survival;
-        }
-        if !value.value().is_finite() {
-            return Err(QSError::InvalidValueErr("Nonfinite loan value".into()));
-        }
-        let legs = [scheduled, prepaid, recovered]
-            .into_iter()
-            .enumerate()
-            .map(|(id, cashflows)| {
-                Leg::new(
-                    id,
-                    cashflows,
-                    loan.currency(),
-                    None,
-                    None,
-                    None,
-                    None,
-                    trade.side(),
-                    true,
-                    AssetClass::FixedIncome,
-                    loan.start_date(),
-                    loan.maturity_date(),
-                )
-            })
-            .collect();
-        Ok((value.mul_val(N::scalar(trade.side().sign())), legs))
     }
 }
 
@@ -685,7 +342,7 @@ impl HandleValue<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
             state.put_pillars_on_tape()?;
             let cashflows = Self::clone_cashflows_with_resolved_fixings(trade.instrument(), state)?;
             let (value, legs) =
-                self.calculate_expected_receipts_and_present_value(trade, state, &cashflows)?;
+                self.project_expected_receipts(trade, state, &cashflows, true, None)?;
             let source = trade.instrument().currency();
             let value = if let Some(target) = state
                 .get_market_data_reponse()
@@ -711,7 +368,7 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer 
     /// Shared pillar nodes are counted once; distinct nodes with the same quote
     /// label contribute to one exposure. Exposures
     /// are raw derivatives per unit pillar change, including differentiable
-    /// prepayment and survival weights; contractual amortization stays fixed.
+    /// prepayment, survival and rate-dependent amortization.
     ///
     /// # Errors
     /// Propagates valuation, AD backpropagation, and missing pillar-adjoint errors.
@@ -794,9 +451,681 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer 
     }
 }
 
+impl<N: Scalar + From<DualFwd>> HandleAccruedAmount<LoanTrade<N>, LoanValuationState> for LoanPricer
+where
+    FixedRateCoupon<N>: Cashflow<N>,
+    FloatingRateCoupon<N>: Cashflow<N>,
+    OptionEmbeddedCoupon<N>: NonLinearCoupon<N>,
+    Leg<f64>: From<Leg<N>>,
+{
+    fn handle_accrued_amount(
+        &self,
+        trade: &LoanTrade<N>,
+        state: &mut LoanValuationState,
+        start: Date,
+        end: Date,
+    ) -> Result<f64> {
+        if !state.legs.is_empty() {
+            let legs: Vec<Leg<f64>> = state.legs.iter().cloned().map(Into::into).collect();
+            return accrued_amount(&legs, state.get_market_data_reponse(), start, end);
+        }
+        let cashflows = Self::clone_cashflows_with_resolved_fixings(trade.instrument(), state)?;
+        let (_, projected) =
+            self.project_expected_receipts(trade, state, &cashflows, false, None)?;
+        let legs: Vec<Leg<f64>> = projected.into_iter().map(Into::into).collect();
+        accrued_amount(&legs, state.get_market_data_reponse(), start, end)
+    }
+}
+
+impl Pricer for LoanPricer {
+    type Item = LoanTrade<DualFwd>;
+    type Policy = dyn DiscountPolicy;
+    /// Evaluates requested results against a fresh market-data state.
+    ///
+    /// Supports `Value`, `Cashflows`, `Sensitivities`, `FairRate` and `AccruedAmount` in the
+    /// caller's order. Accrual reuses the projection when cashflows, value or
+    /// sensitivities are requested; standalone accrual projects numeric receipts.
+    ///
+    /// # Errors
+    /// Rejects a missing discount policy and propagates data/handler errors.
+    /// Unsupported measures are left absent.
+    fn evaluate(
+        &self,
+        trade: &Self::Item,
+        requests: &[Request],
+        ctx: &impl MarketDataProvider,
+    ) -> Result<EvaluationResults> {
+        let supported: Vec<Request> = requests
+            .iter()
+            .copied()
+            .filter(|request| {
+                matches!(
+                    request,
+                    Request::Value
+                        | Request::Sensitivities
+                        | Request::Cashflows(_)
+                        | Request::FairRate(_)
+                        | Request::AccruedAmount(_, _)
+                )
+            })
+            .collect();
+        let requests = supported.as_slice();
+        Request::validate(requests)?;
+        if requests.is_empty() {
+            return Ok(EvaluationResults::new(
+                ctx.evaluation_date(),
+                trade.instrument().identifier(),
+            ));
+        }
+        let mut state = self.load_loan_valuation_state(trade, ctx)?;
+        if requests
+            .iter()
+            .any(|request| matches!(request, Request::Value | Request::Sensitivities))
+        {
+            self.handle_value(trade, &mut state)?;
+        } else if requests
+            .iter()
+            .any(|request| matches!(request, Request::Cashflows(_)))
+        {
+            let cashflows =
+                Self::clone_cashflows_with_resolved_fixings(trade.instrument(), &state)?;
+            let (_, legs) =
+                self.project_expected_receipts(trade, &state, &cashflows, false, None)?;
+            state.legs = legs;
+        }
+        let mut results =
+            EvaluationResults::new(ctx.evaluation_date(), trade.instrument().identifier());
+        for request in requests {
+            results = match request {
+                Request::Value => results.with_price(self.handle_value(trade, &mut state)?),
+                Request::Sensitivities => {
+                    results.with_sensitivities(self.handle_sensitivities(trade, &mut state)?)
+                }
+                Request::FairRate(target) => {
+                    results.with_fair_rate(self.handle_fair_rate(trade, &mut state, *target)?)
+                }
+                Request::AccruedAmount(start, end) => {
+                    if *start < ctx.evaluation_date() {
+                        return Err(QSError::InvalidValueErr(
+                            "Loan accrual windows must start at or after evaluation".into(),
+                        ));
+                    }
+                    results.with_accrued_amount(
+                        self.handle_accrued_amount(trade, &mut state, *start, *end)?,
+                    )
+                }
+                Request::Cashflows(from_evaluation_date) => results.with_cashflows(
+                    self.handle_cashflows(trade, &mut state)?
+                        .with_payment_cutoff(from_evaluation_date.then_some(ctx.evaluation_date())),
+                ),
+                _ => results,
+            };
+        }
+        Ok(results)
+    }
+    /// Collects deduplicated discount, coupon-index, refinancing, and credit curves.
+    ///
+    /// Coupon fixing requests are initially optional; `load_loan_valuation_state` requires
+    /// historical observations only from origination. Returns `None` if the
+    /// discount index cannot be selected or required refinancing is unconfigured.
+    fn market_data_request(&self, trade: &Self::Item) -> Option<MarketDataRequest> {
+        let loan = trade.instrument();
+        let mut indices = vec![self.select_discount_curve_index(loan).ok()?];
+        indices.extend(
+            loan.coupon_rate_observations()
+                .iter()
+                .flatten()
+                .map(ForwardRateRequest::market_index),
+        );
+        if loan.prepayment_model().requires_refinancing_benchmark() {
+            indices.push(self.refinancing_benchmark_index.clone()?);
+        }
+        let mut seen = HashSet::new();
+        let mut elements = indices
+            .into_iter()
+            .filter(|index| seen.insert(index.clone()))
+            .map(|market_index| ConstructedElementRequest::DiscountCurve { market_index })
+            .collect::<Vec<_>>();
+        if let Some(index) = loan.credit_curve_index() {
+            elements.push(ConstructedElementRequest::CreditCurve {
+                market_index: index.clone(),
+            });
+        }
+        let mut seen_fixings = HashSet::new();
+        let mut fixings: Vec<_> = loan
+            .coupon_rate_observations()
+            .iter()
+            .flatten()
+            .filter(|request| seen_fixings.insert((request.market_index(), request.fixing_date())))
+            .map(|request| {
+                FixingRequest::new(request.market_index(), request.fixing_date())
+                    .with_missing_fixing_allowed(true)
+            })
+            .collect();
+        if let Some(index) = self
+            .refinancing_benchmark_index
+            .as_ref()
+            .filter(|_| loan.prepayment_model().requires_refinancing_benchmark())
+        {
+            for cashflow in loan.contractual_leg().cashflows() {
+                let (date, payment) = match cashflow {
+                    CashflowType::FixedRateCoupon(coupon) => {
+                        (coupon.accrual_start_date(), coupon.payment_date())
+                    }
+                    CashflowType::FloatingRateCoupon(coupon) => {
+                        (coupon.accrual_start_date(), coupon.payment_date())
+                    }
+                    CashflowType::OptionEmbeddedCoupon(coupon) => {
+                        (coupon.accrual_start_date(), coupon.payment_date())
+                    }
+                    _ => continue,
+                };
+                if payment == loan.maturity_date() {
+                    continue;
+                }
+                if seen_fixings.insert((index.clone(), date)) {
+                    fixings.push(
+                        FixingRequest::new(index.clone(), date).with_missing_fixing_allowed(true),
+                    );
+                }
+            }
+        }
+        let mut request = MarketDataRequest::default()
+            .with_constructed_elements_request(elements)
+            .with_fixings_request(fixings);
+        let mut fx = request.fx_request().cloned().unwrap_or_default();
+        fx.push(FxRequest::single(loan.currency()));
+        request = request.with_fx_request(fx);
+        Some(request)
+    }
+    /// Installs a policy used to select the loan's discount curve.
+    fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {
+        self.discount_policy = Some(policy);
+    }
+    /// Returns the configured policy; pricing requires a policy to be present.
+    fn discount_policy(&self) -> Option<&Self::Policy> {
+        self.discount_policy.as_deref()
+    }
+}
+
+/// One resolved coupon and its contractual principal fallback for custom schedules.
+struct LoanPeriod<'a, N: Scalar> {
+    coupon: &'a CashflowType<N>,
+    start: Date,
+    end: Date,
+    payment: Date,
+    opening: f64,
+    principal: f64,
+    rate: N,
+    fraction: f64,
+    reset: Option<(MarketIndex, Date)>,
+}
+
+impl<'a, N: Scalar> LoanPeriod<'a, N> {
+    /// Borrows coupon metadata once; no coupon or index observations are resolved here.
+    fn from_coupon(coupon: &'a CashflowType<N>) -> Result<Option<Self>> {
+        let (start, end, payment, opening, basis, rate, reset) = match coupon {
+            CashflowType::FixedRateCoupon(c) => (
+                c.accrual_start_date(),
+                c.accrual_end_date(),
+                c.payment_date(),
+                c.notional(),
+                c.rate().day_counter(),
+                c.rate().rate(),
+                None,
+            ),
+            CashflowType::FloatingRateCoupon(c) => (
+                c.accrual_start_date(),
+                c.accrual_end_date(),
+                c.payment_date(),
+                c.notional(),
+                c.day_counter(),
+                c.fixing()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Loan fixing".into()))?
+                    .add_val(c.spread()),
+                Some((c.market_index().clone(), c.fixing_date())),
+            ),
+            CashflowType::OptionEmbeddedCoupon(c) => (
+                c.accrual_start_date(),
+                c.accrual_end_date(),
+                c.payment_date(),
+                c.notional(),
+                c.day_counter()?,
+                c.payoff_ops()
+                    .eval(
+                        c.fixing()
+                            .ok_or_else(|| QSError::ValueNotSetErr("Loan fixing".into()))?,
+                    )?
+                    .add_val(c.spread()),
+                Some((c.market_index().clone(), c.fixing_date())),
+            ),
+            _ => return Ok(None),
+        };
+        Ok(Some(Self {
+            coupon,
+            start,
+            end,
+            payment,
+            opening,
+            principal: 0.0,
+            rate,
+            fraction: basis.year_fraction(start, end),
+            reset,
+        }))
+    }
+
+    /// Rebinds a report coupon while preserving its observation date and resolved fixing.
+    fn reporting_coupon(&self, notional: f64) -> Result<CashflowType<N>> {
+        let coupon = self
+            .coupon
+            .for_period(notional, self.start, self.end, self.payment, None)?;
+        Ok(match (coupon, self.coupon) {
+            (CashflowType::FloatingRateCoupon(c), CashflowType::FloatingRateCoupon(source)) => {
+                let c = c.with_fixing_date(source.fixing_date());
+                c.set_fixing(
+                    source
+                        .fixing()
+                        .ok_or_else(|| QSError::ValueNotSetErr("Loan fixing".into()))?,
+                );
+                CashflowType::FloatingRateCoupon(c)
+            }
+            (CashflowType::OptionEmbeddedCoupon(c), CashflowType::OptionEmbeddedCoupon(source)) => {
+                CashflowType::OptionEmbeddedCoupon(
+                    c.with_fixing_date(source.fixing_date()).with_fixing(
+                        source
+                            .fixing()
+                            .ok_or_else(|| QSError::ValueNotSetErr("Loan fixing".into()))?,
+                    ),
+                )
+            }
+            (coupon, _) => coupon,
+        })
+    }
+}
+
+/// Curves and date-normalization factors borrowed once for an entire projection.
+struct ProjectionCurves<'a, N: Scalar> {
+    discount: Option<&'a DiscountCurveElement>,
+    credit: Option<&'a CreditCurveElement>,
+    discount_anchor: N,
+    credit_anchor: N,
+    evaluation: Date,
+}
+
+impl<'a, N: Scalar + From<DualFwd>> ProjectionCurves<'a, N> {
+    /// Loads optional curves without allocating date maps or copied curve nodes.
+    fn new(
+        pricer: &LoanPricer,
+        loan: &Loan<N>,
+        state: &'a LoanValuationState,
+        discounted: bool,
+    ) -> Result<Self> {
+        let discount = discounted
+            .then(|| state.get_discount_curve_element(&pricer.select_discount_curve_index(loan)?))
+            .transpose()?;
+        let credit = loan
+            .credit_curve_index()
+            .map(|index| state.get_credit_curve_element(index))
+            .transpose()?;
+        let discount_anchor = discount
+            .map(|c| {
+                c.curve()
+                    .discount_factor(state.evaluation_date)
+                    .map(N::from)
+            })
+            .transpose()?
+            .unwrap_or_else(N::one);
+        let credit_anchor = credit
+            .map(|c| {
+                c.curve()
+                    .discount_factor(state.evaluation_date)
+                    .map(N::from)
+            })
+            .transpose()?
+            .unwrap_or_else(N::one);
+        if !credit_anchor.value().is_finite() || credit_anchor.value() <= 0.0 {
+            return Err(QSError::InvalidValueErr(
+                "Invalid loan survival anchor".into(),
+            ));
+        }
+        Ok(Self {
+            discount,
+            credit,
+            discount_anchor,
+            credit_anchor,
+            evaluation: state.evaluation_date,
+        })
+    }
+
+    /// Conditions future credit survival on evaluation; settled periods have no new default.
+    fn survival(&self, date: Date) -> Result<N> {
+        if date <= self.evaluation {
+            return Ok(N::one());
+        }
+        Ok(self
+            .credit
+            .map(|c| c.curve().discount_factor(date).map(N::from))
+            .transpose()?
+            .unwrap_or_else(N::one)
+            .div_val(self.credit_anchor))
+    }
+
+    /// Discounts future receipts only, leaving full-history reporting independent of PV.
+    fn present_value(&self, date: Date, amount: N) -> Result<N> {
+        if date <= self.evaluation {
+            return Ok(N::zero());
+        }
+        self.discount.map_or_else(
+            || Ok(N::zero()),
+            |c| {
+                Ok(amount.mul_val(
+                    N::from(c.curve().discount_factor(date)?).div_val(self.discount_anchor),
+                ))
+            },
+        )
+    }
+}
+
+/// Mutable amortization and prepayment state. All rate-dependent balances retain AD.
+struct LoanProjection<N: Scalar> {
+    balance: N,
+    installment: N,
+    factor: N,
+    survival: N,
+    value: N,
+    scheduled: Vec<CashflowType<N>>,
+    prepaid: Vec<CashflowType<N>>,
+    recovered: Vec<CashflowType<N>>,
+}
+
+impl<N: Scalar> LoanProjection<N> {
+    /// Resolves scheduled principal; a prefix horizon redeems the closing balance.
+    fn principal(
+        &self,
+        period: &LoanPeriod<'_, N>,
+        repayment: Option<&LoanRepaymentStructure>,
+        final_payment: bool,
+    ) -> Result<N> {
+        if final_payment {
+            return Ok(self.balance);
+        }
+        match repayment {
+            Some(LoanRepaymentStructure::Bullet) => Ok(N::zero()),
+            Some(LoanRepaymentStructure::French | LoanRepaymentStructure::Balloon { .. }) => {
+                let principal = self.installment.sub_val(
+                    self.balance
+                        .mul_val(period.rate)
+                        .mul_val(N::scalar(period.fraction)),
+                );
+                if principal.value() < -1e-8 || principal.value() > self.balance.value() + 1e-8 {
+                    return Err(QSError::InvalidValueErr(
+                        "Loan amortization must retain nonincreasing principal".into(),
+                    ));
+                }
+                Ok(principal.max_val(N::zero()).min_val(self.balance))
+            }
+            None => Ok(N::scalar(period.principal)),
+        }
+    }
+
+    /// Records undiscounted receipts in the existing coupon and redemption types.
+    fn report(
+        &mut self,
+        period: &LoanPeriod<'_, N>,
+        opening: N,
+        principal: N,
+        prepayment: N,
+        recovery: N,
+        weighted: N,
+    ) -> Result<()> {
+        let notional = opening.mul_val(weighted).value();
+        if notional > 0.0 {
+            self.scheduled.push(period.reporting_coupon(notional)?);
+        }
+        if principal.value() != 0.0 {
+            self.scheduled
+                .push(CashflowType::Redemption(SimpleCashflow::new(
+                    principal.value(),
+                    period.payment,
+                )));
+        }
+        if prepayment.value() != 0.0 {
+            self.prepaid
+                .push(CashflowType::Redemption(SimpleCashflow::new(
+                    prepayment.value(),
+                    period.payment,
+                )));
+        }
+        if recovery.value() != 0.0 {
+            self.recovered
+                .push(CashflowType::Redemption(SimpleCashflow::new(
+                    recovery.value(),
+                    period.payment,
+                )));
+        }
+        Ok(())
+    }
+}
+
+impl LoanPricer {
+    /// Projects from origination, recasting French installments at each contractual reset.
+    /// A horizon settles the remaining balance for a fair-rate prefix objective.
+    fn project_expected_receipts<N: Scalar + From<DualFwd>>(
+        &self,
+        trade: &LoanTrade<N>,
+        state: &LoanValuationState,
+        cashflows: &[CashflowType<N>],
+        discounted: bool,
+        horizon: Option<Date>,
+    ) -> Result<(N, Vec<Leg<N>>)> {
+        let loan = trade.instrument();
+        let periods = loan_periods(cashflows, loan.repayment_structure().is_none())?;
+        let curves = ProjectionCurves::new(self, loan, state, discounted)?;
+        let mut projection = LoanProjection {
+            balance: N::scalar(loan.notional()),
+            installment: N::zero(),
+            factor: N::one(),
+            survival: curves.survival(loan.start_date())?,
+            value: N::zero(),
+            scheduled: Vec::with_capacity(cashflows.len()),
+            prepaid: Vec::with_capacity(periods.len()),
+            recovered: Vec::new(),
+        };
+        projection
+            .scheduled
+            .push(CashflowType::Disbursement(SimpleCashflow::new(
+                loan.notional(),
+                loan.start_date(),
+            )));
+        for (position, period) in periods.iter().enumerate() {
+            if projection.factor.value() == 0.0 || horizon.is_some_and(|date| period.payment > date)
+            {
+                break;
+            }
+            let reset = position == 0
+                || period.reset != periods[position - 1].reset
+                || period.rate.value().to_bits() != periods[position - 1].rate.value().to_bits();
+            if reset
+                && matches!(
+                    loan.repayment_structure(),
+                    Some(LoanRepaymentStructure::French | LoanRepaymentStructure::Balloon { .. })
+                )
+            {
+                let residual = match loan.repayment_structure() {
+                    Some(LoanRepaymentStructure::Balloon { residual_fraction }) => {
+                        loan.notional() * residual_fraction
+                    }
+                    _ => 0.0,
+                };
+                projection.installment = level_installment(
+                    projection.balance,
+                    N::scalar(residual),
+                    periods[position..]
+                        .iter()
+                        .map(|future| period.rate.mul_val(N::scalar(future.fraction))),
+                )?;
+            }
+            if loan.repayment_structure().is_none() {
+                projection.balance = N::scalar(period.opening);
+            }
+            self.project_period(
+                loan,
+                state,
+                period,
+                &curves,
+                &mut projection,
+                position + 1 == periods.len() || horizon == Some(period.payment),
+            )?;
+        }
+        if !projection.value.value().is_finite() {
+            return Err(QSError::InvalidValueErr("Nonfinite loan value".into()));
+        }
+        let value = projection.value.mul_val(N::scalar(trade.side().sign()));
+        let legs = [
+            projection.scheduled,
+            projection.prepaid,
+            projection.recovered,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(id, cashflows)| {
+            Leg::new(
+                id,
+                cashflows,
+                loan.currency(),
+                None,
+                None,
+                None,
+                None,
+                trade.side(),
+                true,
+                AssetClass::FixedIncome,
+                loan.start_date(),
+                loan.maturity_date(),
+            )
+        })
+        .collect();
+        Ok((value, legs))
+    }
+
+    /// Advances a single interval, including past prepayment but only future PV.
+    fn project_period<N: Scalar + From<DualFwd>>(
+        &self,
+        loan: &Loan<N>,
+        state: &LoanValuationState,
+        period: &LoanPeriod<'_, N>,
+        curves: &ProjectionCurves<'_, N>,
+        projection: &mut LoanProjection<N>,
+        final_payment: bool,
+    ) -> Result<()> {
+        let opening = projection.balance;
+        let principal = projection.principal(period, loan.repayment_structure(), final_payment)?;
+        let remaining = opening.sub_val(principal).max_val(N::zero());
+        let survival = curves.survival(period.payment)?;
+        if !survival.value().is_finite()
+            || survival.value() < 0.0
+            || survival.value() > projection.survival.value() + 1e-10
+        {
+            return Err(QSError::InvalidValueErr(
+                "Loan survival must be nonnegative and nonincreasing".into(),
+            ));
+        }
+        let probability =
+            self.prepayment_probability(loan, state, period, remaining.mul_val(projection.factor))?;
+        let weighted = projection.factor.mul_val(survival);
+        let interest = opening
+            .mul_val(period.rate)
+            .mul_val(N::scalar(period.fraction))
+            .mul_val(weighted);
+        let redemption = principal.mul_val(weighted);
+        let prepayment = remaining.mul_val(probability).mul_val(weighted);
+        let recovery = projection
+            .survival
+            .sub_val(survival)
+            .mul_val(opening)
+            .mul_val(N::scalar(loan.recovery_fraction()))
+            .mul_val(projection.factor);
+        projection.value = projection.value.add_val(
+            curves.present_value(
+                period.payment,
+                interest
+                    .add_val(redemption)
+                    .add_val(prepayment)
+                    .add_val(recovery),
+            )?,
+        );
+        projection.report(period, opening, redemption, prepayment, recovery, weighted)?;
+        projection.balance = remaining;
+        projection.factor = projection.factor.mul_val(N::one().sub_val(probability));
+        projection.survival = survival;
+        Ok(())
+    }
+
+    /// Converts the model's origination-based interval probability to expected principal.
+    fn prepayment_probability<N: Scalar + From<DualFwd>>(
+        &self,
+        loan: &Loan<N>,
+        state: &LoanValuationState,
+        period: &LoanPeriod<'_, N>,
+        remaining: N,
+    ) -> Result<N> {
+        if remaining.value() == 0.0 {
+            return Ok(N::zero());
+        }
+        let benchmark = if loan.prepayment_model().requires_refinancing_benchmark() {
+            self.observe_refinancing_benchmark_rate(state, period.start)?
+        } else {
+            N::zero()
+        };
+        let fraction = if period.start.advance(1, TimeUnit::Months)? == period.end {
+            1.0 / 12.0
+        } else {
+            DayCounter::Actual365.year_fraction(period.start, period.end)
+        };
+        let probability = loan.prepayment_model().conditional_prepayment_probability(
+            &PrepaymentModelState::new(
+                period.start,
+                period.end,
+                fraction,
+                remaining,
+                period.rate,
+                benchmark,
+            ),
+        )?;
+        if !probability.value().is_finite() || !(0.0..=1.0).contains(&probability.value()) {
+            return Err(QSError::InvalidValueErr(
+                "Loan prepayment function must return a probability in [0, 1]".into(),
+            ));
+        }
+        Ok(probability)
+    }
+}
+
+/// Extracts ordered coupon periods and attaches any custom scheduled principal.
+fn loan_periods<N: Scalar>(
+    cashflows: &[CashflowType<N>],
+    custom: bool,
+) -> Result<Vec<LoanPeriod<'_, N>>> {
+    let mut periods = cashflows
+        .iter()
+        .filter_map(|cashflow| LoanPeriod::from_coupon(cashflow).transpose())
+        .collect::<Result<Vec<_>>>()?;
+    for cashflow in cashflows.iter().filter(|_| custom) {
+        if let CashflowType::Redemption(principal) = cashflow {
+            let position = periods
+                .binary_search_by_key(&principal.payment_date(), |period| period.payment)
+                .map_err(|_| {
+                    QSError::InvalidValueErr("Loan redemption has no matching coupon".into())
+                })?;
+            periods[position].principal += principal.amount()?;
+        }
+    }
+    Ok(periods)
+}
+
 /// Contiguous contractual coupon level and its hypothetical redemption date.
 struct LoanCouponSegment {
-    coupons: std::ops::Range<usize>,
+    coupons: Range<usize>,
     redemption_date: Date,
 }
 
@@ -806,7 +1135,7 @@ struct LoanFairRateObjective<'a> {
     trade: &'a LoanTrade<DualFwd>,
     state: &'a LoanValuationState,
     cashflows: &'a [CashflowType<DualFwd>],
-    adjustable_segment: std::ops::Range<usize>,
+    adjustable_segment: Range<usize>,
     redemption_date: Date,
     target: f64,
 }
@@ -820,24 +1149,15 @@ impl LoanFairRateObjective<'_> {
     /// # Errors
     /// Propagates trial construction errors at the lower search bound.
     fn admissible_upper_bound(&self, lower: f64, upper: f64) -> Result<f64> {
-        if !self.pricer.rebuild_amortization_for_fair_rate {
-            return Ok(upper);
-        }
-        self.build_cashflows_for_trial_coupon_or_spread(lower)?;
-        if self
-            .build_cashflows_for_trial_coupon_or_spread(upper)
-            .is_ok()
-        {
+        self.call(&lower)?;
+        if self.call(&upper).is_ok() {
             return Ok(upper);
         }
         let mut valid = lower;
         let mut invalid = upper;
         for _ in 0..48 {
             let candidate = f64::midpoint(valid, invalid);
-            if self
-                .build_cashflows_for_trial_coupon_or_spread(candidate)
-                .is_ok()
-            {
+            if self.call(&candidate).is_ok() {
                 valid = candidate;
             } else {
                 invalid = candidate;
@@ -856,7 +1176,6 @@ impl LoanFairRateObjective<'_> {
     /// # Errors
     /// Rejects missing fixings/coupons, missing repayment metadata in recompute
     /// mode, and invalid trial amortization rates or principal schedules.
-    #[allow(clippy::too_many_lines)]
     fn build_cashflows_for_trial_coupon_or_spread(
         &self,
         candidate: f64,
@@ -902,7 +1221,8 @@ impl LoanFairRateObjective<'_> {
                         coupon.accrual_end_date(),
                         coupon.payment_date(),
                     )
-                    .with_day_counter(coupon.day_counter());
+                    .with_day_counter(coupon.day_counter())
+                    .with_fixing_date(coupon.fixing_date());
                     trial.set_fixing(
                         coupon.fixing().ok_or_else(|| {
                             QSError::ValueNotSetErr("Loan fair-rate fixing".into())
@@ -928,6 +1248,14 @@ impl LoanFairRateObjective<'_> {
                 })
                 .collect();
         }
+        self.rebuild_trial_cashflows(&coupons)
+    }
+
+    /// Regenerates the contractual trial schedule from the chosen initial rate.
+    fn rebuild_trial_cashflows(
+        &self,
+        coupons: &[CashflowType<DualFwd>],
+    ) -> Result<Vec<CashflowType<DualFwd>>> {
         let repayment =
             self.trade
                 .instrument()
@@ -997,7 +1325,8 @@ impl LoanFairRateObjective<'_> {
                         coupon.accrual_end_date(),
                         coupon.payment_date(),
                     )
-                    .with_day_counter(coupon.day_counter());
+                    .with_day_counter(coupon.day_counter())
+                    .with_fixing_date(coupon.fixing_date());
                     rebound.set_fixing(
                         coupon
                             .fixing()
@@ -1032,39 +1361,57 @@ impl ContFunc<f64> for LoanFairRateObjective<'_> {
     /// Propagates trial-cashflow construction and receipt-projection errors.
     fn call(&self, candidate: &f64) -> Result<f64> {
         let trial = self.build_cashflows_for_trial_coupon_or_spread(*candidate)?;
-        let mut repaid = 0.0;
-        let mut prefix = Vec::new();
-        for cashflow in trial {
-            let payment = match &cashflow {
-                CashflowType::FixedRateCoupon(coupon) => coupon.payment_date(),
-                CashflowType::FloatingRateCoupon(coupon) => coupon.payment_date(),
-                CashflowType::Redemption(principal) | CashflowType::Disbursement(principal) => {
-                    principal.payment_date()
-                }
-                _ => continue,
-            };
-            if payment <= self.redemption_date {
-                if let CashflowType::Redemption(principal) = &cashflow {
-                    repaid += principal.amount()?;
-                }
-                prefix.push(cashflow);
-            }
-        }
-        let remaining = (self.trade.instrument().notional() - repaid).max(0.0);
-        if remaining > 0.0 {
-            prefix.push(CashflowType::Redemption(SimpleCashflow::new(
-                remaining,
-                self.redemption_date,
-            )));
-        }
-        let (value, _) = self
-            .pricer
-            .calculate_expected_receipts_and_present_value(self.trade, self.state, &prefix)?;
+        let (value, _) = self.pricer.project_expected_receipts(
+            self.trade,
+            self.state,
+            &trial,
+            true,
+            Some(self.redemption_date),
+        )?;
         Ok(value.value() * self.trade.side().sign() / self.target - 1.0)
     }
 }
 
 impl LoanPricer {
+    /// Identifies contiguous coupon levels, ignoring intervening principal flows.
+    fn coupon_segments(cashflows: &[CashflowType<DualFwd>]) -> Vec<LoanCouponSegment> {
+        let mut previous = None;
+        let mut segments: Vec<LoanCouponSegment> = Vec::new();
+        let mut position = 0;
+        for cashflow in cashflows {
+            let (key, payment) = match cashflow {
+                CashflowType::FixedRateCoupon(coupon) => (
+                    (None, coupon.rate().rate().value().to_bits()),
+                    coupon.payment_date(),
+                ),
+                CashflowType::FloatingRateCoupon(coupon) => (
+                    (
+                        Some(coupon.market_index().clone()),
+                        coupon.spread().value().to_bits(),
+                    ),
+                    coupon.payment_date(),
+                ),
+                _ => continue,
+            };
+            if previous.as_ref() == Some(&key) {
+                if let Some(segment) = segments.last_mut() {
+                    segment.coupons.end = position + 1;
+                    segment.redemption_date = payment;
+                }
+            } else {
+                segments.push(LoanCouponSegment {
+                    coupons: position..position + 1,
+                    redemption_date: payment,
+                });
+            }
+            previous = Some(key);
+            position += 1;
+        }
+        segments
+    }
+}
+
+impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
     /// Bootstraps contiguous coupon/spread segments to par successively.
     ///
     /// Each prefix repays its remaining capital at its final payment date.
@@ -1078,10 +1425,10 @@ impl LoanPricer {
     /// # Errors
     /// Rejects valuation after origination, missing coupons, and bounded coupons.
     /// Propagates market/trial errors and reports unbracketed or unconverged solves.
-    fn handle_segment_fair_rate(
+    fn handle_fair_rate(
         &self,
         trade: &LoanTrade<DualFwd>,
-        state: &LoanValuationState,
+        state: &mut LoanValuationState,
         target_segment: usize,
     ) -> Result<f64> {
         if state.evaluation_date > trade.instrument().start_date() {
@@ -1155,216 +1502,6 @@ impl LoanPricer {
             selected_rate = rate;
         }
         Ok(selected_rate)
-    }
-
-    /// Identifies contiguous coupon levels, ignoring intervening principal flows.
-    fn coupon_segments(cashflows: &[CashflowType<DualFwd>]) -> Vec<LoanCouponSegment> {
-        let mut previous = None;
-        let mut segments: Vec<LoanCouponSegment> = Vec::new();
-        let mut position = 0;
-        for cashflow in cashflows {
-            let (key, payment) = match cashflow {
-                CashflowType::FixedRateCoupon(coupon) => (
-                    (None, coupon.rate().rate().value().to_bits()),
-                    coupon.payment_date(),
-                ),
-                CashflowType::FloatingRateCoupon(coupon) => (
-                    (
-                        Some(coupon.market_index().clone()),
-                        coupon.spread().value().to_bits(),
-                    ),
-                    coupon.payment_date(),
-                ),
-                _ => continue,
-            };
-            if previous.as_ref() == Some(&key) {
-                if let Some(segment) = segments.last_mut() {
-                    segment.coupons.end = position + 1;
-                    segment.redemption_date = payment;
-                }
-            } else {
-                segments.push(LoanCouponSegment {
-                    coupons: position..position + 1,
-                    redemption_date: payment,
-                });
-            }
-            previous = Some(key);
-            position += 1;
-        }
-        segments
-    }
-}
-
-impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
-    /// Returns the selected segment's coupon or spread after solving earlier segments.
-    fn handle_fair_rate(
-        &self,
-        trade: &LoanTrade<DualFwd>,
-        state: &mut LoanValuationState,
-        target: usize,
-    ) -> Result<f64> {
-        self.handle_segment_fair_rate(trade, state, target)
-    }
-}
-
-impl<N: Scalar + From<DualFwd>> HandleAccruedAmount<LoanTrade<N>, LoanValuationState> for LoanPricer
-where
-    FixedRateCoupon<N>: Cashflow<N>,
-    FloatingRateCoupon<N>: Cashflow<N>,
-    OptionEmbeddedCoupon<N>: NonLinearCoupon<N>,
-    Leg<f64>: From<Leg<N>>,
-{
-    fn handle_accrued_amount(
-        &self,
-        trade: &LoanTrade<N>,
-        state: &mut LoanValuationState,
-        start: Date,
-        end: Date,
-    ) -> Result<f64> {
-        if state.value.is_some() {
-            let legs: Vec<Leg<f64>> = state.legs.iter().cloned().map(Into::into).collect();
-            return accrued_amount(&legs, state.get_market_data_reponse(), start, end);
-        }
-        let cashflows = Self::clone_cashflows_with_resolved_fixings(trade.instrument(), state)?;
-        let (_, projected) = self.project_expected_receipts(trade, state, &cashflows, false)?;
-        let legs: Vec<Leg<f64>> = projected.into_iter().map(Into::into).collect();
-        accrued_amount(&legs, state.get_market_data_reponse(), start, end)
-    }
-}
-
-impl Pricer for LoanPricer {
-    type Item = LoanTrade<DualFwd>;
-    type Policy = dyn DiscountPolicy;
-    /// Evaluates requested results against a fresh market-data state.
-    ///
-    /// Supports `Value`, `Cashflows`, `Sensitivities`, `FairRate` and `AccruedAmount` in the
-    /// caller's order. Accrual reuses the projection when cashflows, value or
-    /// sensitivities are requested; standalone accrual projects numeric receipts.
-    ///
-    /// # Errors
-    /// Rejects a missing discount policy and propagates data/handler errors.
-    /// Unsupported measures are left absent.
-    fn evaluate(
-        &self,
-        trade: &Self::Item,
-        requests: &[Request],
-        ctx: &impl MarketDataProvider,
-    ) -> Result<EvaluationResults> {
-        let supported: Vec<Request> = requests
-            .iter()
-            .copied()
-            .filter(|request| {
-                matches!(
-                    request,
-                    Request::Value
-                        | Request::Sensitivities
-                        | Request::Cashflows
-                        | Request::FairRate(_)
-                        | Request::AccruedAmount(_, _)
-                )
-            })
-            .collect();
-        let requests = supported.as_slice();
-        Request::validate(requests)?;
-        if requests.is_empty() {
-            return Ok(EvaluationResults::new(
-                ctx.evaluation_date(),
-                trade.instrument().identifier(),
-            ));
-        }
-        let mut state = self.load_loan_valuation_state(trade, ctx)?;
-        if requests.iter().any(|request| {
-            matches!(
-                request,
-                Request::Cashflows | Request::Value | Request::Sensitivities
-            )
-        }) {
-            self.handle_value(trade, &mut state)?;
-        }
-        let mut results =
-            EvaluationResults::new(ctx.evaluation_date(), trade.instrument().identifier());
-        for request in requests {
-            results = match request {
-                Request::Value => results.with_price(self.handle_value(trade, &mut state)?),
-                Request::Sensitivities => {
-                    results.with_sensitivities(self.handle_sensitivities(trade, &mut state)?)
-                }
-                Request::FairRate(target) => {
-                    results.with_fair_rate(self.handle_fair_rate(trade, &mut state, *target)?)
-                }
-                Request::AccruedAmount(start, end) => {
-                    if *start < ctx.evaluation_date() {
-                        return Err(QSError::InvalidValueErr(
-                            "Loan accrual windows must start at or after evaluation".into(),
-                        ));
-                    }
-                    results.with_accrued_amount(
-                        self.handle_accrued_amount(trade, &mut state, *start, *end)?,
-                    )
-                }
-                Request::Cashflows => {
-                    self.handle_value(trade, &mut state)?;
-                    results.with_cashflows(self.handle_cashflows(trade, &mut state)?)
-                }
-                _ => results,
-            };
-        }
-        Ok(results)
-    }
-    /// Collects deduplicated discount, coupon-index, refinancing, and credit curves.
-    ///
-    /// Coupon fixing requests are initially optional; `load_loan_valuation_state` requires
-    /// historical observations only for unpaid coupons. Returns `None` if the
-    /// discount index cannot be selected or required refinancing is unconfigured.
-    fn market_data_request(&self, trade: &Self::Item) -> Option<MarketDataRequest> {
-        let loan = trade.instrument();
-        let mut indices = vec![self.select_discount_curve_index(loan).ok()?];
-        indices.extend(
-            loan.coupon_rate_observations()
-                .iter()
-                .flatten()
-                .map(ForwardRateRequest::market_index),
-        );
-        if loan.prepayment_model().requires_refinancing_benchmark() {
-            indices.push(self.refinancing_benchmark_index.clone()?);
-        }
-        let mut seen = HashSet::new();
-        let mut elements = indices
-            .into_iter()
-            .filter(|index| seen.insert(index.clone()))
-            .map(|market_index| ConstructedElementRequest::DiscountCurve { market_index })
-            .collect::<Vec<_>>();
-        if let Some(index) = loan.credit_curve_index() {
-            elements.push(ConstructedElementRequest::CreditCurve {
-                market_index: index.clone(),
-            });
-        }
-        let mut seen_fixings = HashSet::new();
-        let fixings = loan
-            .coupon_rate_observations()
-            .iter()
-            .flatten()
-            .filter(|request| seen_fixings.insert((request.market_index(), request.fixing_date())))
-            .map(|request| {
-                FixingRequest::new(request.market_index(), request.fixing_date())
-                    .with_missing_fixing_allowed(true)
-            })
-            .collect();
-        let mut request = MarketDataRequest::default()
-            .with_constructed_elements_request(elements)
-            .with_fixings_request(fixings);
-        let mut fx = request.fx_request().cloned().unwrap_or_default();
-        fx.push(FxRequest::single(loan.currency()));
-        request = request.with_fx_request(fx);
-        Some(request)
-    }
-    /// Installs a policy used to select the loan's discount curve.
-    fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {
-        self.discount_policy = Some(policy);
-    }
-    /// Returns the configured policy; pricing requires a policy to be present.
-    fn discount_policy(&self) -> Option<&Self::Policy> {
-        self.discount_policy.as_deref()
     }
 }
 
@@ -1472,7 +1609,7 @@ mod tests {
             .ok_or_else(|| QSError::ValueNotSetErr("Expected missing policy error".into()))?;
         assert!(error.to_string().contains("Loan discount policy"));
         let mut pricer = estr_loan_pricer();
-        let requests = [Request::Value, Request::Cashflows];
+        let requests = [Request::Value, Request::Cashflows(true)];
         let estr = pricer.evaluate(&trade, &requests, &provider)?;
         pricer.set_discount_policy(Box::new(
             FixedIncomeDiscountPolicy::new(false)
@@ -1535,8 +1672,8 @@ mod tests {
         let result = pricer.evaluate(
             &trade,
             &[
-                Request::Cashflows,
-                Request::Cashflows,
+                Request::Cashflows(true),
+                Request::Cashflows(true),
                 Request::FairRate(0),
                 Request::Sensitivities,
                 Request::Value,
@@ -1573,7 +1710,7 @@ mod tests {
             original
         );
         let short = LoanTrade::new(trade.instrument().clone(), provider.date, Side::PayShort);
-        let short_result = pricer.evaluate(&short, &[Request::Cashflows], &provider)?;
+        let short_result = pricer.evaluate(&short, &[Request::Cashflows(true)], &provider)?;
         let short_table = short_result
             .cashflows()
             .ok_or_else(|| QSError::ValueNotSetErr("Short cashflows".into()))?;
@@ -1590,7 +1727,7 @@ mod tests {
     }
 
     #[test]
-    fn floating_market_changes_preserve_principal_and_exact_reset_fixings() -> Result<()> {
+    fn floating_market_changes_recast_future_principal_and_preserve_known_fixings() -> Result<()> {
         let loan = default_loan_builder()
             .with_coupons(vec![CashflowType::floating(
                 MarketIndex::EURIBOR12m,
@@ -1610,7 +1747,7 @@ mod tests {
         for rate in [0.02, 0.06] {
             let result = pricer.evaluate(
                 &trade,
-                &[Request::Cashflows],
+                &[Request::Cashflows(true)],
                 &build_test_market(0.03, rate, 0.0),
             )?;
             let table = result
@@ -1632,7 +1769,8 @@ mod tests {
                 .flatten()
                 .all(|fixing| (*fixing - 0.04).abs() < 1e-14));
         }
-        assert_eq!(redemptions[0], redemptions[1]);
+        assert_eq!(&redemptions[0][..12], &redemptions[1][..12]);
+        assert_ne!(&redemptions[0][12..], &redemptions[1][12..]);
         let mut missing = build_test_market(0.03, 0.04, 0.0);
         missing.data = MarketData::new(HashMap::new(), missing.data.constructed_elements().clone());
         assert!(pricer
@@ -1642,7 +1780,7 @@ mod tests {
     }
 
     #[test]
-    fn seasoned_cashflows_request_only_observations_needed_by_future_coupons() -> Result<()> {
+    fn seasoned_cashflows_require_the_history_used_to_replay_amortization() -> Result<()> {
         let loan = default_loan_builder()
             .with_coupons(vec![CashflowType::floating(
                 MarketIndex::EURIBOR12m,
@@ -1658,8 +1796,21 @@ mod tests {
             MarketData::new(HashMap::new(), provider.data.constructed_elements().clone());
         let trade = LoanTrade::new(loan, Date::new(2026, 1, 1), Side::LongReceive);
         let pricer = estr_loan_pricer();
-        // The expired first-year reset is absent; today's unpublished fixing may forecast.
-        let result = pricer.evaluate(&trade, &[Request::Value, Request::Cashflows], &provider)?;
+        // Historical resets determine the closing balance even when past rows are hidden.
+        assert!(pricer
+            .evaluate(&trade, &[Request::Cashflows(true)], &provider)
+            .is_err());
+        let history = HashMap::from([(
+            MarketIndex::EURIBOR12m,
+            BTreeMap::from([(Date::new(2026, 1, 1), 0.04)]),
+        )]);
+        provider.data = MarketData::new(history, provider.data.constructed_elements().clone());
+        // Today's unpublished fixing may still forecast.
+        let result = pricer.evaluate(
+            &trade,
+            &[Request::Value, Request::Cashflows(true)],
+            &provider,
+        )?;
         let table = result
             .cashflows()
             .ok_or_else(|| QSError::ValueNotSetErr("Seasoned cashflows".into()))?;
@@ -1678,8 +1829,41 @@ mod tests {
         Ok(())
     }
 
+    fn assert_prefixes_at_par(
+        table: &CashflowsTable,
+        provider: &Provider,
+        side: Side,
+        rebuild: bool,
+    ) -> Result<()> {
+        for segment in 1..=4 {
+            let end = provider.date.advance(segment * 6, TimeUnit::Months)?;
+            let mut prefix_value = 0.0;
+            let mut repaid = 0.0;
+            for ((date, amount), kind) in table
+                .payment_dates()
+                .iter()
+                .zip(table.amounts())
+                .zip(table.cashflow_types())
+            {
+                if *date <= end {
+                    prefix_value += amount
+                        * (-0.03 * DayCounter::Actual365.year_fraction(provider.date, *date)).exp();
+                    if matches!(kind, CashflowKind::Redemption) {
+                        repaid += amount;
+                    }
+                }
+            }
+            prefix_value += (side.sign() * 100_000.0 - repaid)
+                * (-0.03 * DayCounter::Actual365.year_fraction(provider.date, end)).exp();
+            assert!(
+                (prefix_value - side.sign() * 100_000.0).abs() < 1e-5,
+                "segment {segment}, rebuild={rebuild}: {prefix_value}"
+            );
+        }
+        Ok(())
+    }
+
     #[test]
-    #[allow(clippy::too_many_lines)]
     fn fair_rates_bootstrap_mixed_and_stepped_segments_with_early_principal_repayment() -> Result<()>
     {
         let provider = build_test_market(0.03, 0.04, 0.0);
@@ -1712,14 +1896,18 @@ mod tests {
                 let trade = LoanTrade::new(builder.clone().build()?, provider.date, side);
                 let original = estr_loan_pricer().evaluate(
                     &trade,
-                    &[Request::Value, Request::Cashflows],
+                    &[Request::Value, Request::Cashflows(true)],
                     &provider,
                 )?;
                 for rebuild in [false, true] {
                     let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(rebuild);
                     let result = pricer.evaluate(
                         &trade,
-                        &[Request::FairRate(0), Request::Value, Request::Cashflows],
+                        &[
+                            Request::FairRate(0),
+                            Request::Value,
+                            Request::Cashflows(true),
+                        ],
                         &provider,
                     )?;
                     let rates = (0..4)
@@ -1741,7 +1929,7 @@ mod tests {
                     );
                     let par = pricer.evaluate(
                         &candidate,
-                        &[Request::Value, Request::Cashflows],
+                        &[Request::Value, Request::Cashflows(true)],
                         &provider,
                     )?;
                     assert!(
@@ -1750,38 +1938,7 @@ mod tests {
                     let table = par
                         .cashflows()
                         .ok_or_else(|| QSError::ValueNotSetErr("Par cashflows".into()))?;
-                    for segment in 1..=4 {
-                        let end = provider
-                            .date
-                            .advance(segment * 6, TimeUnit::Months)
-                            .expect("valid date advancement");
-                        let mut prefix_value = 0.0;
-                        let mut repaid = 0.0;
-                        for ((date, amount), kind) in table
-                            .payment_dates()
-                            .iter()
-                            .zip(table.amounts())
-                            .zip(table.cashflow_types())
-                        {
-                            if *date <= end {
-                                prefix_value += amount
-                                    * (-0.03
-                                        * DayCounter::Actual365
-                                            .year_fraction(provider.date, *date))
-                                    .exp();
-                                if matches!(kind, CashflowKind::Redemption) {
-                                    repaid += amount;
-                                }
-                            }
-                        }
-                        prefix_value += (side.sign() * 100_000.0 - repaid)
-                            * (-0.03 * DayCounter::Actual365.year_fraction(provider.date, end))
-                                .exp();
-                        assert!(
-                            (prefix_value - side.sign() * 100_000.0).abs() < 1e-5,
-                            "segment {segment}, rebuild={rebuild}: {prefix_value}"
-                        );
-                    }
+                    assert_prefixes_at_par(table, &provider, side, rebuild)?;
                     assert_eq!(original.price(), result.price());
                     assert_eq!(
                         original.cashflows().map(|table| table.amounts()),
@@ -1957,8 +2114,21 @@ mod tests {
         Ok(())
     }
 
+    fn contractual_redemptions(loan: &Loan<DualFwd>) -> Vec<f64> {
+        loan.contractual_leg()
+            .cashflows()
+            .iter()
+            .filter_map(|cashflow| {
+                if let CashflowType::Redemption(principal) = cashflow {
+                    principal.amount().ok()
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     #[test]
-    #[allow(clippy::too_many_lines)]
     fn fair_rate_preserves_or_recomputes_existing_schedule() -> Result<()> {
         let provider = build_test_market(0.03, 0.04, 0.0);
         for floating in [false, true] {
@@ -1976,19 +2146,7 @@ mod tests {
                 provider.date,
                 Side::LongReceive,
             );
-            let snapshot = trade
-                .instrument()
-                .contractual_leg()
-                .cashflows()
-                .iter()
-                .filter_map(|cashflow| {
-                    if let CashflowType::Redemption(principal) = cashflow {
-                        principal.amount().ok()
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
+            let snapshot = contractual_redemptions(trade.instrument());
             for rebuild in [false, true] {
                 let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(rebuild);
                 let fair = pricer
@@ -2025,38 +2183,14 @@ mod tests {
                         .abs()
                         < 1e-5
                 );
-                let candidate_schedule = candidate
-                    .instrument()
-                    .contractual_leg()
-                    .cashflows()
-                    .iter()
-                    .filter_map(|cashflow| {
-                        if let CashflowType::Redemption(principal) = cashflow {
-                            principal.amount().ok()
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
+                let candidate_schedule = contractual_redemptions(candidate.instrument());
                 if rebuild {
                     assert_ne!(snapshot, candidate_schedule);
                 } else {
                     assert_eq!(snapshot, candidate_schedule);
                 }
             }
-            let after = trade
-                .instrument()
-                .contractual_leg()
-                .cashflows()
-                .iter()
-                .filter_map(|cashflow| {
-                    if let CashflowType::Redemption(principal) = cashflow {
-                        principal.amount().ok()
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
+            let after = contractual_redemptions(trade.instrument());
             assert_eq!(snapshot, after);
         }
         Ok(())
@@ -2068,7 +2202,7 @@ mod tests {
             .build()?;
         let provider = build_test_market(0.03, 0.04, 0.0);
         let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
-        let result = estr_loan_pricer().evaluate(&trade, &[Request::Cashflows], &provider)?;
+        let result = estr_loan_pricer().evaluate(&trade, &[Request::Cashflows(true)], &provider)?;
         let table = result
             .cashflows()
             .ok_or_else(|| QSError::ValueNotSetErr("Cashflows".into()))?;
@@ -2089,7 +2223,7 @@ mod tests {
         assert!(estr_loan_pricer()
             .evaluate(
                 &LoanTrade::new(invalid, provider.date, Side::LongReceive),
-                &[Request::Cashflows],
+                &[Request::Cashflows(true)],
                 &provider
             )
             .is_err());
@@ -2217,10 +2351,10 @@ mod tests {
             .accrued_amount()
             .ok_or_else(|| QSError::ValueNotSetErr("Accrued amount".into()))?;
         for requests in [
-            vec![accrual, Request::Cashflows],
-            vec![Request::Cashflows, accrual],
-            vec![accrual, Request::Sensitivities, Request::Cashflows],
-            vec![Request::Value, accrual, Request::Cashflows],
+            vec![accrual, Request::Cashflows(true)],
+            vec![Request::Cashflows(true), accrual],
+            vec![accrual, Request::Sensitivities, Request::Cashflows(true)],
+            vec![Request::Value, accrual, Request::Cashflows(true)],
         ] {
             calls.store(0, Ordering::Relaxed);
             let result = pricer.evaluate(&trade, &requests, &provider)?;
@@ -2302,6 +2436,19 @@ mod tests {
             (tape.book.len(), tape.mark, tape.active)
         });
         assert_eq!(before, after);
+        for from_evaluation_date in [false, true] {
+            let report = estr_loan_pricer().evaluate(
+                &trade,
+                &[Request::Cashflows(from_evaluation_date)],
+                &provider,
+            )?;
+            assert!(report.cashflows().is_some() && report.price().is_none());
+            let after_report = TAPE_FWD.with(|tape| {
+                let tape = tape.borrow();
+                (tape.book.len(), tape.mark, tape.active)
+            });
+            assert_eq!(before, after_report);
+        }
         assert_eq!(sentinel.value(), 1.0);
         Ok(())
     }
@@ -2330,8 +2477,8 @@ mod tests {
             let request = Request::AccruedAmount(provider.date, Date::new(2028, 1, 1));
             let numeric = pricer.evaluate(&trade, &[request], &provider)?;
             for requests in [
-                [request, Request::Sensitivities, Request::Cashflows],
-                [Request::Sensitivities, request, Request::Cashflows],
+                [request, Request::Sensitivities, Request::Cashflows(true)],
+                [Request::Sensitivities, request, Request::Cashflows(true)],
             ] {
                 let result = pricer.evaluate(&trade, &requests, &provider)?;
                 assert!(result.sensitivities().is_some());
@@ -2353,6 +2500,185 @@ mod tests {
                 assert_eq!(numeric.accrued_amount(), result.accrued_amount());
             }
         }
+        Ok(())
+    }
+
+    /// Groups scheduled interest and principal by payment date.
+    fn scheduled_installments(table: &CashflowsTable) -> BTreeMap<Date, f64> {
+        let mut payments = BTreeMap::new();
+        for row in table
+            .rows()
+            .filter(|row| row.leg_index == 0 && !matches!(row.kind, CashflowKind::Disbursement))
+        {
+            *payments.entry(row.payment_date).or_default() += row.amount;
+        }
+        payments
+    }
+
+    /// Checks a payment block independently of its level.
+    fn assert_level(payments: &[f64]) {
+        assert!(payments.len() > 1);
+        let first = payments[0];
+        assert!(
+            payments
+                .iter()
+                .all(|payment| (payment - first).abs() < 1e-7),
+            "nonconstant installments: {payments:?}"
+        );
+    }
+
+    #[test]
+    fn french_stub_installments_are_level_on_actual_accrual_fractions() -> Result<()> {
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let cases = [
+            default_loan_builder()
+                .with_start_date(Date::new(2026, 1, 15))
+                .with_first_coupon_date(Date::new(2026, 2, 1)),
+            default_loan_builder()
+                .with_maturity_date(Date::new(2028, 1, 15))
+                .with_next_to_last_coupon_date(Date::new(2028, 1, 1)),
+            default_loan_builder()
+                .with_start_date(Date::new(2026, 1, 15))
+                .with_date_generation_rule(DateGenerationRule::Backward),
+        ];
+        for maker in cases {
+            let trade = LoanTrade::new(maker.build()?, provider.date, Side::LongReceive);
+            let result =
+                estr_loan_pricer().evaluate(&trade, &[Request::Cashflows(true)], &provider)?;
+            let table = result
+                .cashflows()
+                .ok_or_else(|| QSError::ValueNotSetErr("Cashflows".into()))?;
+            assert_level(
+                &scheduled_installments(table)
+                    .values()
+                    .copied()
+                    .collect::<Vec<_>>(),
+            );
+            let principal: f64 = table
+                .rows()
+                .filter(|row| matches!(row.kind, CashflowKind::Redemption))
+                .map(|row| row.amount)
+                .sum();
+            assert!((principal - 100_000.0).abs() < 1e-7);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn french_installments_reset_once_then_remain_level_for_floating_and_stepped_rates(
+    ) -> Result<()> {
+        let provider = build_test_market(0.03, 0.08, 0.0);
+        let floating = default_loan_builder()
+            .with_coupons(vec![CashflowType::floating(
+                MarketIndex::EURIBOR12m,
+                0.01,
+                None,
+                None,
+            )])
+            .with_initial_amortization_rate(0.05)
+            .with_fixing_lag_business_days(2);
+        let mut stepped = vec![CashflowType::fixed(0.04); 12];
+        stepped.push(CashflowType::fixed(0.07));
+        for maker in [floating, default_loan_builder().with_coupons(stepped)] {
+            let trade = LoanTrade::new(maker.build()?, provider.date, Side::LongReceive);
+            let result =
+                estr_loan_pricer().evaluate(&trade, &[Request::Cashflows(true)], &provider)?;
+            let table = result
+                .cashflows()
+                .ok_or_else(|| QSError::ValueNotSetErr("Cashflows".into()))?;
+            let payments: Vec<_> = scheduled_installments(table).values().copied().collect();
+            assert_eq!(payments.len(), 24);
+            assert_level(&payments[..12]);
+            assert_level(&payments[12..]);
+            assert!((payments[12] - payments[11]).abs() > 1.0);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn seasoned_prepayment_replays_origination_and_report_window_does_not_change_value(
+    ) -> Result<()> {
+        let mut provider = build_test_market(0.03, 0.04, 0.0);
+        let loan = default_loan_builder()
+            .with_prepayment_configuration(PrepaymentModelConfiguration::Cpr(0.12))
+            .build()?;
+        let later = Date::new(2027, 1, 1);
+        let expected = loan.contractual_principal(later)? * 0.88;
+        let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
+        let pricer = estr_loan_pricer();
+        let original = pricer.evaluate(&trade, &[Request::Cashflows(false)], &provider)?;
+        provider.date = later;
+        let full = pricer.evaluate(
+            &trade,
+            &[Request::Value, Request::Cashflows(false)],
+            &provider,
+        )?;
+        let future = pricer.evaluate(
+            &trade,
+            &[Request::Cashflows(true), Request::Value],
+            &provider,
+        )?;
+        let original = original
+            .cashflows()
+            .ok_or_else(|| QSError::ValueNotSetErr("Cashflows".into()))?;
+        let full_table = full
+            .cashflows()
+            .ok_or_else(|| QSError::ValueNotSetErr("Cashflows".into()))?;
+        let future_table = future
+            .cashflows()
+            .ok_or_else(|| QSError::ValueNotSetErr("Cashflows".into()))?;
+        assert_eq!(original.amounts(), full_table.amounts());
+        assert_eq!(original.payment_dates(), full_table.payment_dates());
+        assert_eq!(full.price(), future.price());
+        assert!(full_table
+            .cashflow_types()
+            .contains(&CashflowKind::Disbursement));
+        assert!(future_table
+            .payment_dates()
+            .iter()
+            .all(|date| *date > later));
+        let principal: f64 = future_table
+            .rows()
+            .filter(|row| matches!(row.kind, CashflowKind::Redemption))
+            .map(|row| row.amount)
+            .sum();
+        assert!((principal - expected).abs() < 1e-7);
+        Ok(())
+    }
+
+    #[test]
+    fn monthly_coupons_report_their_shared_annual_fixing_date() -> Result<()> {
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let loan = default_loan_builder()
+            .with_coupons(vec![CashflowType::floating(
+                MarketIndex::EURIBOR12m,
+                0.01,
+                None,
+                None,
+            )])
+            .with_initial_amortization_rate(0.05)
+            .with_fixing_lag_business_days(2)
+            .build()?;
+        let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
+        let result =
+            estr_loan_pricer().evaluate(&trade, &[Request::Cashflows(false)], &provider)?;
+        let table = result
+            .cashflows()
+            .ok_or_else(|| QSError::ValueNotSetErr("Cashflows".into()))?;
+        let dates: Vec<_> = table
+            .rows()
+            .filter(|row| matches!(row.kind, CashflowKind::FloatingRateCoupon))
+            .map(|row| row.fixing_date)
+            .collect();
+        assert_eq!(&dates[..12], &[Some(Date::new(2025, 12, 30)); 12]);
+        assert_eq!(&dates[12..], &[Some(Date::new(2026, 12, 30)); 12]);
+        assert!(table
+            .rows()
+            .filter(|row| matches!(
+                row.kind,
+                CashflowKind::Redemption | CashflowKind::Disbursement
+            ))
+            .all(|row| row.fixing_date.is_none()));
         Ok(())
     }
 }

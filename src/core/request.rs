@@ -1,14 +1,19 @@
-use crate::ad::{dual::DualFwd, scalar::Scalar};
-use crate::core::collateral::Discountable;
-use crate::core::marketdatahandling::marketdata::MarketData;
-use crate::core::{cashflowaggregation::CouponDetails, evaluationresults::CashflowKind};
-use crate::instruments::cashflows::coupons::{LinearCoupon, NonLinearCoupon};
-use crate::math::compensatedsum::CompensatedSum;
-use crate::rates::interestrate::InterestRate;
-use crate::time::date::Date;
 use crate::{
-    core::evaluationresults::{CashflowsTable, SensitivityMap},
-    instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
+    ad::{dual::DualFwd, scalar::Scalar},
+    core::{
+        cashflowaggregation::CouponDetails,
+        collateral::Discountable,
+        evaluationresults::{CashflowKind, CashflowsTable, SensitivityMap},
+        marketdatahandling::marketdata::MarketData,
+    },
+    instruments::cashflows::{
+        cashflow::Cashflow,
+        cashflowtype::CashflowType,
+        coupons::{LinearCoupon, NonLinearCoupon},
+        leg::Leg,
+    },
+    math::compensatedsum::CompensatedSum,
+    time::date::Date,
     utils::errors::{QSError, Result},
 };
 
@@ -33,8 +38,9 @@ pub enum Request {
     OAS,
     /// Raw first-order value derivatives keyed by market-pillar labels.
     Sensitivities,
-    /// Signed, undiscounted cashflow report; payment selection depends on the pricer.
-    Cashflows,
+    /// Signed, undiscounted cashflows. `true` selects payments strictly after
+    /// evaluation; `false` includes the complete schedule from origination.
+    Cashflows(bool),
     /// Breakeven quote for the zero-based contractual target.
     ///
     /// For swaps the target selects a leg (fixed coupon or floating spread).
@@ -82,6 +88,11 @@ impl Request {
                 "Request one accrual window per evaluation".into(),
             ));
         }
+        if requests.contains(&Self::Cashflows(true)) && requests.contains(&Self::Cashflows(false)) {
+            return Err(QSError::InvalidValueErr(
+                "Request one cashflow reporting window per evaluation".into(),
+            ));
+        }
         for request in requests {
             if let Self::AccruedAmount(start, end) = request {
                 if end < start {
@@ -104,7 +115,7 @@ impl Request {
             Self::ModifiedDuration => 3,
             Self::ZSpread => 4,
             Self::OAS => 5,
-            Self::Cashflows => 6,
+            Self::Cashflows(_) => 6,
             Self::FairRate(_) => 7,
             Self::AccruedAmount(_, _) => 8,
         }
@@ -288,12 +299,7 @@ where
                                 coupon.notional() * side,
                                 coupon.rate().day_counter(),
                             )
-                            .with_fixed_rate(
-                                InterestRate::from_rate_definition(
-                                    coupon.rate().rate().value(),
-                                    coupon.rate().rate_definition(),
-                                ),
-                            ),
+                            .with_fixed_rate(coupon.rate().rate().value()),
                         );
                     }
                     CashflowType::FloatingRateCoupon(coupon) => {
@@ -325,10 +331,17 @@ where
                                 coupon.day_counter(),
                             )
                             .with_floating_rate(
-                                coupon.market_index().clone(),
+                                leg.forward_index()
+                                    .unwrap_or_else(|| coupon.market_index())
+                                    .clone(),
                                 coupon.spread().value(),
                             )
-                            .with_forward_index(leg.forward_index().cloned())
+                            .with_fixing_date(
+                                coupon
+                                    .overnight_conventions()
+                                    .is_none()
+                                    .then(|| coupon.fixing_date()),
+                            )
                             .with_overnight_conventions(coupon.overnight_conventions().cloned()),
                         );
                     }
@@ -360,14 +373,16 @@ where
                                 day_counter,
                             )
                             .with_floating_rate(
-                                coupon.market_index().clone(),
+                                leg.forward_index()
+                                    .unwrap_or_else(|| coupon.market_index())
+                                    .clone(),
                                 coupon.spread().value(),
                             )
-                            .with_forward_index(leg.forward_index().cloned())
+                            .with_fixing_date(Some(coupon.fixing_date()))
                             .with_payoff(coupon.payoff_ops().clone()),
                         );
                     }
-                    CashflowType::Redemption(cashflow) => {
+                    CashflowType::Redemption(cashflow) | CashflowType::ConstantAmount(cashflow) => {
                         let amount = cashflow.amount()?.value() * side;
                         let payment_date = cashflow.payment_date();
 
@@ -390,22 +405,6 @@ where
                         cashflows_table.add_cashflow(
                             payment_date,
                             CashflowKind::Disbursement,
-                            amount,
-                            None,
-                            0.0,
-                            currency,
-                            None,
-                            None,
-                            leg_index,
-                        );
-                    }
-                    CashflowType::ConstantAmount(cashflow) => {
-                        let amount = cashflow.amount()?.value() * side;
-                        let payment_date = cashflow.payment_date();
-
-                        cashflows_table.add_cashflow(
-                            payment_date,
-                            CashflowKind::ConstantAmount,
                             amount,
                             None,
                             0.0,

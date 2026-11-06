@@ -57,6 +57,7 @@ pub struct MakeFixedRateBond<T: Scalar> {
     start_tenor: Option<Period>,
     maturity_tenor: Option<Period>,
     first_coupon_tenor: Option<Period>,
+    next_to_last_coupon_tenor: Option<Period>,
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     rate: Option<f64>,
@@ -73,6 +74,7 @@ pub struct MakeFixedRateBond<T: Scalar> {
     date_generation_rule: Option<DateGenerationRule>,
     end_of_month: Option<bool>,
     first_coupon_date: Option<Date>,
+    next_to_last_coupon_date: Option<Date>,
     _marker: PhantomData<T>,
 }
 
@@ -229,6 +231,24 @@ where
     }
 }
 
+impl<T: Scalar> MakeFixedRateBond<T> {
+    /// Sets the last regular coupon boundary before maturity.
+    #[must_use]
+    pub const fn with_next_to_last_coupon_date(mut self, date: Date) -> Self {
+        self.next_to_last_coupon_date = Some(date);
+        self.next_to_last_coupon_tenor = None;
+        self
+    }
+
+    /// Sets the last regular boundary relative to maturity.
+    #[must_use]
+    pub const fn with_next_to_last_coupon_tenor(mut self, tenor: Period) -> Self {
+        self.next_to_last_coupon_tenor = Some(tenor);
+        self.next_to_last_coupon_date = None;
+        self
+    }
+}
+
 impl<T: Scalar> MakeInstrument for MakeFixedRateBond<T> {
     type Instrument = FixedRateBond<T>;
 
@@ -236,6 +256,7 @@ impl<T: Scalar> MakeInstrument for MakeFixedRateBond<T> {
         self.start_tenor.is_none()
             && self.maturity_tenor.is_none()
             && self.first_coupon_tenor.is_none()
+            && self.next_to_last_coupon_tenor.is_none()
     }
 
     /// Builds the [`FixedRateBond`] instance.
@@ -248,8 +269,13 @@ impl<T: Scalar> MakeInstrument for MakeFixedRateBond<T> {
                 "MakeFixedRateBond has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
             ));
         }
-        if [self.start_date, self.maturity_date, self.first_coupon_date]
-            .contains(&Some(Date::empty()))
+        if [
+            self.start_date,
+            self.maturity_date,
+            self.first_coupon_date,
+            self.next_to_last_coupon_date,
+        ]
+        .contains(&Some(Date::empty()))
         {
             return Err(QSError::InvalidValueErr(
                 "MakeFixedRateBond dates must not be empty".into(),
@@ -303,6 +329,7 @@ impl<T: Scalar> MakeInstrument for MakeFixedRateBond<T> {
             .with_date_generation_rule(self.date_generation_rule)
             .with_end_of_month(self.end_of_month)
             .with_first_coupon_date(self.first_coupon_date)
+            .with_next_to_last_coupon_date(self.next_to_last_coupon_date)
             .build()?;
 
         Ok(FixedRateBond::new(
@@ -362,6 +389,21 @@ impl<T: Scalar> MakeInstrument for MakeFixedRateBond<T> {
             )?);
         }
         resolved.first_coupon_tenor = None;
+        if self.next_to_last_coupon_date.is_some() || self.next_to_last_coupon_tenor.is_some() {
+            resolved.next_to_last_coupon_date = Some(resolve_date(
+                self.next_to_last_coupon_date,
+                self.next_to_last_coupon_tenor,
+                resolved
+                    .maturity_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("maturity_date".into()))?,
+                "next_to_last_coupon_date",
+                date_calendar,
+                date_convention,
+                date_end_of_month,
+            )?);
+        }
+        resolved.next_to_last_coupon_tenor = None;
+
         Ok(resolved)
     }
 }

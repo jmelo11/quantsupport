@@ -57,8 +57,8 @@ internal static class Program
         using (var input = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "query-response.json")))
         {
             var response = (BrowserResponse)new DataContractJsonSerializer(typeof(BrowserResponse)).ReadObject(input);
-            Check(response.Error == "" && response.Columns.Count == 20 && response.Rows[0].Count == 20, "Query response contract");
-            Check(response.Rows[0][1] == "Coupon café" && response.Rows[0][2] == "-1234.5" && response.Rows[0][4] == "", "Unicode, amounts and blank cells");
+            Check(response.Error == "" && response.Columns.Count == 19 && response.Rows[0].Count == 19, "Query response contract");
+            Check(response.Rows[0][1] == "FixedRateCoupon" && response.Rows[0][2] == "-1234.5" && response.Rows[0][4] == "", "Supported kinds, amounts and blank cells");
             Check(response.Curves.Count == 0 && response.Parameters.Count == 0, "Query metadata arrays");
             Check(response.NumericColumns.Contains(2) && !response.NumericColumns.Contains(0), "Numeric metadata must distinguish dates from amounts");
         }

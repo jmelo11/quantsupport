@@ -161,7 +161,11 @@ fn main() -> ExampleResult<()> {
         let trade = LoanTrade::new(loan, reference, Side::LongReceive);
         let result = pricer.evaluate(
             &trade,
-            &[Request::Value, Request::Cashflows, Request::Sensitivities],
+            &[
+                Request::Value,
+                Request::Cashflows(true),
+                Request::Sensitivities,
+            ],
             &context,
         )?;
         assert_discounted_receipts_match_value(&result, &context)?;
@@ -194,7 +198,7 @@ fn main() -> ExampleResult<()> {
     assert_eq!(fixed_redemptions(&fixed), fixed_redemptions(&prepaying));
     let result = pricer.evaluate(
         &LoanTrade::new(prepaying, reference, Side::LongReceive),
-        &[Request::Value, Request::Cashflows],
+        &[Request::Value, Request::Cashflows(true)],
         &context,
     )?;
     assert_discounted_receipts_match_value(&result, &context)?;
@@ -288,7 +292,7 @@ fn main() -> ExampleResult<()> {
         .build()?;
     let result = pricer.evaluate(
         &LoanTrade::new(credit, reference, Side::LongReceive),
-        &[Request::Value, Request::Cashflows],
+        &[Request::Value, Request::Cashflows(true)],
         &context,
     )?;
     assert_discounted_receipts_match_value(&result, &context)?;
@@ -308,7 +312,7 @@ fn main() -> ExampleResult<()> {
         .with_refinancing_benchmark_index(MarketIndex::EURIBOR12m)
         .evaluate(
             &LoanTrade::new(refinancing, reference, Side::LongReceive),
-            &[Request::Value, Request::Cashflows],
+            &[Request::Value, Request::Cashflows(true)],
             &context,
         )?;
     assert_discounted_receipts_match_value(&result, &context)?;

@@ -42,6 +42,22 @@ def exposures(result):
 
 
 class RiskReprojectionTests(unittest.TestCase):
+    def test_trade_evaluate_uses_the_innermost_risk_context(self):
+        position = trade()
+        with context() as original:
+            native = position.evaluate(REQUESTS)
+            view = original.with_zero_rate_risk([qs.ZeroRateRisk("ESTR")])
+            with view:
+                projected = position.evaluate(REQUESTS)
+                self.assertEqual(projected.price, native.price)
+                self.assertEqual(set(exposures(projected).index), set(view.target_labels))
+                with qs.Scenario([qs.Shock("ESTR", 0.01, qs.ScenarioType.Absolute)]):
+                    actual = position.evaluate(REQUESTS)
+                    expected = view.evaluate(position, REQUESTS)
+                    self.assertEqual(actual.price, expected.price)
+                    pd.testing.assert_series_equal(exposures(actual), exposures(expected))
+            pd.testing.assert_series_equal(exposures(position.evaluate(REQUESTS)), exposures(native))
+
     def test_native_and_transformed_views_preserve_value_and_original_labels(self):
         position = trade()
         with context() as original:

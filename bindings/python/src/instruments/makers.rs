@@ -66,7 +66,10 @@ fn date_fields(kind: &str) -> Vec<DateField> {
             ("maturity_date", "tenor", "start_date", false),
         ],
     };
-    if matches!(kind, "FixedRateBond" | "SteppedCouponBond") {
+    if matches!(
+        kind,
+        "FixedRateBond" | "SteppedCouponBond" | "FloatingRateNote" | "Loan"
+    ) {
         fields.push((
             "first_coupon_date",
             "first_coupon_tenor",
@@ -74,7 +77,10 @@ fn date_fields(kind: &str) -> Vec<DateField> {
             true,
         ));
     }
-    if kind == "SteppedCouponBond" {
+    if matches!(
+        kind,
+        "FixedRateBond" | "SteppedCouponBond" | "FloatingRateNote" | "Loan"
+    ) {
         fields.push((
             "next_to_last_coupon_date",
             "next_to_last_coupon_tenor",

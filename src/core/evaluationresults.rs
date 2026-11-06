@@ -1,12 +1,11 @@
-use std::collections::HashMap;
-
 use crate::{
     core::cashflowaggregation::CouponDetails,
     currencies::currency::Currency,
     rates::interestrate::{InterestRate, RateDefinition},
     time::date::Date,
-    utils::errors::Result,
+    utils::errors::{QSError, Result},
 };
+use std::collections::HashMap;
 
 /// Economic cashflow kind used by numeric reports and aggregators.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -21,57 +20,36 @@ pub enum CashflowKind {
     Redemption,
     /// Principal advanced at origination.
     Disbursement,
-    /// A contractual constant payment.
-    ConstantAmount,
-    /// A non-coupon option payoff.
-    OptionEmbeddedCashflow,
-    /// Interest reported without contractual coupon terms.
-    Interest,
-    /// Principal reported without a redemption/disbursement distinction.
-    Capital,
-    /// A custom reporting kind supplied by a pricer.
-    Other(String),
 }
 
 impl CashflowKind {
     /// Returns the external report label.
     #[must_use]
-    pub fn as_str(&self) -> &str {
+    pub const fn as_str(&self) -> &str {
         match self {
             Self::FixedRateCoupon => "FixedRateCoupon",
             Self::FloatingRateCoupon => "FloatingRateCoupon",
             Self::OptionEmbeddedCoupon => "OptionEmbeddedCoupon",
             Self::Redemption => "Redemption",
             Self::Disbursement => "Disbursement",
-            Self::ConstantAmount => "ConstantAmount",
-            Self::OptionEmbeddedCashflow => "OptionEmbeddedCashflow",
-            Self::Interest => "Interest",
-            Self::Capital => "Capital",
-            Self::Other(label) => label,
         }
     }
 }
 
-impl From<&str> for CashflowKind {
-    fn from(label: &str) -> Self {
+impl TryFrom<&str> for CashflowKind {
+    type Error = QSError;
+
+    fn try_from(label: &str) -> Result<Self> {
         match label {
-            "FixedRateCoupon" => Self::FixedRateCoupon,
-            "FloatingRateCoupon" => Self::FloatingRateCoupon,
-            "OptionEmbeddedCoupon" => Self::OptionEmbeddedCoupon,
-            "Redemption" => Self::Redemption,
-            "Disbursement" => Self::Disbursement,
-            "ConstantAmount" => Self::ConstantAmount,
-            "OptionEmbeddedCashflow" => Self::OptionEmbeddedCashflow,
-            "Interest" => Self::Interest,
-            "Capital" => Self::Capital,
-            _ => Self::Other(label.into()),
+            "FixedRateCoupon" => Ok(Self::FixedRateCoupon),
+            "FloatingRateCoupon" => Ok(Self::FloatingRateCoupon),
+            "OptionEmbeddedCoupon" => Ok(Self::OptionEmbeddedCoupon),
+            "Redemption" => Ok(Self::Redemption),
+            "Disbursement" => Ok(Self::Disbursement),
+            _ => Err(QSError::InvalidValueErr(format!(
+                "Invalid cashflow kind: {label}"
+            ))),
         }
-    }
-}
-
-impl From<String> for CashflowKind {
-    fn from(label: String) -> Self {
-        Self::from(label.as_str())
     }
 }
 
@@ -97,6 +75,8 @@ pub struct CashflowRow<'a> {
     pub amount: f64,
     /// Resolved floating coupon rate, in decimal units, when applicable.
     pub fixing: Option<f64>,
+    /// Contractual term-rate observation date, when applicable.
+    pub fixing_date: Option<Date>,
     /// Coupon year fraction, or zero for non-accruing cashflows.
     pub accrual_period: f64,
     /// Original payment currency.
@@ -162,12 +142,42 @@ impl CashflowsTable {
             kind: &self.cashflow_types[row],
             amount: self.amount[row],
             fixing: self.fixing[row],
+            fixing_date: self.coupon_details[row]
+                .as_ref()
+                .and_then(CouponDetails::fixing_date),
             accrual_period: self.accrual_periods[row],
             currency: self.currencies[row],
             floorlet_strike: self.floorlet_strike[row],
             caplet_strike: self.caplet_strike[row],
             leg_index: self.leg_indices[row],
         })
+    }
+
+    /// Selects payments strictly after a cutoff, or retains the entire schedule.
+    /// Filtering compacts columns in place and preserves their order.
+    #[must_use]
+    pub fn with_payment_cutoff(mut self, cutoff: Option<Date>) -> Self {
+        if let Some(cutoff) = cutoff {
+            fn retain<T>(values: &mut Vec<T>, dates: &[Date], cutoff: Date) {
+                let mut row = 0;
+                values.retain(|_| {
+                    let keep = dates[row] > cutoff;
+                    row += 1;
+                    keep
+                });
+            }
+            retain(&mut self.coupon_details, &self.payment_dates, cutoff);
+            retain(&mut self.cashflow_types, &self.payment_dates, cutoff);
+            retain(&mut self.amount, &self.payment_dates, cutoff);
+            retain(&mut self.fixing, &self.payment_dates, cutoff);
+            retain(&mut self.accrual_periods, &self.payment_dates, cutoff);
+            retain(&mut self.currencies, &self.payment_dates, cutoff);
+            retain(&mut self.floorlet_strike, &self.payment_dates, cutoff);
+            retain(&mut self.caplet_strike, &self.payment_dates, cutoff);
+            retain(&mut self.leg_indices, &self.payment_dates, cutoff);
+            self.payment_dates.retain(|date| *date > cutoff);
+        }
+        self
     }
 
     /// Returns the payment dates of the cashflows.
@@ -222,6 +232,13 @@ impl CashflowsTable {
     #[must_use]
     pub fn amounts(&self) -> &[f64] {
         &self.amount
+    }
+
+    /// Iterates contractual term-rate fixing dates without allocating a column copy.
+    pub fn fixing_dates(&self) -> impl ExactSizeIterator<Item = Option<Date>> + '_ {
+        self.coupon_details
+            .iter()
+            .map(|terms| terms.as_ref().and_then(CouponDetails::fixing_date))
     }
 
     /// Returns resolved floating coupon rates, or `None` for non-floating rows.
@@ -587,7 +604,7 @@ impl EvaluationResults {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prelude::{Compounding, DayCounter, Frequency, MarketIndex, QSError};
+    use crate::prelude::{DayCounter, MarketIndex, QSError};
 
     fn report() -> CashflowsTable {
         let mut flows = CashflowsTable::new();
@@ -609,12 +626,7 @@ mod tests {
                 -1_000.0,
                 DayCounter::Thirty360,
             )
-            .with_fixed_rate(InterestRate::new(
-                0.06,
-                Compounding::Simple,
-                Frequency::Annual,
-                DayCounter::Thirty360,
-            )),
+            .with_fixed_rate(0.06),
         );
         flows.add_cashflow(
             Date::new(2026, 7, 1),
@@ -648,6 +660,17 @@ mod tests {
             0,
         );
         flows
+    }
+
+    #[test]
+    fn report_kinds_are_closed_and_reject_synthetic_categories() {
+        for label in ["Capital", "Interest", "ConstantAmount", "Other", "Unknown"] {
+            assert!(CashflowKind::try_from(label).is_err());
+        }
+        assert_eq!(
+            CashflowKind::try_from("Redemption").ok(),
+            Some(CashflowKind::Redemption)
+        );
     }
 
     #[test]

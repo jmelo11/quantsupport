@@ -26,7 +26,11 @@ where
         csa_currency,
     )));
 
-    let requests = vec![Request::Value, Request::Sensitivities, Request::Cashflows];
+    let requests = vec![
+        Request::Value,
+        Request::Sensitivities,
+        Request::Cashflows(true),
+    ];
     let results = pricer.evaluate(trade, &requests, context)?;
 
     let npv = results.price().unwrap_or(f64::NAN);

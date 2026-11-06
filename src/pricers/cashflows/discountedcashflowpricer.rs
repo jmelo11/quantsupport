@@ -349,11 +349,9 @@ where
                                 fixing_requests.push(FixingRequest::new(index.clone(), date));
                             }
                         }
-                    } else if coupon.accrual_start_date() < evaluation_date {
-                        fixing_requests.push(FixingRequest::new(
-                            index.clone(),
-                            coupon.accrual_start_date(),
-                        ));
+                    } else if coupon.fixing_date() < evaluation_date {
+                        fixing_requests
+                            .push(FixingRequest::new(index.clone(), coupon.fixing_date()));
                     }
                 }
             }
@@ -427,10 +425,10 @@ where
                 } else if state
                     .get_market_data_reponse()
                     .is_none_or(MarketData::anchor_fixings)
-                    && coupon.accrual_start_date() < state.eval_date
+                    && coupon.fixing_date() < state.eval_date
                 {
                     let realized = state
-                        .get_fixing(forward_index, coupon.accrual_start_date())
+                        .get_fixing(forward_index, coupon.fixing_date())
                         .map(DualFwd::new)?;
                     coupon.set_fixing(realized);
                 } else {
@@ -664,7 +662,7 @@ where
                     request,
                     Request::Value
                         | Request::Sensitivities
-                        | Request::Cashflows
+                        | Request::Cashflows(_)
                         | Request::FairRate(_)
                         | Request::AccruedAmount(_, _)
                 )
@@ -724,7 +722,7 @@ where
             }
         }
 
-        if !needs_value && requests.contains(&Request::Cashflows) {
+        if !needs_value && requests.iter().any(|r| matches!(r, Request::Cashflows(_))) {
             Self::resolve_coupons(trade, &state, None)?;
         }
         for request in requests {
@@ -738,11 +736,13 @@ where
                     let sensitivities = self.handle_sensitivities(trade, &mut state)?;
                     results = results.with_sensitivities(sensitivities);
                 }
-                Request::Cashflows => {
+                Request::Cashflows(from_evaluation_date) => {
                     let cashflows = <Self as HandleCashflows<T, DCFState<'_>>>::handle_cashflows(
                         self, trade, &mut state,
                     )?;
-                    results = results.with_cashflows(cashflows);
+                    results = results.with_cashflows(
+                        cashflows.with_payment_cutoff(from_evaluation_date.then_some(eval_date)),
+                    );
                 }
                 Request::FairRate(target) => {
                     let fair_rate = self.handle_fair_rate(trade, &mut state, *target)?;
@@ -1099,7 +1099,11 @@ mod tests {
         };
 
         let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
-        let results = pricer.evaluate(&trade, &[Request::Cashflows, Request::Value], &provider)?;
+        let results = pricer.evaluate(
+            &trade,
+            &[Request::Cashflows(true), Request::Value],
+            &provider,
+        )?;
 
         let cashflows = results
             .cashflows()
@@ -1867,7 +1871,7 @@ mod reporting_tests {
             1_000.0,
             Side::LongReceive,
         );
-        for requests in [vec![request], vec![Request::Cashflows, request]] {
+        for requests in [vec![request], vec![Request::Cashflows(true), request]] {
             let result = pricer().evaluate(&trade, &requests, &context)?;
             let expected = 1_000.0 * 0.06 * 31.0 / 365.0;
             assert!((result.accrued_amount().unwrap() - expected).abs() < 1e-12);
@@ -1934,7 +1938,11 @@ mod reporting_tests {
             FixedRateDeposit<DualFwd>,
             FixedRateDepositTrade<DualFwd>,
         >::new();
-        let requests = [Request::Value, Request::Sensitivities, Request::Cashflows];
+        let requests = [
+            Request::Value,
+            Request::Sensitivities,
+            Request::Cashflows(true),
+        ];
         let local = pricer.evaluate(&trade, &requests, &context)?;
         let context = context.with_base_currency(Currency::USD);
         let converted = pricer.evaluate(&trade, &requests, &context)?;
@@ -1970,7 +1978,11 @@ mod reporting_tests {
         let context = context(Currency::USD, fx);
         let trade = trade()?;
         let pricer = pricer();
-        let requests = [Request::Value, Request::Sensitivities, Request::Cashflows];
+        let requests = [
+            Request::Value,
+            Request::Sensitivities,
+            Request::Cashflows(true),
+        ];
         let result = pricer.evaluate(&trade, &requests, &context)?;
         let local = -100_000.0 + 104_000.0 * (-0.03_f64).exp();
         assert!(

@@ -1,8 +1,6 @@
 //! Loans own contractual cashflows; market observations and optional prepayment
 //! are evaluated by the pricer.
 
-use std::sync::Arc;
-
 use crate::{
     ad::scalar::Scalar,
     core::{
@@ -14,18 +12,22 @@ use crate::{
     },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
+    instruments::{
+        cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
+        fixedincome::loanrepaymentstructure::LoanRepaymentStructure,
+    },
     math::compensatedsum::CompensatedSum,
     models::prepaymentmodel::PrepaymentModel,
     time::date::Date,
     utils::errors::{QSError, Result},
 };
 
-use super::loanrepaymentstructure::LoanRepaymentStructure;
+use std::sync::Arc;
 
 /// A generic loan contract assembled from the library's existing cashflows.
 ///
-/// Coupon notionals and redemptions are contractual `f64` amounts. Prepayment
+/// Coupon notionals and redemptions store a contractual `f64` baseline.
+/// French valuation recalculates projected principal at coupon resets. Prepayment
 /// is a separate function evaluated by the pricer; it never modifies this leg.
 /// Both the leg and the prepayment model use the scalar type `T`.
 /// Schedule generation and repayment defaults belong to [`super::makeloan::MakeLoan`].
@@ -51,7 +53,7 @@ impl<T: Scalar> Loan<T> {
     /// Rejects invalid principal, inconsistent coupon/redemption schedules,
     /// missing floating observations, invalid credit/recovery terms, or a
     /// discount curve stored on the supplied leg.
-    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         identifier: String,
         notional: f64,
@@ -80,138 +82,14 @@ impl<T: Scalar> Loan<T> {
                 "Invalid loan principal or credit terms".into(),
             ));
         }
-        let mut balance = notional;
-        let mut coupon_count = 0;
-        let mut previous_end = Some(leg.first_payment_date());
-        let mut redemption_date = None;
-        let mut disbursements = 0;
-        for cashflow in leg.cashflows() {
-            match cashflow {
-                CashflowType::FixedRateCoupon(coupon) => {
-                    cashflow.validate_coupon()?;
-                    let observation = observations.get(coupon_count).ok_or_else(|| {
-                        QSError::InvalidValueErr("Missing loan coupon observation entry".into())
-                    })?;
-                    if observation.is_some() {
-                        return Err(QSError::InvalidValueErr(
-                            "Fixed coupons cannot require index observations".into(),
-                        ));
-                    }
-                    validate_coupon_balance_and_accrual_dates(
-                        balance,
-                        coupon.notional(),
-                        coupon.accrual_start_date(),
-                        coupon.accrual_end_date(),
-                        previous_end,
-                    )?;
-                    previous_end = Some(coupon.accrual_end_date());
-                    redemption_date = Some(coupon.payment_date());
-                    coupon_count += 1;
-                }
-                CashflowType::FloatingRateCoupon(coupon) => {
-                    cashflow.validate_coupon()?;
-                    let request = observations
-                        .get(coupon_count)
-                        .and_then(Option::as_ref)
-                        .ok_or_else(|| {
-                            QSError::InvalidValueErr(
-                                "Floating loan coupon requires an observation request".into(),
-                            )
-                        })?;
-                    if request.market_index() != *coupon.market_index()
-                        || request
-                            .start_date()
-                            .zip(request.end_date())
-                            .is_none_or(|(start, end)| end <= start)
-                    {
-                        return Err(QSError::InvalidValueErr(
-                            "Invalid loan index observation".into(),
-                        ));
-                    }
-                    validate_coupon_balance_and_accrual_dates(
-                        balance,
-                        coupon.notional(),
-                        coupon.accrual_start_date(),
-                        coupon.accrual_end_date(),
-                        previous_end,
-                    )?;
-                    previous_end = Some(coupon.accrual_end_date());
-                    redemption_date = Some(coupon.payment_date());
-                    coupon_count += 1;
-                }
-                CashflowType::OptionEmbeddedCoupon(coupon) => {
-                    cashflow.validate_coupon()?;
-                    let request = observations
-                        .get(coupon_count)
-                        .and_then(Option::as_ref)
-                        .ok_or_else(|| {
-                            QSError::InvalidValueErr(
-                                "Bounded floating loan coupon requires an observation request"
-                                    .into(),
-                            )
-                        })?;
-                    if request.market_index() != *coupon.market_index()
-                        || request
-                            .start_date()
-                            .zip(request.end_date())
-                            .is_none_or(|(start, end)| end <= start)
-                    {
-                        return Err(QSError::InvalidValueErr(
-                            "Invalid loan index observation".into(),
-                        ));
-                    }
-                    validate_coupon_balance_and_accrual_dates(
-                        balance,
-                        coupon.notional(),
-                        coupon.accrual_start_date(),
-                        coupon.accrual_end_date(),
-                        previous_end,
-                    )?;
-                    previous_end = Some(coupon.accrual_end_date());
-                    redemption_date = Some(coupon.payment_date());
-                    coupon_count += 1;
-                }
-                CashflowType::Redemption(redemption) => {
-                    let amount = redemption.amount()?;
-                    if redemption_date != Some(redemption.payment_date())
-                        || !amount.is_finite()
-                        || amount < 0.0
-                        || amount > notional.mul_add(1e-10, balance)
-                    {
-                        return Err(QSError::InvalidValueErr(
-                            "Invalid contractual loan redemption".into(),
-                        ));
-                    }
-                    balance = (balance - amount).max(0.0);
-                }
-                CashflowType::Disbursement(advance) => {
-                    if coupon_count != 0
-                        || disbursements != 0
-                        || advance.payment_date() != leg.first_payment_date()
-                        || (advance.amount()? - notional).abs() > notional * 1e-10
-                    {
-                        return Err(QSError::InvalidValueErr(
-                            "Loan leg requires one initial principal advance".into(),
-                        ));
-                    }
-                    disbursements += 1;
-                }
-                _ => {
-                    return Err(QSError::InvalidValueErr(
-                        "Loan legs require coupons, redemptions and an initial advance".into(),
-                    ));
-                }
+        if let Some(LoanRepaymentStructure::Balloon { residual_fraction }) = &repayment {
+            if !residual_fraction.is_finite() || !(0.0..=1.0).contains(residual_fraction) {
+                return Err(QSError::InvalidValueErr(
+                    "Loan balloon fraction must be in [0, 1]".into(),
+                ));
             }
         }
-        if disbursements != 1
-            || coupon_count == 0
-            || coupon_count != observations.len()
-            || balance > notional * 1e-10
-        {
-            return Err(QSError::InvalidValueErr(
-                "Loan cashflows must repay the full original principal".into(),
-            ));
-        }
+        validate_loan_cashflows(&leg, notional, &observations)?;
         Ok(Self {
             identifier,
             notional,
@@ -338,11 +216,117 @@ impl<T: Scalar> Loan<T> {
     }
 }
 
-/// Checks that a coupon uses the contractual opening balance and contiguous dates.
-///
-/// # Errors
-/// Rejects nonpositive/nonfinite coupon notionals, a balance mismatch beyond
-/// relative tolerance 1e-10, empty/reversed accrual intervals, or a gap/overlap.
+/// Checks coupon observations independently of principal/date reconciliation.
+fn validate_loan_observation(
+    index: Option<&MarketIndex>,
+    observation: Option<&Option<ForwardRateRequest>>,
+) -> Result<()> {
+    let observation = observation
+        .ok_or_else(|| QSError::InvalidValueErr("Missing loan coupon observation entry".into()))?;
+    match (index, observation) {
+        (None, None) => Ok(()),
+        (Some(index), Some(request))
+            if request.market_index() == *index
+                && request
+                    .start_date()
+                    .zip(request.end_date())
+                    .is_some_and(|(start, end)| end > start) =>
+        {
+            Ok(())
+        }
+        _ => Err(QSError::InvalidValueErr(
+            "Invalid loan index observation".into(),
+        )),
+    }
+}
+
+/// Reconciles the ordered coupon/principal schedule in one pass.
+fn validate_loan_cashflows<T: Scalar>(
+    leg: &Leg<T>,
+    notional: f64,
+    observations: &[Option<ForwardRateRequest>],
+) -> Result<()> {
+    let mut balance = notional;
+    let mut coupons = 0;
+    let mut previous_end = Some(leg.first_payment_date());
+    let mut redemption_date = None;
+    let mut disbursements = 0;
+    for cashflow in leg.cashflows() {
+        let (opening, start, end, payment, index) = match cashflow {
+            CashflowType::FixedRateCoupon(coupon) => (
+                coupon.notional(),
+                coupon.accrual_start_date(),
+                coupon.accrual_end_date(),
+                coupon.payment_date(),
+                None,
+            ),
+            CashflowType::FloatingRateCoupon(coupon) => (
+                coupon.notional(),
+                coupon.accrual_start_date(),
+                coupon.accrual_end_date(),
+                coupon.payment_date(),
+                Some(coupon.market_index()),
+            ),
+            CashflowType::OptionEmbeddedCoupon(coupon) => (
+                coupon.notional(),
+                coupon.accrual_start_date(),
+                coupon.accrual_end_date(),
+                coupon.payment_date(),
+                Some(coupon.market_index()),
+            ),
+            CashflowType::Redemption(redemption) => {
+                let amount = redemption.amount()?;
+                if redemption_date != Some(redemption.payment_date())
+                    || !amount.is_finite()
+                    || amount < 0.0
+                    || amount > notional.mul_add(1e-10, balance)
+                {
+                    return Err(QSError::InvalidValueErr(
+                        "Invalid contractual loan redemption".into(),
+                    ));
+                }
+                balance = (balance - amount).max(0.0);
+                continue;
+            }
+            CashflowType::Disbursement(advance) => {
+                if coupons != 0
+                    || disbursements != 0
+                    || advance.payment_date() != leg.first_payment_date()
+                    || (advance.amount()? - notional).abs() > notional * 1e-10
+                {
+                    return Err(QSError::InvalidValueErr(
+                        "Loan leg requires one initial principal advance".into(),
+                    ));
+                }
+                disbursements += 1;
+                continue;
+            }
+            _ => {
+                return Err(QSError::InvalidValueErr(
+                    "Loan legs require coupons, redemptions and an initial advance".into(),
+                ))
+            }
+        };
+        cashflow.validate_coupon()?;
+        validate_loan_observation(index, observations.get(coupons))?;
+        validate_coupon_balance_and_accrual_dates(balance, opening, start, end, previous_end)?;
+        previous_end = Some(end);
+        redemption_date = Some(payment);
+        coupons += 1;
+    }
+    if disbursements != 1
+        || coupons == 0
+        || coupons != observations.len()
+        || balance > notional * 1e-10
+    {
+        return Err(QSError::InvalidValueErr(
+            "Loan cashflows must repay the full original principal".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Checks opening balances and contiguous accrual dates to relative tolerance 1e-10.
 fn validate_coupon_balance_and_accrual_dates(
     balance: f64,
     notional: f64,

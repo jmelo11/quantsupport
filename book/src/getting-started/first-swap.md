@@ -65,7 +65,7 @@ fn main() -> Result<()> {
         .with_constructed_elements(elements);
     let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
     let result = pricer.evaluate(
-        &trade, &[Request::Value, Request::Cashflows, Request::Sensitivities],
+        &trade, &[Request::Value, Request::Cashflows(true), Request::Sensitivities],
         &context,
     )?;
     println!("NPV: {:?}", result.price());

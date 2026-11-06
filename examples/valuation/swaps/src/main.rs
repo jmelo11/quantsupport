@@ -79,7 +79,11 @@ fn main() -> Result<()> {
 
     // ── 2. Price the swap ─────────────────────────────────────────────
     let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
-    let requests = vec![Request::Value, Request::Cashflows, Request::Sensitivities];
+    let requests = vec![
+        Request::Value,
+        Request::Cashflows(true),
+        Request::Sensitivities,
+    ];
     let results = pricer.evaluate(&trade, &requests, &context)?;
 
     // ── 3. Display results ────────────────────────────────────────────

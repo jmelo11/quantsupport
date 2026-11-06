@@ -78,7 +78,7 @@ class ExtensionTests(unittest.TestCase):
         with context:
             result = context.evaluate(
                 trade,
-                [qs.Request.Value, qs.Request.Sensitivities, qs.Request.Cashflows],
+                [qs.Request.Value, qs.Request.Sensitivities, qs.Request.Cashflows()],
             )
 
         self.assertEqual(result.identifier, "COUPON")
@@ -99,6 +99,25 @@ class ExtensionTests(unittest.TestCase):
             result = context.evaluate(CouponTrade(Coupon("TARGET", 1), "2025-01-02"), [qs.Request.FairRate(1)])
         self.assertEqual(pricer.received, [qs.Request.FairRate(1)])
         self.assertEqual(result.fair_rate, 1.0)
+
+    def test_trade_evaluate_preserves_subclass_and_registered_pricer_dispatch(self):
+        calls = []
+
+        class CustomPricer:
+            def evaluate(self, trade, requests, context):
+                calls.append((trade, requests, context))
+                return qs.EvaluationResults(context.evaluation_date, trade.instrument.identifier,
+                                            price=trade.instrument.amount * trade.side.sign())
+
+        context = self.make_context()
+        context.register_pricer(CouponTrade, CustomPricer())
+        trade = CouponTrade(Coupon("CUSTOM", 125.0), "2025-01-02", qs.Side.PayShort)
+        requests = [qs.Request.Value, qs.Request.FairRate(1), qs.Request.Cashflows(False)]
+        with context:
+            self.assertEqual(trade.evaluate(requests).price, -125.0)
+        self.assertIs(calls[0][0], trade)
+        self.assertEqual(calls[0][1], requests)
+        self.assertIs(calls[0][2], context)
 
     def test_registration_can_be_removed(self):
         context = self.make_context()

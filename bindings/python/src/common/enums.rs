@@ -417,10 +417,24 @@ impl Request {
     pub const OAS: Self = Self {
         inner: QsRequest::OAS,
     };
-    #[classattr]
-    pub const Cashflows: Self = Self {
-        inner: QsRequest::Cashflows,
-    };
+
+    /// Selects future cashflows or the full schedule from origination.
+    #[staticmethod]
+    #[pyo3(signature = (from_evaluation_date=true))]
+    pub const fn Cashflows(from_evaluation_date: bool) -> Self {
+        Self {
+            inner: QsRequest::Cashflows(from_evaluation_date),
+        }
+    }
+
+    /// Whether cashflows are restricted to payments after evaluation.
+    #[getter]
+    pub const fn from_evaluation_date(&self) -> Option<bool> {
+        match self.inner {
+            QsRequest::Cashflows(value) => Some(value),
+            _ => None,
+        }
+    }
 
     /// Selects a zero-based swap leg or loan coupon/spread segment.
     #[staticmethod]
@@ -473,13 +487,30 @@ impl Request {
         match name.as_str() {
             "value" | "npv" => Ok(Self::Value),
             "sensitivities" => Ok(Self::Sensitivities),
-            "cashflows" => Ok(Self::Cashflows),
+            "cashflows" => Ok(Self::Cashflows(true)),
             "fairrate" => Ok(Self::FairRate(0)),
             "yieldtomaturity" | "ytm" => Ok(Self::YieldToMaturity),
             "modifiedduration" => Ok(Self::ModifiedDuration),
             "zspread" => Ok(Self::ZSpread),
             "oas" => Ok(Self::OAS),
             _ => {
+                if let Some(value) = name
+                    .strip_prefix("cashflows(")
+                    .and_then(|v| v.strip_suffix(')'))
+                {
+                    let flag = value
+                        .trim()
+                        .strip_prefix("fromevaluationdate=")
+                        .unwrap_or(value.trim());
+                    let flag = flag.parse::<bool>().map_err(|_| {
+                        crate::common::errors::invalid_value(
+                            "Use Cashflows(true) or Cashflows(false)",
+                        )
+                    })?;
+                    return Ok(Self {
+                        inner: QsRequest::Cashflows(flag),
+                    });
+                }
                 if let Some(index) = name
                     .strip_prefix("fairrate(")
                     .and_then(|v| v.strip_suffix(')'))
@@ -514,12 +545,16 @@ impl Request {
 
     fn __str__(&self) -> String {
         match self.inner {
+            QsRequest::Cashflows(true) => "Cashflows(true)".into(),
+            QsRequest::Cashflows(false) => "Cashflows(false)".into(),
             QsRequest::AccruedAmount(start, end) => format!("AccruedAmount({start}, {end})"),
             _ => format!("{:?}", self.inner),
         }
     }
     fn __repr__(&self) -> String {
         match self.inner {
+            QsRequest::Cashflows(true) => "Request.Cashflows(from_evaluation_date=True)".into(),
+            QsRequest::Cashflows(false) => "Request.Cashflows(from_evaluation_date=False)".into(),
             QsRequest::AccruedAmount(start, end) => {
                 format!("Request.AccruedAmount('{start}', '{end}')")
             }

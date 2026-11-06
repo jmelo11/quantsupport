@@ -215,7 +215,7 @@ class ScopedScenarioTests(unittest.TestCase):
             trade = qs.Trade(instrument=loan(floating=floating), trade_date="2026-02-24")
             with context:
                 base = context.evaluate(trade=trade,
-                    requests=[qs.Request.Value, qs.Request.Sensitivities, qs.Request.Cashflows])
+                    requests=[qs.Request.Value, qs.Request.Sensitivities, qs.Request.Cashflows()])
                 funding_risk = base.sensitivities.loc[base.sensitivities.pillar.str.startswith("ZeroRate_EUR_FUNDINGSPREAD_")]
                 self.assertEqual(len(funding_risk), 4)
                 for row in funding_risk.itertuples(index=False):
@@ -223,7 +223,7 @@ class ScopedScenarioTests(unittest.TestCase):
                     for shift in [-epsilon, epsilon]:
                         with qs.Scenario(shocks=[qs.Shock(target=row.pillar, value=shift, shock_type=qs.ScenarioType.Absolute)]):
                             result = context.evaluate(trade=trade,
-                                requests=[qs.Request.Value, qs.Request.Cashflows])
+                                requests=[qs.Request.Value, qs.Request.Cashflows()])
                             prices.append(result.price)
                             self.assertEqual(result.cashflows.amount.tolist(), base.cashflows.amount.tolist())
                     numerical = (prices[1] - prices[0]) / (2 * epsilon)

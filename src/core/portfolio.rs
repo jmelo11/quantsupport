@@ -1,13 +1,17 @@
 //! Aggregate completed, numeric trade results without retaining an AD graph.
 
-use crate::core::cashflowaggregation::{CashflowAggregator, GrossCashflowAggregator};
-use crate::core::instrument::Instrument;
-use crate::math::compensatedsum::CompensatedSum;
-use crate::prelude::{
-    CashflowKind, CashflowsTable, Currency, Date, EvaluationResults, QSError, Request,
-    SensitivityMap,
+use crate::{
+    core::{
+        cashflowaggregation::{CashflowAggregator, GrossCashflowAggregator},
+        evaluationresults::{CashflowKind, CashflowsTable, EvaluationResults, SensitivityMap},
+        instrument::Instrument,
+        request::Request,
+    },
+    currencies::currency::Currency,
+    math::compensatedsum::CompensatedSum,
+    time::date::Date,
+    utils::errors::{QSError, Result},
 };
-use crate::utils::errors::Result;
 use std::collections::{BTreeMap, HashSet};
 
 /// Ordered trade collection. Repeated entries represent repeated positions.
@@ -141,7 +145,7 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
                 request,
                 Request::Value
                     | Request::Sensitivities
-                    | Request::Cashflows
+                    | Request::Cashflows(_)
                     | Request::AccruedAmount(_, _)
             ) && !unique.contains(request)
             {
@@ -216,7 +220,7 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
                             .add(*value)?;
                     }
                 }
-                Request::Cashflows => {
+                Request::Cashflows(_) => {
                     let Some(flows) = result.cashflows() else {
                         self.unavailable.insert(*request);
                         continue;
@@ -263,8 +267,10 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
                     .with_exposure(&values),
             );
         }
-        if self.requests.contains(&Request::Cashflows)
-            && !self.unavailable.contains(&Request::Cashflows)
+        if self
+            .requests
+            .iter()
+            .any(|r| matches!(r, Request::Cashflows(_)) && !self.unavailable.contains(r))
         {
             result = result.with_cashflows(self.cashflows.into_cashflows_table()?);
         }
@@ -309,12 +315,8 @@ fn add_cashflows(
         let sum = match flow.kind {
             CashflowKind::FixedRateCoupon
             | CashflowKind::FloatingRateCoupon
-            | CashflowKind::OptionEmbeddedCoupon
-            | CashflowKind::Interest => &mut sums.interest,
-            CashflowKind::Redemption | CashflowKind::Disbursement | CashflowKind::Capital => {
-                &mut sums.capital
-            }
-            _ => &mut sums.other,
+            | CashflowKind::OptionEmbeddedCoupon => &mut sums.interest,
+            CashflowKind::Redemption | CashflowKind::Disbursement => &mut sums.capital,
         };
         sum.add(flow.amount)?;
     }
@@ -373,23 +375,13 @@ mod tests {
         let date = Date::new(2026, 1, 15);
         let mut flows = CashflowsTable::new();
         for (kind, amount) in [
-            ("FixedRateCoupon", 10.0),
-            ("FloatingRateCoupon", -4.0),
-            ("Redemption", 100.0),
-            ("Disbursement", -20.0),
-            ("ConstantAmount", 2.0),
+            (CashflowKind::FixedRateCoupon, 10.0),
+            (CashflowKind::FloatingRateCoupon, -4.0),
+            (CashflowKind::Redemption, 100.0),
+            (CashflowKind::Disbursement, -20.0),
+            (CashflowKind::Redemption, 2.0),
         ] {
-            flows.add_cashflow(
-                date,
-                CashflowKind::from(kind),
-                amount,
-                None,
-                0.0,
-                Currency::USD,
-                None,
-                None,
-                0,
-            );
+            flows.add_cashflow(date, kind, amount, None, 0.0, Currency::USD, None, None, 0);
         }
         flows.add_cashflow(
             date,
@@ -419,7 +411,7 @@ mod tests {
             &portfolio,
             &[
                 Request::Value,
-                Request::Cashflows,
+                Request::Cashflows(true),
                 Request::Sensitivities,
                 Request::Value,
             ],
@@ -447,8 +439,8 @@ mod tests {
         assert_eq!(rows[0].interest, 21.0);
         assert_eq!(rows[0].capital, 0.0);
         assert_eq!(rows[1].interest, 18.0);
-        assert_eq!(rows[1].capital, 240.0);
-        assert_eq!(rows[1].other, 6.0);
+        assert_eq!(rows[1].capital, 246.0);
+        assert_eq!(rows[1].other, 0.0);
         assert_eq!(rows[1].total(), 264.0);
         Ok(())
     }
@@ -470,7 +462,11 @@ mod tests {
         );
         let results = evaluate(
             &portfolio,
-            &[Request::Value, Request::Cashflows, Request::Sensitivities],
+            &[
+                Request::Value,
+                Request::Cashflows(true),
+                Request::Sensitivities,
+            ],
             |index, _, _| {
                 Ok(if index == 0 {
                     result(index)
@@ -491,14 +487,13 @@ mod tests {
     fn rejects_inconsistent_dates_and_nonfinite_values() -> Result<()> {
         let portfolio = Portfolio::new("TEST-PORTFOLIO".into(), vec![0, 1])?;
         assert!(
-            evaluate(&portfolio, &[Request::Cashflows], |index, _, _| Ok(result(
-                index
-            )
-            .with_evaluation_date(Date::new(
-                2026,
-                1,
-                if index == 0 { 15 } else { 16 }
-            ))))
+            evaluate(&portfolio, &[Request::Cashflows(true)], |index, _, _| Ok(
+                result(index).with_evaluation_date(Date::new(
+                    2026,
+                    1,
+                    if index == 0 { 15 } else { 16 }
+                ))
+            ))
             .is_err()
         );
         assert!(
@@ -536,7 +531,7 @@ mod tests {
         let mut accumulator = MakePortfolioAccumulator::default()
             .with_requests(&[
                 Request::Value,
-                Request::Cashflows,
+                Request::Cashflows(true),
                 Request::Value,
                 Request::FairRate(0),
             ])
@@ -544,7 +539,7 @@ mod tests {
             .build()?;
         assert_eq!(
             accumulator.requests,
-            vec![Request::Value, Request::Cashflows]
+            vec![Request::Value, Request::Cashflows(true)]
         );
         accumulator.accumulate_trade_result(&result(0))?;
         let result = accumulator.into_evaluation_results("TEST-PORTFOLIO".into())?;
@@ -552,8 +547,8 @@ mod tests {
             .cashflows()
             .ok_or_else(|| QSError::ValueNotSetErr("net cashflows".into()))?;
         assert_eq!(result.price(), Some(12.0));
-        assert!(flows.cashflow_types().contains(&CashflowKind::Capital));
-        assert!(!flows.cashflow_types().contains(&CashflowKind::Disbursement));
+        assert!(flows.cashflow_types().contains(&CashflowKind::Redemption));
+        assert!(flows.cashflow_types().contains(&CashflowKind::Disbursement));
         Ok(())
     }
 
@@ -578,7 +573,7 @@ mod tests {
         let error = pricer
             .evaluate(
                 &Portfolio::new("TEST-PORTFOLIO".into(), vec![0])?,
-                &[Request::Cashflows],
+                &[Request::Cashflows(true)],
                 &PricingContext::new(),
             )
             .err()

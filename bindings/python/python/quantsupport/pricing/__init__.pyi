@@ -95,7 +95,28 @@ QuantSupportError
     Sensitivities: Final[Request]
     ZSpread: Final[Request]
     OAS: Final[Request]
-    Cashflows: Final[Request]
+
+    @staticmethod
+    def Cashflows(from_evaluation_date: bool = True) -> Request:
+        """Select the cashflow reporting window.
+
+Parameters
+----------
+from_evaluation_date : bool, optional
+    True reports payments strictly after evaluation. False includes the complete
+    schedule from origination. Defaults to True; valuation is unaffected.
+
+Returns
+-------
+Request
+    A parameterized cashflow request, matching Rust's Cashflows(bool) variant.
+"""
+        ...
+
+    @property
+    def from_evaluation_date(self) -> bool | None:
+        """Whether Cashflows reports only payments strictly after evaluation."""
+        ...
 
     @staticmethod
     def FairRate(index: int = 0) -> Request:
@@ -1477,6 +1498,30 @@ Positions retain a reference to the instrument and are thread-confined.
     def __new__(cls, instrument: Instrument, trade_date: _DateLike, side: Side | str | None = ..., notional: float | None = ..., domestic_notional: float | None = ..., foreign_notional: float | None = ..., num_contracts: float = ..., pricing_anchor: Any | None = ..., settlement_date: _DateLike | None = ..., spread_day_counter: Any | None = ...) -> Self:
         ...
 
+    def evaluate(self, requests: Sequence[Request | str] | None = None) -> EvaluationResults:
+        """Evaluate this trade in the innermost active pricing context.
+
+Parameters
+----------
+requests : sequence of Request or str, optional
+    Measures to compute; defaults to [Request.Value]. An empty sequence requests
+    no measures. Accepts the same requests as PricingContext.evaluate.
+
+Returns
+-------
+EvaluationResults
+    Results using the active context's policies, registered pricers, scenario
+    shocks and risk basis.
+
+Raises
+------
+RuntimeError
+    If no pricing context is active. Enter one with ``with context:``.
+QuantSupportError
+    If market data, request validation or pricing fails.
+"""
+        ...
+
     def __repr__(self) -> str:
         ...
 
@@ -1901,7 +1946,7 @@ pandas.DataFrame or None
     Columns ``payment_date``, ``type``, ``amount``, ``fixing``, ``accrual_period``,
     ``currency``, ``caplet_strike``, ``floorlet_strike``, ``leg_index``,
     ``accrual_start``, ``accrual_end``, ``market_index``, ``notional``,
-    ``fixing_index``, ``rate``, ``spread``, ``day_counter``, ``rate_definition``,
+    ``fixing_date``, ``rate``, ``spread``, ``day_counter``,
     ``overnight_conventions``, and ``payoff``. Contractual coupon terms retain
     signed notionals and compatible weighted rates/spreads after portfolio
     aggregation.

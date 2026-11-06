@@ -707,12 +707,16 @@ mod tests {
             .price()
             .unwrap();
         assert!((pv - expected).abs() < 1e-12);
-        assert!(
-            evaluate(&registry, &context, &instrument, &Request::Cashflows, None)
-                .unwrap()
-                .cashflows()
-                .is_some()
-        );
+        assert!(evaluate(
+            &registry,
+            &context,
+            &instrument,
+            &Request::Cashflows(true),
+            None
+        )
+        .unwrap()
+        .cashflows()
+        .is_some());
         let risk = evaluate(
             &registry,
             &context,

@@ -1,6 +1,7 @@
 """Native pricing keeps contract terms separate from position metadata."""
 
 import json
+import math
 from pathlib import Path
 import unittest
 
@@ -9,6 +10,72 @@ import quantsupport as qs
 
 
 class TradeInstrumentTests(unittest.TestCase):
+    def test_trade_evaluate_preserves_requests_and_position_overrides(self):
+        instrument = qs.FixedRateDeposit(
+            "DEPOSIT", "2026-02-24", "2027-02-24", 100_000, 0.04, "USD", "SOFR")
+        requests = [qs.Request.Value, qs.Request.Sensitivities,
+                    qs.Request.Cashflows(from_evaluation_date=False),
+                    qs.Request.AccruedAmount("2026-03-01", "2026-04-01")]
+        with self.make_context() as context:
+            for side in (qs.Side.LongReceive, qs.Side.PayShort):
+                trade = qs.Trade(instrument, "2026-02-24", side, notional=25_000)
+                self.assertEqual(trade.evaluate().price, context.evaluate(trade).price)
+                for selection in (None, [], requests, ("Value", "Cashflows(false)")):
+                    with self.subTest(side=side, requests=selection):
+                        actual = trade.evaluate(requests=selection)
+                        expected = context.evaluate(trade, selection)
+                        self.assertIsInstance(actual, qs.EvaluationResults)
+                        self.assertEqual(actual.identifier, expected.identifier)
+                        self.assertEqual(actual.price, expected.price)
+                        self.assertEqual(actual.accrued_amount, expected.accrued_amount)
+                        self.assertEqual(actual.raw_sensitivities, expected.raw_sensitivities)
+                        if expected.cashflows is None:
+                            self.assertIsNone(actual.cashflows)
+                        else:
+                            pd.testing.assert_frame_equal(actual.cashflows, expected.cashflows)
+                with self.assertRaises(qs.QuantSupportError):
+                    trade.evaluate([qs.Request.Cashflows(True), qs.Request.Cashflows(False)])
+                with self.assertRaises(qs.QuantSupportError):
+                    trade.evaluate(["UnknownRequest"])
+
+    def test_trade_evaluate_follows_nested_contexts_and_scenarios_and_restores_after_errors(self):
+        def market(rate):
+            quotes = qs.QuoteStore.from_dict({
+                "reference_date": "2026-02-24", "quotes": [
+                    {"identifier": f"ZeroRate_USD_SOFR_{tenor}", "mid": rate}
+                    for tenor in ("1Y", "2Y")],
+            })
+            return qs.PricingContext(quotes, [qs.CurveConfiguration(
+                "SOFR", quotes.identifiers(), "Actual365", "Linear")],
+                csa_policy=qs.SingleCurveCSADiscountPolicy("USD", "SOFR"))
+
+        instrument = qs.FixedRateDeposit(
+            "DEPOSIT", "2026-02-24", "2027-02-24", 100_000, 0.04, "USD", "SOFR",
+            day_counter="Actual365", compounding="Simple")
+        trade = qs.Trade(instrument, "2026-02-24")
+        outer, inner = market(0.02), market(0.06)
+        with self.assertRaisesRegex(RuntimeError, "active PricingContext"):
+            trade.evaluate()
+        outer.initialize()
+        with self.assertRaisesRegex(RuntimeError, "active PricingContext"):
+            trade.evaluate()
+        with outer:
+            expected = 104_000 * math.exp(-0.02) - 100_000
+            self.assertAlmostEqual(trade.evaluate().price, expected)
+            with outer:
+                self.assertAlmostEqual(trade.evaluate().price, expected)
+            self.assertAlmostEqual(trade.evaluate().price, expected)
+            with self.assertRaisesRegex(ValueError, "leave inner"):
+                with inner:
+                    self.assertAlmostEqual(trade.evaluate().price, 104_000 * math.exp(-0.06) - 100_000)
+                    with qs.Scenario([qs.Shock("SOFR", 0.01, qs.ScenarioType.Absolute)]):
+                        self.assertAlmostEqual(trade.evaluate().price, 104_000 * math.exp(-0.07) - 100_000)
+                    self.assertAlmostEqual(trade.evaluate().price, 104_000 * math.exp(-0.06) - 100_000)
+                    raise ValueError("leave inner")
+            self.assertAlmostEqual(trade.evaluate().price, expected)
+        with self.assertRaisesRegex(RuntimeError, "active PricingContext"):
+            trade.evaluate()
+
     def test_deposits_and_portfolios_use_standard_results(self):
         instrument = qs.FixedRateDeposit("DEPOSIT", "2026-02-24", "2027-02-24", 100_000, 0.04, "USD", "SOFR")
         long = qs.Trade(instrument, "2026-02-24")
@@ -29,9 +96,11 @@ class TradeInstrumentTests(unittest.TestCase):
             summary = result.cashflow_summary
             self.assertEqual(list(summary.columns), ["payment_date", "currency", "interest", "capital", "other", "total"])
             self.assertTrue((summary.currency == "USD").all())
-            self.assertAlmostEqual(summary.capital.sum(), 0.0)
+            self.assertAlmostEqual(summary.capital.sum(), 150_000.0)
+            complete = context.evaluate(portfolio, [qs.Request.Cashflows(from_evaluation_date=False)])
+            self.assertAlmostEqual(complete.cashflow_summary.capital.sum(), 0.0)
             self.assertGreater(summary.interest.sum(), 0.0)
-            self.assertEqual(set(result.cashflows.type), {"FixedRateCoupon", "Redemption", "Disbursement"})
+            self.assertEqual(set(result.cashflows.type), {"FixedRateCoupon", "Redemption"})
             coupons = result.cashflows[result.cashflows.type == "FixedRateCoupon"]
             for column in ["payment_date", "accrual_start", "accrual_end"]:
                 self.assertTrue(pd.api.types.is_datetime64_any_dtype(result.cashflows[column]))

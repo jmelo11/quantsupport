@@ -80,9 +80,9 @@ zero-rate curve. Two equal rate pillars specify that curve explicitly.
    trade = qs.Trade(swap, reference, qs.Side.LongReceive)
 
    with context:
-       result = context.evaluate(trade, [
+       result = trade.evaluate([
            qs.Request.Value, qs.Request.FairRate(0),
-           qs.Request.Cashflows, qs.Request.Sensitivities,
+           qs.Request.Cashflows(), qs.Request.Sensitivities,
        ])
        discount = context.curve("SOFR").discount_factor(reference + "5Y")
        print(result.price, result.fair_rate, discount)
@@ -150,6 +150,13 @@ construction of requested curves, volatility objects, models and simulations.
 Call ``context.initialize()`` to construct all configured objects eagerly.
 Valuation services manage their differentiation recording within this
 lifecycle.
+
+``trade.evaluate(requests=None)`` uses the innermost active context and defaults
+to ``[Request.Value]``. It applies the same policies, registered pricers, scenario
+shocks and risk basis as ``context.evaluate(trade, requests)``. Nested contexts
+restore the previous context on exit. Calling ``trade.evaluate`` outside an
+active context scope raises ``RuntimeError``; eager initialization alone does
+not activate a scope. Explicit context evaluation remains available.
 
 Read constructed views inside their active scope. Final scope exit releases
 constructed market data and performs the context's AD cleanup, including when

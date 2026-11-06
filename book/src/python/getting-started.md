@@ -43,9 +43,9 @@ swap = qs.Swap(
 position = qs.Trade(swap, "2026-01-02", qs.Side.LongReceive)
 context = qs.PricingContext(quotes=quotes, curves=[curve])
 with context:
-    result = context.evaluate(
-        position, [qs.Request.Value, qs.Request.Cashflows, qs.Request.Sensitivities]
-    )
+    result = position.evaluate([
+        qs.Request.Value, qs.Request.Cashflows(), qs.Request.Sensitivities,
+    ])
     print(result.price)
     print(result.cashflows)
     print(result.sensitivities)
@@ -63,6 +63,12 @@ Entering `with context:` validates configuration and activates the pricing
 scope. It does not eagerly build the entire market. Requests construct and
 cache the dependencies they consume. Explicit `context.initialize()` performs
 eager construction when that is the intended workflow.
+
+`position.evaluate()` uses the innermost active context and requests `Value`
+by default. Supply a request sequence to select other measures. It follows
+scenarios, registered pricers and risk views in that context. Nested scopes
+restore the previous context on exit; calling it without an active scope raises
+`RuntimeError`. `context.evaluate(position, requests)` remains available.
 
 Exiting the outer scope releases the context's constructed market and its AD
 state, including on exceptions. Keep returned results for reporting, not live
@@ -86,7 +92,7 @@ scenario = qs.Scenario(shocks=[
     qs.Shock(target="SOFR", value=0.0001, shock_type=qs.ScenarioType.Absolute),
 ])
 with context, scenario:
-    stressed = context.evaluate(position, [qs.Request.Value])
+    stressed = position.evaluate([qs.Request.Value])
 ```
 
 The base inputs remain unchanged. Scenarios compose in entry order and rebuild

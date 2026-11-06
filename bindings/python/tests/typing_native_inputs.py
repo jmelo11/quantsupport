@@ -53,6 +53,9 @@ def reconfigure(context: qs.PricingContext, curves: list[qs.CurveConfiguration])
 
 
 def transformed_risk(context: qs.PricingContext, trade: qs.Trade) -> None:
+    with context:
+        assert_type(trade.evaluate(), qs.EvaluationResults)
+        assert_type(trade.evaluate(requests=[qs.Request.Value, "Sensitivities"]), qs.EvaluationResults)
     grid = qs.ZeroRateRisk(qs.MarketIndex.ESTR, dates=[start, "2028-02-24"],
                           day_counter=qs.DayCounter.Actual365,
                           compounding="Continuous", frequency=qs.Frequency.Annual)
@@ -98,7 +101,7 @@ def constant_contracts() -> None:
     qs.Frequency.Monthly = qs.Frequency.Annual  # type: ignore[misc]
     qs.Currency.EUR = qs.Currency.USD  # type: ignore[misc]
     qs.OptionType.Call = qs.OptionType.Put  # type: ignore[misc]
-    qs.Request.Value = qs.Request.Cashflows  # type: ignore[misc]
+    qs.Request.Value = qs.Request.Cashflows()  # type: ignore[misc]
     qs.ScenarioType.Relative = qs.ScenarioType.Absolute  # type: ignore[misc]
 
 
