@@ -1411,6 +1411,9 @@ class FixedRateBond(Instrument):
     first_coupon_date : Date or datetime.date or str, optional
         Explicit first coupon date for an initial stub. Default None generates
         the first coupon from the regular schedule.
+    next_to_last_coupon_date : Date or datetime.date or str, optional
+        Last regular coupon boundary before maturity, starting a short or long
+        final coupon. None uses the regular schedule.
     """
 
     def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, rate: float, currency: _CurrencyLike, discount_index: _IndexLike | None=..., day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., rate_frequency: Frequency | str | None=..., payment_frequency: Frequency | str | None=..., payment_structure: PaymentStructure | str | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., date_generation_rule: DateGenerationRule | str | None=..., end_of_month: bool | None=..., first_coupon_date: _DateLike | None=..., next_to_last_coupon_date: _DateLike | None=...) -> Self:
@@ -2626,6 +2629,22 @@ class FloatingRateNote(Instrument):
         Principal repayment enum/name, such as Bullet, EqualPayments, or
         EqualRedemptions. Default None uses Bullet; native construction checks
         the requested structure.
+    calendar : Calendar or str, optional
+        Payment and fixing calendar. None uses the native null calendar.
+    business_day_convention : BusinessDayConvention or str, optional
+        Rule adjusting payment dates. None uses the native builder default.
+    date_generation_rule : DateGenerationRule or str, optional
+        Forward anchors the regular accrual grid to the start date; Backward
+        anchors it to maturity. None uses the product default.
+    end_of_month : bool, optional
+        Preserve month-end alignment on the regular accrual grid. None leaves
+        the native builder default unchanged.
+    first_coupon_date : Date or datetime.date or str, optional
+        Boundary ending a short or long first coupon. None uses the regular
+        schedule.
+    next_to_last_coupon_date : Date or datetime.date or str, optional
+        Last regular coupon boundary before maturity, starting a short or long
+        final coupon. None uses the regular schedule.
     """
 
     def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, spread: float, currency: _CurrencyLike, forward_index: _IndexLike, payment_frequency: Frequency | str | None=..., payment_structure: PaymentStructure | str | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., date_generation_rule: DateGenerationRule | str | None=..., end_of_month: bool | None=..., first_coupon_date: _DateLike | None=..., next_to_last_coupon_date: _DateLike | None=...) -> Self:
@@ -4038,6 +4057,12 @@ class MakeFixedRateBond(MakeInstrument[FixedRateBond]):
             Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
         first_coupon_tenor : _PeriodLike | None
             First coupon offset from the constructed start date. Omitted or None leaves this input unset.
+        next_to_last_coupon_date : Date or datetime.date or str, optional
+            Last regular coupon boundary before maturity, starting a short or long
+            final coupon. None uses the regular schedule.
+        next_to_last_coupon_tenor : Period or str, optional
+            Penultimate coupon boundary relative to maturity, normally a negative
+            tenor such as "-1M". None leaves this relative boundary unset.
         """
         ...
 
@@ -4164,6 +4189,28 @@ class MakeFloatingRateNote(MakeInstrument[FloatingRateNote]):
             Start offset from the context evaluation date. Omitted or None leaves this input unset.
         tenor : _PeriodLike | None
             Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        calendar : Calendar or str, optional
+            Payment and fixing calendar. None uses the native null calendar.
+        business_day_convention : BusinessDayConvention or str, optional
+            Rule adjusting payment dates. None uses the native builder default.
+        date_generation_rule : DateGenerationRule or str, optional
+            Forward anchors the regular accrual grid to the start date; Backward
+            anchors it to maturity. None uses the product default.
+        end_of_month : bool, optional
+            Preserve month-end alignment on the regular accrual grid. None leaves
+            the native builder default unchanged.
+        first_coupon_date : Date or datetime.date or str, optional
+            Boundary ending a short or long first coupon. None uses the regular
+            schedule unless first_coupon_tenor is supplied to the maker.
+        next_to_last_coupon_date : Date or datetime.date or str, optional
+            Last regular coupon boundary before maturity, starting a short or long
+            final coupon. None uses the regular schedule.
+        first_coupon_tenor : Period or str, optional
+            First coupon boundary relative to the constructed start date, for
+            example "1M". None leaves this relative boundary unset.
+        next_to_last_coupon_tenor : Period or str, optional
+            Penultimate coupon boundary relative to maturity, normally a negative
+            tenor such as "-1M". None leaves this relative boundary unset.
         """
         ...
 
@@ -4290,6 +4337,24 @@ class MakeLoan(MakeInstrument[Loan]):
             Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
         prepayment_tenors : Sequence[Any] | None
             CPR observations as tenor/rate pairs measured from the loan start. Omitted or None leaves this input unset.
+        date_generation_rule : DateGenerationRule or str, optional
+            Forward anchors the regular accrual grid to the start date; Backward
+            anchors it to maturity. None uses the product default.
+        end_of_month : bool, optional
+            Preserve month-end alignment on the regular accrual grid. None leaves
+            the native builder default unchanged.
+        first_coupon_date : Date or datetime.date or str, optional
+            Boundary ending a short or long first coupon. None uses the regular
+            schedule unless first_coupon_tenor is supplied to the maker.
+        next_to_last_coupon_date : Date or datetime.date or str, optional
+            Last regular coupon boundary before maturity, starting a short or long
+            final coupon. None uses the regular schedule.
+        first_coupon_tenor : Period or str, optional
+            First coupon boundary relative to the constructed start date, for
+            example "1M". None leaves this relative boundary unset.
+        next_to_last_coupon_tenor : Period or str, optional
+            Penultimate coupon boundary relative to maturity, normally a negative
+            tenor such as "-1M". None leaves this relative boundary unset.
         """
         ...
 
