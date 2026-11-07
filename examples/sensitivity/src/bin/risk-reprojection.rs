@@ -4,6 +4,7 @@
 //! `cargo run -p sensitivity --bin risk-reprojection`.
 
 use quantsupport::prelude::*;
+use quantsupport::utils::tools::sort_sensitivities_by_tenor;
 
 fn main() -> Result<()> {
     let date = Date::new(2026, 1, 15);
@@ -89,6 +90,7 @@ fn print_result(label: &str, result: &EvaluationResults) -> Result<f64> {
     let sensitivities = result
         .sensitivities()
         .ok_or_else(|| QSError::ValueNotSetErr("Example sensitivities".into()))?;
+    let sensitivities = sort_sensitivities_by_tenor(sensitivities, result.evaluation_date());
     println!("\n{label}: NPV = {price:.6} EUR");
     println!(
         "  {:<65} {:>16} {:>16}",

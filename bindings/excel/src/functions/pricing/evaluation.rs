@@ -7,6 +7,7 @@ use crate::{
     },
 };
 use quantsupport::prelude::Request;
+use quantsupport::utils::tools::sort_sensitivities_by_tenor;
 use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::{XllError, XLOPER12};
 
@@ -60,6 +61,7 @@ pub fn qs_evaluate(
             let risk = results
                 .sensitivities()
                 .ok_or_else(|| not_found("pricer did not return sensitivities"))?;
+            let risk = sort_sensitivities_by_tenor(risk, results.evaluation_date());
             let mut cells = vec![
                 XLOPER12::from_str("Risk factor"),
                 XLOPER12::from_str("Sensitivity"),

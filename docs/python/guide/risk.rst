@@ -139,6 +139,28 @@ retain their original risk coordinates. The transformation is local and first
 order; it does not restore model or simulation dependencies absent in the
 original pricer.
 
+The same API works when the curve was constructed from ``DiscountFactor``
+quotes. The default grid uses its future nodes, so no replacement zero-rate
+curve or new observations are needed:
+
+.. code-block:: python
+
+   with context:
+       zeros = context.with_zero_rate_risk([qs.ZeroRateRisk(
+           "ESTR", day_counter="Actual365", compounding="Continuous",
+           frequency="Annual",
+       )])
+   with zeros:
+       result = zeros.evaluate(portfolio, [qs.Request.Value, qs.Request.Sensitivities])
+       report = result.sensitivities
+       zero_rows = report["pillar"].str.startswith("ZeroRateRisk_")
+       report.loc[zero_rows, "pv01"] = report.loc[zero_rows, "value"] * 1e-4
+
+Use the index of the discount curve selected by the pricing policy. For a
+composite curve or a curve without nodes, supply explicit future ``dates`` to
+``ZeroRateRisk``. Custom dates must span the selected native risk; an
+insufficient grid raises an error rather than dropping exposures.
+
 The complete standalone example is
 ``bindings/python/examples/sensitivity/risk_reprojection.py``. Run it from the
 repository root with a binding built from this checkout:
@@ -186,7 +208,9 @@ cashflow amounts need not cancel. A sum of native-currency cashflows is not a
 reporting-currency portfolio PV.
 
 ``EvaluationResults.sensitivities`` aggregates duplicate labels and sorts
-them; ``raw_sensitivities`` retains the original pairs. For a portfolio, carry
+recognized tenors and pillar dates from shortest to longest maturity, so 2Y
+precedes 10Y. Labels without a recognized maturity follow the dated pillars.
+``raw_sensitivities`` retains the original pairs and their order. For a portfolio, carry
 trade identifiers alongside individual tables before grouping by pillar.
 Keep model/input units in the report, and compare the aggregated first-order
 prediction with a common full-revaluation scenario. Large shocks, options,

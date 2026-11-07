@@ -6,6 +6,7 @@ use super::{
     products::PositionTerms,
     registry::{QsObject, Registry},
 };
+use quantsupport::utils::tools::sort_sensitivities_by_tenor;
 use quantsupport::{core::elements::curveelement::ADCurveElement, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::result::Result;
@@ -544,6 +545,7 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
         if risk.instrument_keys().len() != risk.exposure().len() {
             return Err("Sensitivity risk factors and values have different lengths.".into());
         }
+        let risk = sort_sensitivities_by_tenor(risk, results.evaluation_date());
         let mut table = BrowserResponse::table("Sensitivities", &["Risk factor", "Sensitivity"]);
         table.numeric_columns = vec![1];
         table.message = "Raw derivatives per unit of each risk factor, in the pricer's value units. For decimal-rate factors, multiply by 0.0001 for a +1 bp estimate.".into();
@@ -1091,6 +1093,32 @@ mod tests {
         assert_eq!(query.workbook, "Café.xlsx");
         assert_eq!(query.target, 1);
         assert_eq!(query.request, "FairRate");
+    }
+
+    #[test]
+    fn sensitivity_report_sorts_tenors_without_changing_raw_results() {
+        let labels = [
+            "OIS_EUR_ESTR_10Y",
+            "OIS_EUR_ESTR_2Y",
+            "FixedRateDeposit_EUR_ESTR_6M",
+        ]
+        .map(String::from);
+        let results = EvaluationResults::new(Date::new(2026, 1, 15), "loan".into())
+            .with_sensitivities(
+                SensitivityMap::default()
+                    .with_instrument_keys(&labels)
+                    .with_exposure(&[10.0, 2.0, 0.5]),
+            );
+        let table = evaluation_table(&results, "Sensitivities").unwrap();
+        assert_eq!(
+            table.rows,
+            vec![
+                vec!["FixedRateDeposit_EUR_ESTR_6M", "0.5"],
+                vec!["OIS_EUR_ESTR_2Y", "2"],
+                vec!["OIS_EUR_ESTR_10Y", "10"],
+            ]
+        );
+        assert_eq!(results.sensitivities().unwrap().instrument_keys(), &labels);
     }
 
     #[test]

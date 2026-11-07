@@ -1926,7 +1926,7 @@ Returns
 -------
 pandas.DataFrame or None
     Columns ``pillar`` (string label) and ``value`` (raw exposure per unit input
-    change), with duplicates summed and rows sorted by pillar. None means no
+    change), with duplicates summed and rows sorted by tenor or pillar date. None means no
     sensitivity output; supplied empty sensitivities produce an empty frame.
 
 Raises

@@ -21,6 +21,8 @@ For a decimal-rate factor, multiply by 0.0001 for an approximate +1 bp value
 change. Retain each factor's actual units; futures price points, currency spots,
 volatility and rates are not interchangeable. Risk is calculated from the
 original trade and model, not from a compressed cashflow report.
+Sensitivity tables order recognized tenors and pillar dates from shortest to
+longest maturity; labels without a recognized maturity follow the dated rows.
 
 Cashflows contain signed undiscounted amounts in each payment currency, with
 positive receipts and negative payments. The detailed coupon report retains
