@@ -135,6 +135,8 @@ where
                 .ok_or_else(|| QSError::NotFoundErr("Missing state.".into()))?
         };
 
+        // Cached values retain their graph across requests, including prior adjoints.
+        Tape::reset_adjoints_fwd();
         let () = price.backward_to_mark()?;
 
         // Collect sensitivities from all unique discount curves used in valuation
@@ -1817,6 +1819,24 @@ mod reporting_tests {
             .zip(risk.exposure())
             .find_map(|(key, value)| (key == label).then_some(*value))
             .ok_or_else(|| QSError::ValueNotSetErr(label.into()))
+    }
+
+    #[test]
+    fn repeated_deposit_sensitivity_requests_do_not_accumulate_adjoints() -> Result<()> {
+        let context = context(Currency::EUR, FxStore::new());
+        let trade = trade()?;
+        let pricer = pricer();
+        let single = pricer.evaluate(&trade, &[Request::Sensitivities], &context)?;
+        for repetitions in [2, 3] {
+            let mut requests = vec![Request::Value];
+            requests.extend(std::iter::repeat_n(Request::Sensitivities, repetitions));
+            let repeated = pricer.evaluate(&trade, &requests, &context)?;
+            assert_eq!(
+                sensitivity(&single, "ESTR_ZERO")?,
+                sensitivity(&repeated, "ESTR_ZERO")?
+            );
+        }
+        Ok(())
     }
 
     #[test]

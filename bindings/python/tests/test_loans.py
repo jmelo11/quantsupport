@@ -56,6 +56,25 @@ def evaluate_loan_trade(instrument, ctx, requests=None, **pricer_options):
 
 
 class LoanWorkflowTests(unittest.TestCase):
+    def test_repeated_sensitivity_requests_preserve_mortgage_and_deposit_risk(self):
+        mortgage = build_loan_contract(maturity_date="2056-02-24", notional=250_000)
+        deposit = qs.FixedRateDeposit(
+            "DEPOSIT", REFERENCE, "2027-02-24", 250_000, 0.04, "EUR", "ESTR",
+        )
+        with build_pricing_context() as context:
+            for instrument in [mortgage, deposit]:
+                trade = qs.Trade(instrument, REFERENCE)
+                single = context.evaluate(trade, ["Value", "Sensitivities"])
+                for repetitions in [2, 3]:
+                    with self.subTest(instrument=instrument.identifier, repetitions=repetitions):
+                        repeated = context.evaluate(
+                            trade, ["Value"] + ["Sensitivities"] * repetitions,
+                        )
+                        self.assertEqual(single.price, repeated.price)
+                        self.assertEqual(
+                            dict(single.raw_sensitivities), dict(repeated.raw_sensitivities),
+                        )
+
     def test_french_payments_are_level_through_initial_reset_on_coupon_basis(self):
         for basis in [None, "Actual365", "Thirty360"]:
             for bounded in [False, True]:

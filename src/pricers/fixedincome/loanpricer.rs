@@ -378,6 +378,8 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer 
         state: &mut LoanValuationState,
     ) -> Result<SensitivityMap> {
         self.handle_value(trade, state)?;
+        // A repeated request reuses the value graph, but needs a fresh backward pass.
+        Tape::reset_adjoints_fwd();
         state
             .value
             .ok_or_else(|| QSError::ValueNotSetErr("Loan value".into()))?
@@ -2275,6 +2277,302 @@ mod tests {
         }
         Ok(())
     }
+    #[test]
+    fn french_loan_sensitivities_match_independent_amortization() -> Result<()> {
+        let start = Date::new(2026, 1, 1);
+        let principal = 250_000.0;
+        let coupon_rate = 0.06;
+        let discount_rate = 0.03;
+        // Construct monthly accruals independently of the loan's schedule and cashflow reports.
+        let periods = (1..=360)
+            .map(|month| {
+                let previous = start.advance(month - 1, TimeUnit::Months)?;
+                let payment = start.advance(month, TimeUnit::Months)?;
+                let rate = coupon_rate * DayCounter::Actual360.year_fraction(previous, payment);
+                let time = DayCounter::Actual365.year_fraction(start, payment);
+                Ok((rate, time))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        // Solve the terminal balance in f64 using future-value accumulation, without
+        // calling level_installment or using the pricer's principal schedule.
+        let (growth, annuity) = periods
+            .iter()
+            .fold((1.0, 0.0), |(growth, annuity), (rate, _)| {
+                (growth * (1.0 + rate), annuity * (1.0 + rate) + 1.0)
+            });
+        let installment = principal * growth / annuity;
+        let mut balance = principal;
+        let mut expected_pv = 0.0;
+        let mut expected_sensitivity = 0.0;
+        let mut up_pv = 0.0;
+        let mut down_pv = 0.0;
+        let bump = 1e-6;
+        for (position, &(rate, time)) in periods.iter().enumerate() {
+            let interest = balance * rate;
+            let redemption = if position + 1 == periods.len() {
+                balance
+            } else {
+                installment - interest
+            };
+            let receipt = interest + redemption;
+            balance -= redemption;
+            let discounted = receipt * (-discount_rate * time).exp();
+            expected_pv += discounted;
+            expected_sensitivity -= time * discounted;
+            up_pv += receipt * (-(discount_rate + bump) * time).exp();
+            down_pv += receipt * (-(discount_rate - bump) * time).exp();
+        }
+        let provider = build_test_market(discount_rate, 0.04, 0.0);
+        let loan = default_loan_builder()
+            .with_maturity_date(Date::new(2056, 1, 1))
+            .with_notional(principal)
+            .with_repayment_structure(LoanRepaymentStructure::French)
+            .with_payment_frequency(Frequency::Monthly)
+            .build()?;
+        let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
+        let result = estr_loan_pricer().evaluate(
+            &trade,
+            &[Request::Value, Request::Sensitivities],
+            &provider,
+        )?;
+        let actual_pv = result
+            .price()
+            .ok_or_else(|| QSError::ValueNotSetErr("Loan PV".into()))?;
+        assert!((actual_pv - expected_pv).abs() < 1e-6);
+        let risk = loan_sensitivities_by_label(&result)?;
+        assert_eq!(
+            risk.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["CREDIT", "DISCOUNT", "FORWARD"]
+        );
+        assert!(expected_sensitivity < -1.0);
+        assert!((risk["DISCOUNT"] - expected_sensitivity).abs() < 1e-6);
+        let finite_difference = (up_pv - down_pv) / (2.0 * bump);
+        assert!((risk["DISCOUNT"] - finite_difference).abs() < expected_sensitivity.abs() * 1e-8);
+        assert!(risk["FORWARD"].abs() < 1e-12);
+        assert!(risk["CREDIT"].abs() < 1e-12);
+        Ok(())
+    }
+
+    #[test]
+    fn thirty_year_mortgage_risk_matches_full_revaluation() -> Result<()> {
+        let pricer = estr_loan_pricer().with_refinancing_benchmark_index(MarketIndex::EURIBOR12m);
+        for floating in [false, true] {
+            for repayment in [
+                LoanRepaymentStructure::French,
+                LoanRepaymentStructure::Bullet,
+                LoanRepaymentStructure::Balloon {
+                    residual_fraction: 0.3,
+                },
+            ] {
+                for prepayment in [
+                    PrepaymentModelConfiguration::None,
+                    PrepaymentModelConfiguration::Cpr(0.1),
+                    PrepaymentModelConfiguration::Refinancing {
+                        base_cpr: 0.02,
+                        incentive_multiplier: 4.0,
+                        maximum_cpr: 0.4,
+                    },
+                ] {
+                    let coupon = if floating {
+                        CashflowType::floating(MarketIndex::EURIBOR12m, 0.02, None, None)
+                    } else {
+                        CashflowType::fixed(0.06)
+                    };
+                    let loan = default_loan_builder()
+                        .with_maturity_date(Date::new(2056, 1, 1))
+                        .with_notional(250_000.0)
+                        .with_coupons(vec![coupon])
+                        .with_initial_amortization_rate(0.06)
+                        .with_repayment_structure(repayment.clone())
+                        .with_prepayment_configuration(prepayment.clone())
+                        .with_credit_curve_index(MarketIndex::Credit("BORROWER".into()))
+                        .build()?;
+                    let provider = build_test_market(0.03, 0.04, 0.01);
+                    let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
+                    let result = pricer.evaluate(&trade, &[Request::Sensitivities], &provider)?;
+                    let risk = result
+                        .sensitivities()
+                        .ok_or_else(|| QSError::ValueNotSetErr("Mortgage risk".into()))?;
+                    for (label, actual) in risk.instrument_keys().iter().zip(risk.exposure()) {
+                        let shifted = |bump: f64| {
+                            let market = build_test_market(
+                                0.03 + if label == "DISCOUNT" { bump } else { 0.0 },
+                                0.04 + if label == "FORWARD" { bump } else { 0.0 },
+                                0.01 + if label == "CREDIT" { bump } else { 0.0 },
+                            );
+                            evaluate_loan_receipt_present_value(&pricer, &trade, &market)
+                        };
+                        let expected = (shifted(1e-6)? - shifted(-1e-6)?) / 2e-6;
+                        assert!(
+                            (actual - expected).abs() < (expected.abs() * 2e-6).max(0.01),
+                            "floating={floating}, {repayment:?}, {prepayment:?}, {label}: AD {actual}, FD {expected}"
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Builds five separately identified positions with identical French loan terms.
+    fn five_identical_french_loans() -> Result<Vec<LoanTrade<DualFwd>>> {
+        let builder = default_loan_builder()
+            .with_maturity_date(Date::new(2056, 1, 1))
+            .with_notional(250_000.0)
+            .with_repayment_structure(LoanRepaymentStructure::French)
+            .with_payment_frequency(Frequency::Monthly);
+        (1..=5)
+            .map(|position| {
+                builder
+                    .clone()
+                    .with_identifier(format!("FRENCH-{position}"))
+                    .build()
+                    .map(|loan| LoanTrade::new(loan, Date::new(2026, 1, 1), Side::LongReceive))
+            })
+            .collect()
+    }
+
+    /// Extracts a nonempty map and checks that sensitivity labels are unique and aligned.
+    fn loan_sensitivities_by_label(result: &EvaluationResults) -> Result<BTreeMap<String, f64>> {
+        let risk = result
+            .sensitivities()
+            .ok_or_else(|| QSError::ValueNotSetErr("Loan risk".into()))?;
+        assert!(!risk.instrument_keys().is_empty());
+        assert_eq!(risk.instrument_keys().len(), risk.exposure().len());
+        let exposures = risk
+            .instrument_keys()
+            .iter()
+            .cloned()
+            .zip(risk.exposure().iter().copied())
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(exposures.len(), risk.instrument_keys().len());
+        Ok(exposures)
+    }
+
+    /// Sums labelled exposures from separate loan evaluations without a portfolio accumulator.
+    fn sum_individual_loan_sensitivities(
+        loans: &[LoanTrade<DualFwd>],
+        pricer: &LoanPricer,
+        provider: &Provider,
+    ) -> Result<BTreeMap<String, f64>> {
+        let mut total = BTreeMap::new();
+        for loan in loans {
+            let result = pricer.evaluate(loan, &[Request::Sensitivities], provider)?;
+            for (label, exposure) in loan_sensitivities_by_label(&result)? {
+                *total.entry(label).or_insert(0.0) += exposure;
+            }
+        }
+        Ok(total)
+    }
+
+    #[test]
+    fn five_french_loans_have_five_times_single_loan_sensitivities() -> Result<()> {
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let pricer = estr_loan_pricer();
+        let loans = five_identical_french_loans()?;
+        assert_eq!(loans.len(), 5);
+        let single = pricer.evaluate(&loans[0], &[Request::Sensitivities], &provider)?;
+        let single = loan_sensitivities_by_label(&single)?;
+        assert!(single["DISCOUNT"] < -1.0);
+        let total = sum_individual_loan_sensitivities(&loans, &pricer, &provider)?;
+        assert!(total.keys().eq(single.keys()));
+        for (label, exposure) in single {
+            let expected = 5.0 * exposure;
+            assert!(
+                (total[&label] - expected).abs() < 1e-6,
+                "{label}: five loans {}, expected {expected}",
+                total[&label]
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn french_loan_portfolio_sensitivities_match_sum_of_five_individual_loans() -> Result<()> {
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let pricer = estr_loan_pricer();
+        let loans = five_identical_french_loans()?;
+        assert_eq!(loans.len(), 5);
+        let expected = sum_individual_loan_sensitivities(&loans, &pricer, &provider)?;
+        let portfolio = Portfolio::new("FIVE-FRENCH-LOANS".into(), loans)?;
+        let result = PortfolioPricer::new(pricer).evaluate(
+            &portfolio,
+            &[Request::Sensitivities],
+            &provider,
+        )?;
+        let actual = loan_sensitivities_by_label(&result)?;
+        assert!(actual.keys().eq(expected.keys()));
+        for (label, exposure) in expected {
+            assert!(
+                (actual[&label] - exposure).abs() < 1e-6,
+                "{label}: portfolio {}, individual sum {exposure}",
+                actual[&label]
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn long_and_short_same_french_loan_portfolio_has_zero_sensitivities() -> Result<()> {
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let loan = default_loan_builder()
+            .with_maturity_date(Date::new(2056, 1, 1))
+            .with_notional(250_000.0)
+            .with_repayment_structure(LoanRepaymentStructure::French)
+            .build()?;
+        let long = LoanTrade::new(loan.clone(), provider.date, Side::LongReceive);
+        let short = LoanTrade::new(loan, provider.date, Side::PayShort);
+        let requests = [Request::Value, Request::Sensitivities];
+        let single = estr_loan_pricer().evaluate(&long, &requests, &provider)?;
+        let single_risk = loan_sensitivities_by_label(&single)?;
+        assert!(single_risk["DISCOUNT"].abs() > 1.0);
+        for trades in [vec![long.clone(), short.clone()], vec![short, long]] {
+            let portfolio = Portfolio::new("LONG-SHORT-FRENCH-LOAN".into(), trades)?;
+            let result = PortfolioPricer::new(estr_loan_pricer())
+                .evaluate(&portfolio, &requests, &provider)?;
+            let risk = loan_sensitivities_by_label(&result)?;
+            assert!(risk.keys().eq(single_risk.keys()));
+            for (label, exposure) in risk {
+                assert!(exposure.abs() < 1e-8, "{label}: net sensitivity {exposure}");
+            }
+            let value = result
+                .price()
+                .ok_or_else(|| QSError::ValueNotSetErr("Portfolio PV".into()))?;
+            assert!(value.abs() < 1e-8, "Net portfolio PV: {value}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn repeated_mortgage_sensitivity_requests_do_not_accumulate_adjoints() -> Result<()> {
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let loan = default_loan_builder()
+            .with_maturity_date(Date::new(2056, 1, 1))
+            .with_notional(250_000.0)
+            .build()?;
+        let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
+        let pricer = estr_loan_pricer();
+        let single = pricer.evaluate(&trade, &[Request::Sensitivities], &provider)?;
+        let exposures = |result: &EvaluationResults| -> Result<BTreeMap<String, f64>> {
+            let risk = result
+                .sensitivities()
+                .ok_or_else(|| QSError::ValueNotSetErr("Mortgage risk".into()))?;
+            Ok(risk
+                .instrument_keys()
+                .iter()
+                .cloned()
+                .zip(risk.exposure().iter().copied())
+                .collect())
+        };
+        for repetitions in [2, 3] {
+            let mut requests = vec![Request::Value];
+            requests.extend(std::iter::repeat_n(Request::Sensitivities, repetitions));
+            let repeated = pricer.evaluate(&trade, &requests, &provider)?;
+            assert_eq!(exposures(&single)?, exposures(&repeated)?);
+        }
+        Ok(())
+    }
+
     #[test]
     fn unsupported_loan_requests_leave_fields_absent_without_loading_market_data() -> Result<()> {
         let provider = build_test_market(0.03, 0.04, 0.0);
