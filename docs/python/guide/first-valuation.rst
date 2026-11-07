@@ -135,10 +135,12 @@ Summing ``amount`` therefore does not reproduce the swap PV. A reconciliation
 must apply discounting and FX conversion where applicable. The table already
 includes the position's cashflow signs.
 
-The generic discounted-cashflow pricer includes all supplied cashflows,
-including any with past payment dates. This example is valued at inception.
-When valuing a seasoned contract, select payments according to the required
-valuation convention. Specialized pricers have their own payment-selection
+The generic discounted-cashflow pricer excludes payments strictly before the
+valuation date and includes same-day payments. Keep the original contractual
+dates for seasoned deposits: their settled initial advance is excluded from
+PV and risk, while the interest payable at maturity still accrues from the
+original start date. A cashflow report's requested window does not change
+this valuation rule. Specialized pricers have their own payment-selection
 and reporting rules.
 
 Context lifetime

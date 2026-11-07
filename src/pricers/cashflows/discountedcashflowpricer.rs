@@ -57,10 +57,11 @@ impl PricerState for DCFState<'_> {
 /// The context supplies the base currency for monetary values and sensitivities,
 /// including spot FX risk.
 ///
-/// Supplied legs must represent the intended remaining contract: valuation
-/// iterates every cashflow without excluding payment dates at or before the
-/// evaluation date. Default cashflow reports are undiscounted and apply the
-/// same leg and disbursement signs used in NPV.
+/// Valuation excludes payments strictly before the evaluation date and includes
+/// same-day payments. Contractual accrual dates are retained, including for
+/// deposits whose initial advance has settled. Default cashflow reports are
+/// undiscounted and apply the same leg and disbursement signs used in NPV;
+/// their requested reporting window does not change valuation payment selection.
 ///
 /// Supported requests are value, sensitivities, cashflows, fair rate and accrued amount.
 /// Other requests leave their result fields absent. `FairRate(index)` selects a
@@ -544,6 +545,9 @@ where
                     }
                 };
 
+                if payment_date < state.eval_date {
+                    continue;
+                }
                 let df = state
                     .get_discount_curve_element(&leg_discount_index)?
                     .curve()
@@ -617,6 +621,9 @@ where
                 }
                 _ => continue,
             };
+            if payment < state.eval_date {
+                continue;
+            }
             if floating.is_some_and(|previous| previous != is_floating) {
                 return Err(QSError::InvalidValueErr(
                     "Selected fair-rate leg mixes fixed and floating coupons".into(),
@@ -1777,14 +1784,27 @@ mod reporting_tests {
 
     /// Builds a fixed EUR deposit with contract terms detached from any previous AD tape.
     fn trade() -> Result<FixedRateDepositTrade<DualFwd>> {
+        dated_trade(
+            Date::new(2026, 2, 24),
+            Date::new(2027, 2, 24),
+            Side::LongReceive,
+        )
+    }
+
+    /// Builds a signed deposit with explicit contractual dates and Actual365 simple interest.
+    fn dated_trade(
+        start: Date,
+        maturity: Date,
+        side: Side,
+    ) -> Result<FixedRateDepositTrade<DualFwd>> {
         Tape::<ADForward>::stop_recording_fwd();
-        let date = Date::new(2026, 2, 24);
         let deposit = MakeFixedRateDeposit::<DualFwd>::default()
             .with_identifier("EUR-DEPOSIT".into())
-            .with_start_date(date)
-            .with_maturity_date(Date::new(2027, 2, 24))
+            .with_start_date(start)
+            .with_maturity_date(maturity)
             .with_notional(100_000.0)
             .with_rate(0.04)
+            .with_side(side)
             .with_currency(Currency::EUR)
             .with_discount_index(Some(MarketIndex::ESTR))
             .with_rate_definition(RateDefinition::new(
@@ -1793,12 +1813,7 @@ mod reporting_tests {
                 Frequency::Annual,
             ))
             .build()?;
-        Ok(FixedRateDepositTrade::new(
-            deposit,
-            date,
-            100_000.0,
-            Side::LongReceive,
-        ))
+        Ok(FixedRateDepositTrade::new(deposit, start, 100_000.0, side))
     }
 
     /// Builds a deposit pricer that uses the instrument discount curve.
@@ -1863,6 +1878,98 @@ mod reporting_tests {
                 && result.oas().is_none()
                 && result.z_spread().is_none()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn seasoned_deposit_value_and_risk_exclude_the_settled_advance() -> Result<()> {
+        let context = context(Currency::EUR, FxStore::new());
+        let start = Date::new(2020, 2, 24);
+        let maturity = Date::new(2027, 2, 24);
+        let remaining = DayCounter::Actual365.year_fraction(context.evaluation_date(), maturity);
+        let accrual = DayCounter::Actual365.year_fraction(start, maturity);
+        let expected = 100_000.0 * (1.0 + 0.04 * accrual) * (-0.03 * remaining).exp();
+        for side in [Side::LongReceive, Side::PayShort] {
+            let trade = dated_trade(start, maturity, side)?;
+            for future_only in [true, false] {
+                let result = pricer().evaluate(
+                    &trade,
+                    &[
+                        Request::Value,
+                        Request::Sensitivities,
+                        Request::Cashflows(future_only),
+                    ],
+                    &context,
+                )?;
+                let value = result
+                    .price()
+                    .ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?;
+                assert!((value - side.sign() * expected).abs() < 1e-8);
+                assert!((sensitivity(&result, "ESTR_ZERO")? + remaining * value).abs() < 1e-6);
+                let cashflows = result
+                    .cashflows()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Cashflows".into()))?;
+                assert_eq!(
+                    cashflows
+                        .rows()
+                        .any(|row| *row.kind == CashflowKind::Disbursement),
+                    !future_only
+                );
+            }
+            let risk_only = pricer().evaluate(&trade, &[Request::Sensitivities], &context)?;
+            assert!(risk_only.price().is_none());
+            assert!(
+                (sensitivity(&risk_only, "ESTR_ZERO")? + remaining * side.sign() * expected).abs()
+                    < 1e-6
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn deposit_value_and_risk_retain_same_day_and_future_advances() -> Result<()> {
+        let context = context(Currency::EUR, FxStore::new());
+        let evaluation = context.evaluation_date();
+        let maturity = Date::new(2027, 2, 24);
+        for start in [evaluation, Date::new(2026, 3, 24)] {
+            let trade = dated_trade(start, maturity, Side::LongReceive)?;
+            let result =
+                pricer().evaluate(&trade, &[Request::Value, Request::Sensitivities], &context)?;
+            let start_time = DayCounter::Actual365.year_fraction(evaluation, start);
+            let end_time = DayCounter::Actual365.year_fraction(evaluation, maturity);
+            let accrual = DayCounter::Actual365.year_fraction(start, maturity);
+            let advance = 100_000.0 * (-0.03 * start_time).exp();
+            let receipt = 100_000.0 * (1.0 + 0.04 * accrual) * (-0.03 * end_time).exp();
+            let expected_value = receipt - advance;
+            let expected_risk = start_time * advance - end_time * receipt;
+            let actual_value = result
+                .price()
+                .ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?;
+            assert!((actual_value - expected_value).abs() < 1e-8);
+            assert!((sensitivity(&result, "ESTR_ZERO")? - expected_risk).abs() < 1e-6);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn settled_deposit_has_zero_value_and_risk_but_same_day_receipts_remain() -> Result<()> {
+        let context = context(Currency::EUR, FxStore::new());
+        let start = Date::new(2020, 2, 24);
+        for maturity in [Date::new(2026, 2, 23), context.evaluation_date()] {
+            let trade = dated_trade(start, maturity, Side::LongReceive)?;
+            let result =
+                pricer().evaluate(&trade, &[Request::Value, Request::Sensitivities], &context)?;
+            let expected = if maturity < context.evaluation_date() {
+                0.0
+            } else {
+                100_000.0 * (1.0 + 0.04 * DayCounter::Actual365.year_fraction(start, maturity))
+            };
+            let value = result
+                .price()
+                .ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?;
+            assert!((value - expected).abs() < 1e-8);
+            assert!(sensitivity(&result, "ESTR_ZERO")?.abs() < 1e-12);
+        }
         Ok(())
     }
 

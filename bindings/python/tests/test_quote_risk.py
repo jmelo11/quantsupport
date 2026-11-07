@@ -1,6 +1,7 @@
 """Native position risk must agree with rebuilding under quote bumps."""
 
 import json
+import math
 from pathlib import Path
 import unittest
 
@@ -8,6 +9,45 @@ import quantsupport as qs
 
 
 class QuoteRiskTests(unittest.TestCase):
+    def test_seasoned_fixed_deposit_prices_future_receipts_and_preserves_accrual(self):
+        reference = "2026-02-24"
+        start = "2020-02-24"
+        maturity = "2027-02-24"
+        quotes = qs.QuoteStore.from_dict({"reference_date": reference, "quotes": [
+            {"identifier": f"ZeroRate_EUR_ESTR_{tenor}", "mid": 0.03}
+            for tenor in ["0D", "2Y"]
+        ]})
+        curve = qs.CurveConfiguration(
+            market_index="ESTR", quotes=quotes.identifiers(),
+            day_counter="Actual365", interpolator="Linear",
+        )
+        instrument = qs.FixedRateDeposit(
+            "SEASONED", start, maturity, 100_000, 0.04, "EUR", "ESTR",
+            day_counter="Actual365", compounding="Simple",
+        )
+        terms = instrument.to_dict()
+        accrual = qs.DayCounter.Actual365.year_fraction(start, maturity)
+        remaining = qs.DayCounter.Actual365.year_fraction(reference, maturity)
+        receipt_pv = 100_000 * (1 + 0.04 * accrual) * math.exp(-0.03 * remaining)
+        with qs.PricingContext(
+            quotes, [curve], csa_policy=qs.SingleCurveCSADiscountPolicy("EUR", "ESTR"),
+        ) as context:
+            for side, sign in [(qs.Side.LongReceive, 1), (qs.Side.PayShort, -1)]:
+                with self.subTest(side=side):
+                    trade = qs.Trade(instrument, start, side)
+                    result = context.evaluate(trade, ["Value", "Sensitivities", "Cashflows"])
+                    self.assertAlmostEqual(result.price, sign * receipt_pv, places=7)
+                    self.assertTrue((result.cashflows.payment_date > reference).all())
+                    analytic = sum(value for _, value in result.raw_sensitivities)
+                    self.assertAlmostEqual(analytic, -remaining * sign * receipt_pv, places=6)
+                    bumped = {}
+                    for bump in [-1e-6, 1e-6]:
+                        with qs.Scenario(shocks=[qs.Shock("ESTR", bump, qs.ScenarioType.Absolute)]):
+                            bumped[bump] = context.evaluate(trade).price
+                    finite_difference = (bumped[1e-6] - bumped[-1e-6]) / 2e-6
+                    self.assertAlmostEqual(analytic, finite_difference, delta=0.01)
+        self.assertEqual(instrument.to_dict(), terms)
+
     def test_contract_terms_do_not_alias_market_pillars_on_a_fresh_tape(self):
         data = Path(__file__).resolve(
         ).parents[3] / "examples" / "hullwhite" / "data"
