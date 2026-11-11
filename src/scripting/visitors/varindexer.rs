@@ -379,7 +379,7 @@ impl NodeVisitor for VarIndexer {
                                     )
                                 })
                             },
-                            |name| Ok(parse_market_index(name)),
+                            |name| name.parse(),
                         )?;
                         self.market_requests
                             .borrow_mut()
@@ -402,10 +402,9 @@ impl NodeVisitor for VarIndexer {
                             .ok_or(QSError::NotFoundErr("No market requests found".to_string()))?
                             .fwds()
                             .len();
-                        let fwd_request =
-                            ForwardRateRequest::new(parse_market_index(&data.name), data.start)
-                                .with_start_date(data.start)
-                                .with_end_date(data.end);
+                        let fwd_request = ForwardRateRequest::new(data.name.parse()?, data.start)
+                            .with_start_date(data.start)
+                            .with_end_date(data.end);
                         self.market_requests
                             .borrow_mut()
                             .last_mut()
@@ -594,14 +593,6 @@ impl Default for VarIndexer {
     }
 }
 
-/// Converts script index text into the library market-index representation.
-fn parse_market_index(name: &str) -> MarketIndex {
-    match name.parse() {
-        Ok(index) => index,
-        Err(never) => match never {},
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -743,7 +734,7 @@ mod ai_gen_tests {
 
     #[test]
     fn test_df_request_with_curve() {
-        let script = "x = Df(\"2025-06-01\", \"curve\");";
+        let script = "x = Df(\"2025-06-01\", \"OTHER:curve\");";
         let expr = Node::try_from(script).unwrap();
         let event = Event::new(Date::new(2025, 1, 1), expr);
         let mut events = EventStream::new().with_events(vec![event]);

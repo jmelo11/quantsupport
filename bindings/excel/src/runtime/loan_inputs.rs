@@ -43,12 +43,6 @@ pub fn with_settings(
 
 fn index(cell: &Cell, name: &str) -> Result<MarketIndex, String> {
     let text = cell.text(name)?;
-    if let Some(entity) = text.strip_prefix("Credit:") {
-        if entity.trim().is_empty() {
-            return Err(format!("{name} requires a credit entity"));
-        }
-        return Ok(MarketIndex::Credit(entity.trim().into()));
-    }
     inputs::market_index(text)
 }
 
@@ -314,7 +308,7 @@ mod tests {
             setting("Setting", text("Value")),
             setting("Balloon fraction", Number(0.25)),
             setting("Amortization rate", Number(0.05)),
-            setting("Credit index", text("Credit:BORROWER")),
+            setting("Credit index", text("CREDIT:BORROWER")),
             setting("Recovery", Number(0.4)),
             setting("Fixing frequency", text("Annual")),
             setting("Fixing lag", Number(2.0)),

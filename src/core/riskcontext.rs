@@ -10,7 +10,7 @@ use crate::{
         forward::ADForward,
         tape::{Tape, TapeHolder},
     },
-    calibration::calibrationpricer::CalibrationInstrumentPricer,
+    calibration::impliedquote::ImpliedQuotePricer,
     core::{
         elements::curveelement::{ADCurveElement, DiscountCurveElement},
         marketdatahandling::{
@@ -21,16 +21,8 @@ use crate::{
         pricingcontext::PricingContext,
     },
     indices::marketindex::MarketIndex,
-    quotes::{
-        calibrationinstrument::CalibrationInstrument,
-        quote::{Level, Quote, QuoteDetails, QuoteInstrument, QuoteLevels},
-    },
+    quotes::quote::{Level, Quote, QuoteDetails, QuoteLevels},
     rates::{
-        bootstrapping::{
-            bootstrapcalibrationinstrument::BootstrapStepEvaluation,
-            bootstrapdiscountpolicy::BootstrapDiscountPolicy, bootstrappedcurve::BootstrappedCurve,
-            bootstrapstep::BootstrapStep,
-        },
         compounding::Compounding,
         interestrate::{InterestRate, RateDefinition},
         yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
@@ -403,7 +395,7 @@ impl PricingContext {
         {
             return Err(QSError::InvalidValueErr("Instrument risk reprojection requires reconstructible curve configurations; use zero-rate risk for supplied curves".into()));
         }
-        let values = implied_quotes(self, &curves, instruments)?;
+        let values = ImpliedQuotePricer::new(self, &curves).quotes(instruments)?;
         let mut jacobian = DMatrix::zeros(instruments.len(), sources.len());
         for (column, label) in sources.iter().enumerate() {
             let quote = self.quote_store().quote(label).ok_or_else(|| {
@@ -435,7 +427,8 @@ impl PricingContext {
                 quotes.add_quote(Quote::new(quote.details().clone(), levels));
                 let context = self.clone().with_quote_store(quotes);
                 let shifted_curves = requested_curves(&context, &indices)?;
-                bumped_values.push(implied_quotes(&context, &shifted_curves, instruments)?);
+                bumped_values
+                    .push(ImpliedQuotePricer::new(&context, &shifted_curves).quotes(instruments)?);
             }
             for row in 0..instruments.len() {
                 jacobian[(row, column)] =
@@ -480,72 +473,6 @@ fn source_labels(curves: &HashMap<MarketIndex, DiscountCurveElement>) -> Vec<Str
     labels.sort();
     labels.dedup();
     labels
-}
-
-fn implied_quotes(
-    context: &PricingContext,
-    curves: &HashMap<MarketIndex, DiscountCurveElement>,
-    instruments: &[QuoteDetails],
-) -> Result<Vec<f64>> {
-    let snapshots: std::collections::HashMap<_, _> = curves
-        .iter()
-        .map(|(index, curve)| {
-            Ok((
-                index.clone(),
-                BootstrappedCurve::from_runtime_curve(index.clone(), curve.curve().clone_curve()?),
-            ))
-        })
-        .collect::<Result<_>>()?;
-    let trial = snapshots
-        .values()
-        .next()
-        .ok_or_else(|| QSError::InvalidValueErr("No curves for risk reprojection".into()))?;
-    let policy =
-        BootstrapDiscountPolicy::new(context.base_index().clone(), context.base_currency());
-    let step = BootstrapStep::new(trial, &snapshots, &policy, context.fx_store())
-        .with_fixing_store(Some(context.fixing_store()));
-    let evaluator = BootstrapStepEvaluation::new(&step);
-    instruments
-        .iter()
-        .map(|details| {
-            let fx = details
-                .pay_currency()
-                .zip(details.receive_currency())
-                .map(|(pay, receive)| {
-                    context
-                        .fx_store()
-                        .get_fx_rate(pay, receive)
-                        .map(|value| value.value())
-                })
-                .transpose()?;
-            let mut value = if *details.instrument() == QuoteInstrument::Future {
-                95.0
-            } else {
-                0.03
-            };
-            for _ in 0..30 {
-                let quote = Quote::new(details.clone(), QuoteLevels::with_mid(value));
-                let built = quote.build_instrument(context.evaluation_date(), Level::Mid, fx)?;
-                let pillar = quote.calibration_pillar_date(&built)?;
-                let instrument =
-                    CalibrationInstrument::new(quote, Level::Mid, built, value, pillar);
-                let residual = evaluator.price(&instrument)?;
-                let derivative = evaluator.sensitivity(&instrument)?;
-                if !residual.is_finite() || !derivative.is_finite() || derivative.abs() < 1e-14 {
-                    break;
-                }
-                let delta = residual / derivative;
-                if delta.abs() < 1e-12 {
-                    return Ok(value);
-                }
-                value -= delta;
-            }
-            Err(QSError::InvalidValueErr(format!(
-                "Cannot solve implied risk quote {}",
-                details.identifier()
-            )))
-        })
-        .collect()
 }
 
 // Preserve an enclosing valuation's recording, including on an error or unwind.

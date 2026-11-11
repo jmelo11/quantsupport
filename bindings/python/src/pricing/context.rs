@@ -17,7 +17,8 @@ use crate::{
         scripting::ScriptedProduct,
     },
     market::{
-        scenario::{enter_context, exit_context},
+        forward::ForwardMarketConfiguration,
+        scenario::{enter_context, exit_context, market_view},
         stores::{
             CreditCurveConfiguration, CurveConfiguration, FixingStore, FxStore,
             PricerConfiguration, QuoteStore, SimulationConfiguration, VolatilityCubeConfiguration,
@@ -314,6 +315,7 @@ impl PricingContext {
         quote_level = None,
         credit_curves = None,
         anchor_fixings = true,
+        dividend_curves = None,
     ))]
     fn new(
         quotes: QuoteStore,
@@ -329,6 +331,7 @@ impl PricingContext {
         quote_level: Option<&Bound<'_, PyAny>>,
         credit_curves: Option<Vec<CreditCurveConfiguration>>,
         anchor_fixings: bool,
+        dividend_curves: Option<Vec<CurveConfiguration>>,
     ) -> PyResult<Self> {
         let mut ctx = QsPricingContext::new()
             .with_anchor_fixings(anchor_fixings)
@@ -368,6 +371,14 @@ impl PricingContext {
         if let Some(d) = csa_policy {
             ctx = ctx.with_csa_policy(&d.build());
         }
+        if let Some(configurations) = dividend_curves {
+            ctx = ctx.with_dividend_curve_configurations(
+                configurations
+                    .into_iter()
+                    .map(|configuration| configuration.inner)
+                    .collect(),
+            );
+        }
         if let Some(configurations) = credit_curves {
             ctx = ctx.with_credit_curve_configurations(
                 configurations
@@ -387,6 +398,28 @@ impl PricingContext {
             risk_basis: None,
             risk_context: None,
         })
+    }
+
+    /// Generate a normal independent pricing context at the configured horizon.
+    ///
+    /// Active source scenarios are included. Enter the returned context or call
+    /// initialize() before pricing. Risk is reported against horizon inputs.
+    fn advance_to(
+        &self,
+        py: Python<'_>,
+        configuration: &ForwardMarketConfiguration,
+    ) -> PyResult<Self> {
+        let view = market_view(self, self.generation, &self.inner)?;
+        let inner = view.advance_to(&configuration.inner).map_err(qs_err)?;
+        let mut result = Self::from_snapshot_context(inner, self.fixed_income_policy.clone());
+        result.python_pricers = self.python_pricers.clone_ref(py);
+        Ok(result)
+    }
+
+    /// Origin and assumptions of generated horizon observations, or None.
+    #[getter]
+    fn market_advancement_details<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(py, &self.inner.market_advancement_details()).map_err(qs_err)
     }
 
     /// Constructs curves, volatility surfaces/cubes, and simulations.
@@ -526,6 +559,33 @@ impl PricingContext {
                 inner: configuration.clone(),
             })
             .collect()
+    }
+
+    /// Direct quote-based dividend curve construction inputs.
+    #[getter]
+    fn dividend_curve_configurations(&self) -> Vec<CurveConfiguration> {
+        self.inner
+            .dividend_curve_configurations()
+            .iter()
+            .map(|configuration| CurveConfiguration {
+                inner: configuration.clone(),
+            })
+            .collect()
+    }
+
+    #[setter]
+    fn set_dividend_curve_configurations(
+        &mut self,
+        value: Vec<CurveConfiguration>,
+    ) -> PyResult<()> {
+        self.update_market_inputs(|context| {
+            context.with_dividend_curve_configurations(
+                value
+                    .into_iter()
+                    .map(|configuration| configuration.inner)
+                    .collect(),
+            )
+        })
     }
 
     /// The original volatility surface configurations.

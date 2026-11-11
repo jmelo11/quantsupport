@@ -6,7 +6,7 @@
 //! Supplying a full identifier does not restrict matching to that exact quote:
 //! a repeated `3M` tenor/expiry token can also match a `3M`/`6M` identifier.
 //! For example, `EURIBOR12m` selects its deposit and swap quotes.
-//! `FUNDINGSPREAD` selects every quote of that spread curve. Absolute changes use native input
+//! `OTHER:FUNDINGSPREAD` selects every quote of that spread curve. Absolute changes use native input
 //! units: `0.01` means 100 bp for decimal rates, but is a price-point change
 //! for futures or a raw FX-point change for FX points. Relative changes
 //! multiply by `1 + value`. Overlapping

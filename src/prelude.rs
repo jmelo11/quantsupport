@@ -30,6 +30,14 @@ pub use crate::{
         evaluationresults::{
             CashflowKind, CashflowRow, CashflowsTable, EvaluationResults, SensitivityMap,
         },
+        forwardmarket::{
+            advanceintime::AdvanceInTime,
+            configuration::{
+                CurveRoll, FixingRoll, ForwardMarketConfiguration, MarketAdvancementDetails,
+                VolatilityRoll,
+            },
+            source::ForwardMarketSource,
+        },
         instrument::{AssetClass, Instrument},
         makeinstrument::MakeInstrument,
         makeportfolioaccumulator::MakePortfolioAccumulator,

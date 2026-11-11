@@ -71,8 +71,7 @@ impl Discountable for CurrencyDiscountable {
 /// Spot/strike are quote currency per base unit; notional is in base units.
 /// The formula above gives quote-currency PV; the policy can select a reporting
 /// currency for value and sensitivities, including spot FX conversion risk.
-/// Expiry time uses the instrument day count from trade date, not the context
-/// evaluation date. Black pricing requires a positive-forward/strike domain;
+/// Expiry time uses the instrument day count from the market evaluation date. Black pricing requires a positive-forward/strike domain;
 /// the volatility surface is not automatically converted from normal quotes.
 pub struct FxEuropeanOptionPricer {
     discount_policy: Option<Box<dyn DiscountPolicy>>,
@@ -114,9 +113,13 @@ impl HandleValue<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEuropeanOpt
         let base_idx = policy.accept(&CurrencyDiscountable { currency: base })?;
         let quote_idx = policy.accept(&CurrencyDiscountable { currency: quote })?;
 
-        let tau = inst
-            .day_counter()
-            .year_fraction(trade.trade_date(), inst.expiry_date());
+        let tau = inst.day_counter().year_fraction(
+            state
+                .get_discount_curve_element(&base_idx)?
+                .curve()
+                .reference_date(),
+            inst.expiry_date(),
+        );
 
         let df_base = state
             .get_discount_curve_element(&base_idx)?
@@ -132,13 +135,24 @@ impl HandleValue<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEuropeanOpt
         let forward: DualFwd = (spot * df_base / df_quote).into();
 
         let strike = inst.strike().resolve(forward.value());
-        let vol = state
-            .get_fx_volatility_surface(&inst.pair()?)?
-            .volatility_from_date(inst.expiry_date(), strike)?;
+        let vol = if tau <= 0.0 {
+            DualFwd::zero()
+        } else {
+            state
+                .get_fx_volatility_surface(&inst.pair()?)?
+                .volatility_from_date(inst.expiry_date(), strike)?
+        };
 
         let is_call = matches!(inst.option_type(), EuroOptionType::Call);
-        let undiscounted =
-            BrownianMotion::<DualFwd>::closed_form_price(forward, strike, vol, tau, is_call)?;
+        let undiscounted = if tau <= 0.0 || vol.value().abs() < f64::EPSILON {
+            let payoff: DualFwd = match inst.option_type() {
+                EuroOptionType::Call => (forward - strike).into(),
+                EuroOptionType::Put => (DualFwd::from(strike) - forward).into(),
+            };
+            payoff.max(DualFwd::zero())
+        } else {
+            BrownianMotion::<DualFwd>::closed_form_price(forward, strike, vol, tau, is_call)?
+        };
 
         let notional = DualFwd::new(trade.notional());
         let side = DualFwd::new(trade.side().sign());
@@ -239,6 +253,11 @@ impl Pricer for FxEuropeanOptionPricer {
     ) -> Result<EvaluationResults> {
         let eval_date = ctx.evaluation_date();
         let identifier = trade.instrument().identifier();
+        if trade.instrument().expiry_date() < eval_date {
+            return Ok(EvaluationResults::new(eval_date, identifier)
+                .with_price(0.0)
+                .with_sensitivities(SensitivityMap::default()));
+        }
         let md_request = self.market_data_request(trade).ok_or_else(|| {
             QSError::InvalidValueErr("Missing market-data request for FX option".into())
         })?;

@@ -73,6 +73,20 @@ pub struct CreditCurveConfiguration {
 }
 
 impl CreditCurveConfiguration {
+    /// Replaces the assumed recovery used during calibration.
+    #[must_use]
+    pub const fn with_recovery(mut self, recovery: f64) -> Self {
+        self.recovery = recovery;
+        self
+    }
+
+    /// Replaces the quote identifiers while retaining construction conventions.
+    #[must_use]
+    pub fn with_quotes(mut self, quotes: Vec<String>) -> Self {
+        self.quotes = quotes;
+        self
+    }
+
     /// Creates a new credit curve configuration.
     #[must_use]
     pub const fn new(

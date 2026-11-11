@@ -6,6 +6,7 @@ use crate::{
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
+            fixingrequest::FixingRequest,
             fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
@@ -82,6 +83,7 @@ impl PricerState for HullWhiteCapState {
 }
 
 impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPricer {
+    #[allow(clippy::too_many_lines)]
     fn handle_value(&self, trade: &CapFloorTrade, state: &mut HullWhiteCapState) -> Result<f64> {
         let cap = trade.instrument();
         let caplets = cap.caplet_floorlets();
@@ -93,6 +95,10 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
         };
         let rate_def = fwd_index.rate_index_details()?.rate_definition();
         let dc = rate_def.day_counter();
+        let evaluation_date = state
+            .get_discount_curve_element(&fwd_index)?
+            .curve()
+            .reference_date();
         let dual_curve = disc_index != fwd_index;
 
         Tape::start_recording_fwd();
@@ -105,27 +111,54 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
             let start_date = c.start_accrual_date();
             let end_date = c.end_accrual_date();
             let payment_date = c.payment_date();
+            if payment_date < evaluation_date {
+                continue;
+            }
 
-            let t = dc.year_fraction(trade.trade_date(), start_date);
-            let big_s = dc.year_fraction(trade.trade_date(), payment_date);
+            let t = dc.year_fraction(evaluation_date, start_date);
+            let big_s = dc.year_fraction(evaluation_date, payment_date);
             let tau = dc.year_fraction(start_date, end_date);
 
             // Forward rate
-            let fwd: DualFwd = state
-                .get_discount_curve_element(&fwd_index)?
-                .curve()
-                .forward_rate(
-                    start_date,
-                    end_date,
-                    rate_def.compounding(),
-                    rate_def.frequency(),
-                )?;
+            let fwd: DualFwd = if c.fixing_date() < evaluation_date
+                && state
+                    .get_market_data_reponse()
+                    .is_some_and(MarketData::anchor_fixings)
+            {
+                DualFwd::from(state.get_fixing(&fwd_index, c.fixing_date())?)
+            } else {
+                state
+                    .get_discount_curve_element(&fwd_index)?
+                    .curve()
+                    .forward_rate(
+                        start_date,
+                        end_date,
+                        rate_def.compounding(),
+                        rate_def.frequency(),
+                    )?
+            };
 
             let strike = match c.strike() {
                 Strike::Absolute(k) => k,
                 Strike::Atm => fwd.value(),
                 Strike::Relative(pct) => fwd.value() * (1.0 + pct),
             };
+
+            if c.fixing_date() <= evaluation_date {
+                let payoff: DualFwd = match c.payoff_type() {
+                    CapletFloorletType::Caplet if fwd.value() > strike => (fwd - strike).into(),
+                    CapletFloorletType::Floorlet if strike > fwd.value() => {
+                        (DualFwd::from(strike) - fwd).into()
+                    }
+                    _ => DualFwd::zero(),
+                };
+                let factor = state
+                    .get_discount_curve_element(&disc_index)?
+                    .curve()
+                    .discount_factor(payment_date)?;
+                npv = (npv + factor * payoff * tau * trade.notional()).into();
+                continue;
+            }
 
             let x = 1.0 / tau.mul_add(strike, 1.0);
             let sigma_p = self.zcb_price_volatility(t, big_s);
@@ -268,10 +301,28 @@ impl Pricer for ClosedFormHullWhiteCapPricer {
         let eval_date = ctx.evaluation_date();
         let cap = trade.instrument();
         let identifier = cap.identifier();
+        if cap
+            .caplet_floorlets()
+            .iter()
+            .all(|c| c.payment_date() < eval_date)
+        {
+            return Ok(EvaluationResults::new(eval_date, identifier)
+                .with_price(0.0)
+                .with_sensitivities(SensitivityMap::default()));
+        }
 
         let md_request = self
             .market_data_request(trade)
-            .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?;
+            .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?
+            .with_fixings_request(if ctx.anchor_fixings() {
+                cap.caplet_floorlets()
+                    .iter()
+                    .filter(|c| c.fixing_date() < eval_date && c.payment_date() >= eval_date)
+                    .map(|c| FixingRequest::new(c.market_index(), c.fixing_date()))
+                    .collect()
+            } else {
+                Vec::new()
+            });
 
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = HullWhiteCapState {

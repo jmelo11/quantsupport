@@ -93,3 +93,63 @@ rates implied from constructed discount factors; instrument views use the
 implied quotes of a supplied calibration basket. Both are accepted by existing
 Rust pricers through `MarketDataProvider`. See the
 [risk basis examples](../risk/aad.md#changing-the-curve-risk-basis).
+
+## Generating a future market
+
+`PricingContext::advance_to` generates horizon quotes, spot observations and
+intervening fixing histories, then returns an ordinary independent context:
+
+```rust,ignore
+let assumptions = ForwardMarketConfiguration::new(horizon)
+    .with_volatility(VolatilityRoll::ConstantTenor)
+    .with_fixings(FixingRoll::Project);
+let future = context.advance_to(&assumptions)?;
+let stressed = scenario.apply(&future)?;
+let result = pricer.evaluate(&trade, &[Request::Value], &stressed)?;
+```
+
+`AdvanceInTime` is the component contract. Its configuration is serializable;
+its borrowed `ForwardMarketSource` supplies the market dependencies. Discount,
+projection, dividend and survival curves use source discount-factor ratios by
+default. `CurveRoll::ConstantTenor` instead preserves remaining-time shape.
+Calibration instruments are built using horizon settlement and schedule
+conventions; prices, spreads, yields and FX points remain in native quote units.
+Composite curves are composed from their advanced components. An explicit override
+on a composite exports that curve independently on its configured target grid.
+The resulting context rebuilds its own curves, surfaces and calibrated models.
+Stored simulations are regenerated from the horizon when requested.
+
+`VolatilityRoll::ConstantTenor` preserves quoted volatility at the same remaining
+expiry and smile coordinate. `ForwardVariance` subtracts elapsed variance at
+that coordinate and rejects negative increments. It is an explicit deterministic
+scenario convention; it does not infer conditional smile dynamics from today's
+option prices. Source interpolation and extrapolation restrictions still apply.
+
+`FixingRoll::Project` retains source history and generates intervening business-day
+rate observations, equity spots and FX observations. Later-dated observations in a source fixing
+file are excluded to prevent look-ahead. `Preserve` retains the known history
+without generating intervening observations; horizon equity and FX spots still
+advance. Ordinary historical fixing requirements
+continue to apply when pricing at the horizon.
+
+Call `scenario.apply(&context)?.advance_to(&assumptions)` to shock the source before
+advancement. Applying a scenario to the returned context shocks the horizon.
+These operations need not produce the same market. Generate different horizons
+directly from the original context to avoid repeated rebootstrap approximation.
+
+The selected source quote level is retained; other levels are not manufactured.
+Dated contracts retain their dates. Use `with_quote_replacement` to replace an
+expired futures contract or another target definition. Supplied curves are
+exported into direct quote grids; `with_curve_grid` chooses their target tenors.
+Without a grid, future nodes are used, or 0D/1Y/2Y/5Y/10Y/30Y for curves without
+nodes. Supplied volatility markets require calibration instrument identities or
+an explicit `with_surface_grid` / `with_cube_grid`.
+
+`market_advancement_details()` records the source date, source observation instant and
+assumptions. Snapshots retain this metadata and dividend-curve construction
+inputs. As for other snapshots, retain the fixing store separately for replay. Its JSON schema supports parameterized index
+keys such as `EQ:AAPL` and `FX:EURUSD`, as well as ordinary rate indices.
+Generated quotes define horizon sensitivity coordinates. Sensitivity to today's
+inputs requires advancing and repricing shocked source markets; numeric quote
+generation does not retain the source AD graph. Rebootstrap preserves calibration
+quotes, with possible interpolation differences between target pillars.

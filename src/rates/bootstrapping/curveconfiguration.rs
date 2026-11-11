@@ -59,6 +59,13 @@ const fn default_enable_extrapolation() -> bool {
 }
 
 impl CurveConfiguration {
+    /// Replaces the quote identifiers while retaining construction conventions.
+    #[must_use]
+    pub fn with_quotes(mut self, quotes: Vec<String>) -> Self {
+        self.quotes = quotes;
+        self
+    }
+
     /// Creates a curve specification.
     #[must_use]
     pub const fn new(

@@ -15,6 +15,25 @@ pub fn argument_help(function_name: &str, argument_names: &str) -> Vec<&'static 
 
 fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
     match (function_name, argument_name) {
+        ("QS.FORWARD.CONFIG", "target_date") => {
+            return "Future evaluation date for the generated pricing context"
+        }
+        ("QS.FORWARD.CONFIG", "curve_roll") => {
+            return "Optional ImpliedForward or ConstantTenor; defaults to ImpliedForward"
+        }
+        ("QS.FORWARD.CONFIG", "volatility_roll") => {
+            return "Optional ConstantTenor or ForwardVariance; defaults to ConstantTenor"
+        }
+        ("QS.FORWARD.CONFIG", "fixing_roll") => {
+            return "Optional Project or Preserve; defaults to Project"
+        }
+        ("QS.CONTEXT.ADVANCE", "configuration") => {
+            return "Current ForwardMarketConfiguration handle from QS.FORWARD.CONFIG"
+        }
+        _ => {}
+    }
+
+    match (function_name, argument_name) {
         (name, "context") if name.starts_with("QS.INSTRUMENT.") || name == "QS.TRADE.CREATE" => return "Required prepared context handle used to build concrete dates and initial contractual terms; construction waits for committed market inputs",
         ("QS.CONTEXT.CREATE", "name") => return "Workbook-unique name for the stable root context; every CONTEXT.ADD cell for this market references the returned handle",
         ("QS.CONTEXT.CREATE", "reference_date") => return "Required market reference and evaluation date as ISO text in YYYY-MM-DD format; relative instrument dates resolve against this date",
@@ -56,7 +75,7 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         ("QS.CONTEXT.ADD.CURVE", "interpolator") => return "Optional Linear, LogLinear or CubicSpline; omitted or blank defaults to LogLinear",
         ("QS.CONTEXT.ADD.VOL.SURFACE" | "QS.CONTEXT.ADD.VOL.CUBE", "volatility_type") => return "Required native volatility convention: Black or Normal, matching the quote identifiers",
         ("QS.CONTEXT.ADD.VOL.SURFACE" | "QS.CONTEXT.ADD.VOL.CUBE", "smile_type") => return "Required smile coordinate convention: Strike or Delta",
-        ("QS.LOAN.SETTINGS", "credit_index") => return "Optional Credit:<entity> curve index; blank leaves borrower credit unset",
+        ("QS.LOAN.SETTINGS", "credit_index") => return "Optional CREDIT:<entity> curve index; blank leaves borrower credit unset",
         ("QS.LOAN.SETTINGS", "recovery") => return "Optional fraction of opening principal recovered on borrower default, in [0,1], e.g. 0.40 = 40%; blank defaults to 0.40; used with credit_index",
         ("QS.LOAN.SETTINGS", "calendar") => return "Optional payment/fixing calendar, e.g. TARGET; blank defaults to NullCalendar (every day is a business day); contractual accrual boundaries remain unadjusted",
         ("QS.LOAN.SETTINGS", "business_day_convention") => return "Optional payment-date adjustment: Following, ModifiedFollowing, Preceding, ModifiedPreceding or Unadjusted (blank default); contractual accrual dates remain unadjusted",
@@ -139,7 +158,7 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         ("QS.TRADE.LOAN", "day_counter") => "Optional coupon accrual day count, also used for amortization; blank uses the index convention for floating coupons or Actual365 for fixed coupons",
         ("QS.TRADE.LOAN", "side") => "Optional Receive/Buy for lender receipts (default) or Pay/Sell for opposite signs; omitted or blank defaults to Receive",
         ("QS.CREDIT.CURVE.CONFIGS.ADD", "configurations") => "CreditCurveConfigurations handle from QS.CREDIT.CURVE.CONFIGS.CREATE or an earlier ADD; replaces the same credit index or appends a new one",
-        ("QS.CREDIT.CURVE.CONFIGS.ADD", "market_index") => "Borrower credit index text, for example Credit:BORROWER",
+        ("QS.CREDIT.CURVE.CONFIGS.ADD", "market_index") => "Borrower credit index text, for example CREDIT:BORROWER",
         ("QS.CREDIT.CURVE.CONFIGS.ADD", "quotes") => "Required worksheet range of CDS quote identifiers already in the quote store; blank cells are skipped",
         ("QS.CREDIT.CURVE.CONFIGS.ADD", "day_counter") => "Optional CDS premium day counter; omitted or blank defaults to Actual360",
         ("QS.CREDIT.CURVE.CONFIGS.ADD", "premium_frequency") => "Optional CDS premium frequency; omitted or blank defaults to Quarterly",
@@ -273,12 +292,12 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         (_, "anchor_value") => "Bond price per quote units or decimal spread, according to pricing_anchor",
         (_, "trade") => "Trade handle returned by a QS.TRADE.* function",
         (_, "market_index" | "base_index" | "forward_index" | "discount_index") => {
-            "Market index, for example SOFR; prefixes include Equity:, Credit:, FX:, and Collateral:"
+            "Market index, for example SOFR; prefixes include EQ:, CREDIT:, FX:, and COLL:"
         }
         (_, "pay_index" | "receive_index" | "domestic_index" | "foreign_index") => {
             "Market index whose curve is present in the pricing context, for example SOFR or EURIBOR3M"
         }
-        (_, "credit_index") => "Credit market index using the Credit:<entity> form",
+        (_, "credit_index") => "Credit market index using the CREDIT:<entity> form",
         (_, "reference_date" | "trade_date" | "start_date" | "end_date" | "maturity_date") => {
             "ISO date text in YYYY-MM-DD format"
         }
@@ -351,6 +370,12 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
 }
 
 pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> {
+    match function_name {
+        "QS.FORWARD.CONFIG" => return Some(("Revisioned ForwardMarketConfiguration handle describing a horizon date and deterministic curve, volatility and fixing assumptions.", "#VALUE! for invalid dates, unknown evolution policies, or registry failures.")),
+        "QS.CONTEXT.ADVANCE" => return Some(("Independent horizon PricingContext handle with generated market quotes, FX and projected fixings; sensitivities refer to horizon inputs.", "#VALUE! for backward horizons, expired contracts requiring replacement, missing dependencies, failed quote generation, or stale/wrong-type handles.")),
+        _ => {}
+    }
+
     if function_name == "QS.ENGINE.STATUS" {
         return Some(("JSON job counts and timing metrics. pending == 0, pending_delivery == 0 and settled == true denote delivered worksheet results after the definition pass. Explicitly dirty a nonvolatile status cell when polling from automation.", "#VALUE! if the native engine is unavailable."));
     }

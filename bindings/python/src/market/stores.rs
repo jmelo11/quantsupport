@@ -355,6 +355,11 @@ pub struct FixingStore {
 
 #[pymethods]
 impl FixingStore {
+    /// Exports fieldless and parameterized index histories as JSON-compatible data.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(py, &self.inner).map_err(qs_err)
+    }
+
     /// Creates an empty fixing store.
     #[new]
     fn new() -> Self {

@@ -967,7 +967,7 @@ mod tests {
             (MarketIndex::SOFR, "SOFR", [0.02, 0.03]),
             (
                 MarketIndex::Credit("spread".into()),
-                "Credit(spread)",
+                "CREDIT:spread",
                 [0.01, 0.01],
             ),
         ] {

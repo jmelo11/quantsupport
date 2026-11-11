@@ -74,7 +74,7 @@ moving one quote twice.
 
 Use one unambiguous family selector when one family-wide move is intended;
 for example ``CapletFloorlet_USD_SOFR`` rather than one shock per full caplet
-ID. For a quoted funding spread curve, ``FUNDINGSPREAD`` selects its
+ID. For a quoted funding spread curve, ``OTHER:FUNDINGSPREAD`` selects its
 zero-rate quotes; appending a pillar narrows the token selector but does not enable an
 exact-only mode. Inspect every transformed quote, including
 unexpected matches, and verify each intended input changes once before

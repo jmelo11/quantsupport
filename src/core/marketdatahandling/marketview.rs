@@ -115,6 +115,18 @@ pub struct MarketView<'a> {
 }
 
 impl<'a> MarketView<'a> {
+    /// Returns the scenario applied to this market view.
+    #[must_use]
+    pub const fn applied_scenario(&self) -> &Scenario {
+        &self.scenario
+    }
+
+    /// Returns the base context from which this view is derived.
+    #[must_use]
+    pub const fn source_context(&self) -> &'a PricingContext {
+        self.base
+    }
+
     /// Creates a view with an empty construction cache.
     ///
     /// This constructor does not validate the scenario. Prefer
@@ -505,6 +517,31 @@ impl<'a> MarketView<'a> {
     /// Loads a supplied dividend curve, allowing its absence when the request is optional.
     fn ensure_dividend(&self, index: &MarketIndex, optional: bool) -> Result<()> {
         if self
+            .base
+            .dividend_curve_configurations()
+            .iter()
+            .any(|spec| spec.market_index() == index)
+        {
+            if !self
+                .cache
+                .0
+                .borrow()
+                .elements
+                .dividend_curves()
+                .contains_key(index)
+            {
+                let curves = self.base.build_dividend_curves(self)?;
+                self.cache
+                    .0
+                    .borrow_mut()
+                    .elements
+                    .dividend_curves_mut()
+                    .extend(curves);
+            }
+            return Ok(());
+        }
+
+        if self
             .cache
             .0
             .borrow()
@@ -597,14 +634,19 @@ mod tests {
     use crate::prelude::{
         ADForward, CurveConfiguration, DualFwd, QuoteStore, ScenarioType, Shock, Tape,
     };
+    use crate::{
+        currencies::currency::Currency,
+        math::interpolation::interpolator::Interpolator,
+        quotes::quote::{Quote, QuoteLevels},
+        time::daycounter::DayCounter,
+    };
 
     fn context() -> Result<PricingContext> {
-        use crate::prelude::{DayCounter, Interpolator, Quote, QuoteLevels};
         let mut quotes = QuoteStore::new(Date::new(2026, 2, 24));
         let mut curves = Vec::new();
         for (index, rates) in [
             ("ESTR", [0.03, 0.035, 0.04]),
-            ("SPREAD", [0.005, 0.0075, 0.01]),
+            ("OTHER:SPREAD", [0.005, 0.0075, 0.01]),
         ] {
             let mut identifiers = Vec::new();
             for (tenor, rate) in ["0D", "1Y", "5Y"].iter().zip(rates) {
@@ -613,7 +655,7 @@ mod tests {
                 identifiers.push(identifier);
             }
             curves.push(CurveConfiguration::new(
-                index.parse().unwrap_or_default(),
+                index.parse()?,
                 DayCounter::Actual360,
                 Interpolator::Linear,
                 true,
@@ -659,7 +701,11 @@ mod tests {
         context = context
             .with_curve_configurations(configurations)
             .with_simulation_configurations(simulations);
-        let scenario = Scenario::new(vec![Shock::new("SPREAD", 0.005, ScenarioType::Absolute)]);
+        let scenario = Scenario::new(vec![Shock::new(
+            "OTHER:SPREAD",
+            0.005,
+            ScenarioType::Absolute,
+        )]);
         let view = scenario.apply(&context)?;
         assert!(view.cache.0.borrow().elements.discount_curves().is_empty());
         let index = MarketIndex::Other("FUNDING".into());
@@ -709,7 +755,11 @@ mod tests {
             .map(|(_, value)| value.node_ptr())
             .collect();
         assert!(base_nodes.iter().all(Option::is_some));
-        let scenario = Scenario::new(vec![Shock::new("SPREAD", 0.005, ScenarioType::Absolute)]);
+        let scenario = Scenario::new(vec![Shock::new(
+            "OTHER:SPREAD",
+            0.005,
+            ScenarioType::Absolute,
+        )]);
         let view = scenario.apply(&context)?;
         let mut market = view.handle_request(&request(MarketIndex::ESTR))?;
         let curve = market
@@ -798,7 +848,7 @@ mod tests {
             .simulations()
             .get(&MarketIndex::ESTR)
             .ok_or_else(|| QSError::NotFoundErr("base simulation".into()))?;
-        for (target, value) in [("SPREAD", 0.005), ("ESTR", 0.0)] {
+        for (target, value) in [("OTHER:SPREAD", 0.005), ("ESTR", 0.0)] {
             let unchanged = Scenario::new(vec![Shock::new(target, value, ScenarioType::Absolute)])
                 .apply(&context)?;
             let response = unchanged.handle_request(&simulation_request)?;
@@ -826,7 +876,6 @@ mod tests {
 
     #[test]
     fn case_variants_of_quote_ids_still_invalidate_scenario_curve_caches() -> Result<()> {
-        use crate::prelude::{Currency, DayCounter, Interpolator, Quote, QuoteLevels};
         let date = Date::new(2026, 1, 15);
         let maturity = Date::new(2027, 1, 15);
         let mut quotes = QuoteStore::new(date);

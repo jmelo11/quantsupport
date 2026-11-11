@@ -47,8 +47,8 @@ compose in supplied order. All available quote levels are transformed, then
 the context's selected bid/mid/ask level is consumed.
 
 Direct zero-rate quotes can also be targeted. A funding spread curve may
-expose `ZeroRate_EUR_FUNDINGSPREAD_<tenor>` identifiers; targeting
-`FUNDINGSPREAD` changes all matching spread quotes. Historical fixings and spot
+expose `ZeroRate_EUR_OTHER:FUNDINGSPREAD_<tenor>` identifiers; targeting
+`OTHER:FUNDINGSPREAD` changes all matching spread quotes. Historical fixings and spot
 FX are not implied targets of this quote mechanism. Empty targets, nonfinite shocks and
 unmatched selectors are errors.
 

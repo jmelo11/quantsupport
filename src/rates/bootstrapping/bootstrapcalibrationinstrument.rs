@@ -142,7 +142,8 @@ impl<'a> BootstrapStepEvaluation<'a> {
                 "Cannot normalize fixed-leg price without an initial disbursement".into(),
             ));
         }
-        Ok((pv / side + disbursement_pv) * units / principal)
+        let settlement_factor = curve.discount_factor(Self::settlement_date(leg)?)?;
+        Ok((pv / side + disbursement_pv) * units / (principal * settlement_factor))
     }
 
     /// Finds the earliest disbursement date that defines the calibration bond settlement.

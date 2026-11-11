@@ -85,7 +85,7 @@ assert_type(qs.Calendar.JointCalendar(
 
 
 def scoped_market(context: qs.PricingContext) -> None:
-    scenario = qs.Scenario(shocks=[qs.Shock(target="FUNDINGSPREAD", value=0.0001, shock_type=qs.ScenarioType.Absolute)])
+    scenario = qs.Scenario(shocks=[qs.Shock(target="OTHER:FUNDINGSPREAD", value=0.0001, shock_type=qs.ScenarioType.Absolute)])
     assert_type(scenario.shocks, list[qs.Shock])
     assert_type(scenario.shocks[0], qs.Shock)
     assert_type(scenario.shocks[0].target, str)

@@ -166,11 +166,12 @@ pub enum MarketIndex {
     /// VIX Index.
     VIX,
     /// Equity index or price. Used to identify volatilities.
+    /// Its string form is `EQ:<name>`.
     Equity(String),
     /// FX spot pair. Encodes a directed foreign-exchange pair.
     ///
     /// For example `FxPair(FxPair::new(EUR, USD))` represents the EUR/USD spot.
-    /// Its string form is `FxPair(EURUSD)`.
+    /// Its string form is `FX:EURUSD`.
     FxPair(FxPair),
     /// Collateral discount curve for cashflows in `ccy` posted under `collateral_ccy`.
     ///
@@ -184,7 +185,8 @@ pub enum MarketIndex {
     /// standard term-structure interface (a survival probability plays the
     /// same role as a discount factor).
     Credit(String),
-    /// Other indices. Could represent a particular issuer, a custom index, or any other index not covered by the above.
+    /// Custom index not covered by the variants above.
+    /// Its string form is `OTHER:<name>`; bare custom names are rejected.
     Other(String),
 }
 
@@ -254,19 +256,27 @@ impl Display for MarketIndex {
             Self::ICP => write!(f, "ICP"),
             Self::VIX => write!(f, "VIX"),
             Self::Equity(name) => write!(f, "EQ:{name}"),
-            Self::FxPair(pair) => write!(f, "FxPair({pair})"),
+            Self::FxPair(pair) => write!(f, "FX:{pair}"),
             Self::Collateral(ccy, coll) => write!(f, "COLL:{ccy}/{coll}"),
             Self::Credit(entity) => write!(f, "CREDIT:{entity}"),
-            Self::Other(s) => write!(f, "{s}"),
+            Self::Other(s) => write!(f, "OTHER:{s}"),
         }
     }
 }
 
 impl std::str::FromStr for MarketIndex {
-    type Err = std::convert::Infallible;
+    type Err = QSError;
 
-    /// Parses built-in names case insensitively, preserving custom names and payloads.
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    /// Parses built-in names case insensitively and explicitly tagged named indices.
+    ///
+    /// Named forms are `EQ:<name>`, `CREDIT:<name>`, `COLL:<CCY>/<CCY>`,
+    /// `FX:<CCY><CCY>`, and `OTHER:<name>`.
+    /// Tags are case sensitive; names preserve their case and must be nonempty,
+    /// without surrounding whitespace, parentheses, or control characters.
+    ///
+    /// # Errors
+    /// Rejects unknown bare names, malformed tags, invalid currencies and FX pairs.
+    fn from_str(s: &str) -> Result<Self> {
         let result = match s.to_ascii_uppercase().as_str() {
             "FEDFUNDS" => Self::FedFunds,
             "CDI" => Self::CDI,
@@ -319,35 +329,53 @@ impl std::str::FromStr for MarketIndex {
             "SWESTR" => Self::SWESTR,
             "ICP" => Self::ICP,
             "VIX" => Self::VIX,
-            _ => match s {
-                other if other.starts_with("FxPair(") && other.ends_with(')') => {
-                    let pair_str = &other["FxPair(".len()..other.len() - 1];
-                    pair_str
-                        .parse::<FxPair>()
-                        .map_or_else(|_| Self::Other(other.to_string()), Self::FxPair)
-                }
-                other if other.starts_with("Credit(") && other.ends_with(')') => {
-                    let entity = &other["Credit(".len()..other.len() - 1];
-                    Self::Credit(entity.trim().to_string())
-                }
-                other if other.starts_with("Collateral(") && other.ends_with(')') => {
-                    let inner = &other["Collateral(".len()..other.len() - 1];
-                    if let Some((a, b)) = inner.split_once('/') {
-                        if let (Ok(c1), Ok(c2)) =
-                            (a.trim().parse::<Currency>(), b.trim().parse::<Currency>())
-                        {
-                            Self::Collateral(c1, c2)
-                        } else {
-                            Self::Other(other.to_string())
-                        }
-                    } else {
-                        Self::Other(other.to_string())
-                    }
-                }
-                other => Self::Other(other.to_string()), // this should handle equity, fx
-            },
+            _ => return Self::parse_named(s),
         };
         Ok(result)
+    }
+}
+
+impl MarketIndex {
+    fn parse_named(s: &str) -> Result<Self> {
+        let invalid = || {
+            QSError::InvalidValueErr(format!(
+                "Invalid market index '{s}': expected a built-in name or EQ:<name>, CREDIT:<name>, COLL:<CCY>/<CCY>, FX:<CCY><CCY>, OTHER:<name>"
+            ))
+        };
+        let (kind, payload) = s.split_once(':').ok_or_else(invalid)?;
+        if payload.is_empty()
+            || payload.trim() != payload
+            || payload
+                .chars()
+                .any(|c| c.is_control() || matches!(c, '(' | ')'))
+        {
+            return Err(invalid());
+        }
+        match kind {
+            "EQ" => Ok(Self::Equity(payload.to_owned())),
+            "CREDIT" => Ok(Self::Credit(payload.to_owned())),
+            "OTHER" => Ok(Self::Other(payload.to_owned())),
+            "FX" => {
+                if payload.len() != 6 || !payload.bytes().all(|c| c.is_ascii_uppercase()) {
+                    return Err(invalid());
+                }
+                payload.parse().map(Self::FxPair).map_err(|_| invalid())
+            }
+            "COLL" => {
+                let (currency, collateral) = payload.split_once('/').ok_or_else(invalid)?;
+                if [currency, collateral]
+                    .iter()
+                    .any(|code| code.len() != 3 || !code.bytes().all(|c| c.is_ascii_uppercase()))
+                {
+                    return Err(invalid());
+                }
+                Ok(Self::Collateral(
+                    currency.parse().map_err(|_| invalid())?,
+                    collateral.parse().map_err(|_| invalid())?,
+                ))
+            }
+            _ => Err(invalid()),
+        }
     }
 }
 
@@ -533,34 +561,75 @@ mod tests {
     }
 
     #[test]
-    fn custom_names_and_parameter_payloads_keep_their_case() {
-        for name in [
-            "MyCurve",
-            "MYCURVE",
-            "mycurve",
-            "FxPair(BadPair)",
-            "Collateral(Bad/Pair)",
+    fn named_indices_require_colon_tags_and_preserve_payload_case() {
+        for (label, expected) in [
+            ("OTHER:MyCurve", MarketIndex::Other("MyCurve".into())),
+            ("OTHER:SOFR", MarketIndex::Other("SOFR".into())),
+            ("EQ:BRK.B", MarketIndex::Equity("BRK.B".into())),
+            ("CREDIT:AcmeCorp", MarketIndex::Credit("AcmeCorp".into())),
+            (
+                "COLL:EUR/USD",
+                MarketIndex::Collateral(Currency::EUR, Currency::USD),
+            ),
         ] {
-            assert_eq!(
-                name.parse::<MarketIndex>().unwrap(),
-                MarketIndex::Other(name.into())
-            );
+            let parsed = label.parse::<MarketIndex>().unwrap();
+            assert_eq!(parsed, expected, "{label}");
+            assert_eq!(parsed.to_string().parse::<MarketIndex>().unwrap(), expected);
         }
         assert_eq!(
-            "Credit(AcmeCorp)".parse::<MarketIndex>().unwrap(),
-            MarketIndex::Credit("AcmeCorp".into())
-        );
-        assert_eq!(
-            "Collateral(EUR/USD)".parse::<MarketIndex>().unwrap(),
-            MarketIndex::Collateral(Currency::EUR, Currency::USD)
+            MarketIndex::Other("MyCurve".into()).to_string(),
+            "OTHER:MyCurve"
         );
     }
 
     #[test]
-    fn fx_pair_indices_use_parentheses_and_preserve_direction() {
+    fn unknown_and_malformed_named_indices_are_rejected() {
+        for label in [
+            "",
+            " ",
+            "MyCurve",
+            "MYCURVE",
+            "mycurve",
+            "AAPL",
+            "S0FR",
+            "Other(curve)",
+            "Equity(SPX)",
+            "Credit(Acme)",
+            "Collateral(EUR/USD)",
+            "FxPair(EURUSD)",
+            "Other:curve",
+            "Equity:SPX",
+            "Credit:Acme",
+            "OTHER",
+            "OTHER:",
+            "OTHER: ",
+            "OTHER:(curve)",
+            "OTHER:curve)",
+            "OTHER: curve",
+            "OTHER:curve ",
+            "OTHER:curve\n",
+            "other:curve",
+            "UNKNOWN:curve",
+            "EQ:",
+            "EQ: ",
+            "EQ:SPX)",
+            "EQ(SPX)",
+            "CREDIT:",
+            "COLL:",
+            "COLL:USD",
+            "COLL:BAD/USD",
+            "COLL:USD/EUR/GBP",
+            "COLL:USD /EUR",
+        ] {
+            assert!(label.parse::<MarketIndex>().is_err(), "{label:?}");
+        }
+    }
+
+    #[test]
+    fn fx_pair_indices_use_colon_tags_and_preserve_direction() {
         for (label, base, quote) in [
-            ("FxPair(EURUSD)", Currency::EUR, Currency::USD),
-            ("FxPair(USDEUR)", Currency::USD, Currency::EUR),
+            ("FX:EURUSD", Currency::EUR, Currency::USD),
+            ("FX:USDEUR", Currency::USD, Currency::EUR),
         ] {
             let index = MarketIndex::FxPair(FxPair::new(base, quote).unwrap());
             assert_eq!(label.parse::<MarketIndex>().unwrap(), index);
@@ -570,19 +639,20 @@ mod tests {
     }
 
     #[test]
-    fn malformed_fx_pair_indices_remain_custom_names() {
+    fn malformed_fx_pair_indices_are_rejected() {
         for label in [
-            "FxPair(EURUSD",
-            "FxPairEURUSD)",
-            "FxPair()",
-            "FxPair(EUR)",
-            "FxPair(EUREUR)",
-            "FxPair(EURUSD)extra",
+            "FX:",
+            "FX:EUR",
+            "FX:EUREUR",
+            "FX:EURUSDextra",
+            "FX: EURUSD",
+            "FX:EURUSD ",
+            "FX:eurusd",
+            "FX:ééé",
+            "FX:BADUSD",
+            "FX:EUR/USD",
         ] {
-            assert_eq!(
-                label.parse::<MarketIndex>().unwrap(),
-                MarketIndex::Other(label.into())
-            );
+            assert!(label.parse::<MarketIndex>().is_err(), "{label:?}");
         }
     }
 }

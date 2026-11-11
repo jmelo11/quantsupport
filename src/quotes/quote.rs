@@ -386,7 +386,7 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 /// uses one quote family and consistent rate conventions. Its sensitivity
 /// labels remain the original quote identifiers.
 ///
-/// In `FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorPrice`, the `0.04` in the
+/// In `FixedRateBond_USD_OTHER:CORP_5Y_Semiannual_0.04_AnchorPrice`, the `0.04` in the
 /// identifier is the coupon. `AnchorPrice` tells calibration to use the observed
 /// quote as the bond price; `AnchorYield` uses it as yield to maturity and is the
 /// default if the strategy is omitted. `IMM` is a futures contract code such as `H6`.
@@ -1235,7 +1235,7 @@ impl QuoteDetails {
     /// `{Instrument}_{CCY}_{Index}_{Tenor}[_{PayFreq}]_{CouponRate}[_{Strategy}[_{CouponDayCounter}[_{YieldDayCounter}]]]`
     ///
     /// The strategy defaults to `AnchorYield`, for example
-    /// `FixedRateBond_USD_UST_5Y_Semiannual_0.04_AnchorYield`.
+    /// `FixedRateBond_USD_OTHER:UST_5Y_Semiannual_0.04_AnchorYield`.
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
@@ -1872,7 +1872,9 @@ impl QuoteDetails {
             )));
         }
         match parts[0].to_ascii_lowercase().as_str() {
-            "discountfactor" | "zerorate" => Self::parse_curve_pillar(s, &parts),
+            "discountfactor" | "dividenddiscountfactor" | "zerorate" => {
+                Self::parse_curve_pillar(s, &parts)
+            }
             "ois" => Self::parse_ois(s, &parts),
             "swap" => Self::parse_swap(s, &parts),
             "fixedratedeposit" => Self::parse_fixed_rate_deposit(s, &parts),
@@ -2915,7 +2917,7 @@ mod tests {
 
     #[test]
     fn parse_price_anchored_bond_identifier() {
-        let det: QuoteDetails = "FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorPrice"
+        let det: QuoteDetails = "FixedRateBond_USD_OTHER:CORP_5Y_Semiannual_0.04_AnchorPrice"
             .parse()
             .unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::FixedRateBond);
@@ -2929,10 +2931,10 @@ mod tests {
 
     #[test]
     fn calibration_strategy_names_must_use_anchor_prefix() {
-        assert!("FixedRateBond_USD_CORP_5Y_Semiannual_0.04_Price"
+        assert!("FixedRateBond_USD_OTHER:CORP_5Y_Semiannual_0.04_Price"
             .parse::<QuoteDetails>()
             .is_err());
-        assert!("FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorOAS"
+        assert!("FixedRateBond_USD_OTHER:CORP_5Y_Semiannual_0.04_AnchorOAS"
             .parse::<QuoteDetails>()
             .is_err());
         assert!("FxForward_EURUSD_1M_ForwardPoints"
@@ -3101,7 +3103,7 @@ mod tests {
 
     #[test]
     fn build_price_anchored_bond() {
-        let details: QuoteDetails = "FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorPrice"
+        let details: QuoteDetails = "FixedRateBond_USD_OTHER:CORP_5Y_Semiannual_0.04_AnchorPrice"
             .parse()
             .unwrap();
         let quote = Quote::new(details, QuoteLevels::with_mid(99.5));

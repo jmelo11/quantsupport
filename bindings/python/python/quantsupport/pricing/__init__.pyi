@@ -4,7 +4,7 @@ from typing import Any, Final, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
 from ..time import Compounding, DayCounter, Frequency, Date, DateTime, Period, _DateLike, _PeriodLike
-from ..market import CreditCurveConfiguration, Currency, CurveConfiguration, DiscountCurve, FixingStore, FxStore, Level, MarketIndex, QuoteStore, Simulation, SimulationConfiguration, VolatilityCube, VolatilityCubeConfiguration, VolatilitySurface, VolatilitySurfaceConfiguration, _CurrencyLike, _IndexLike
+from ..market import ForwardMarketConfiguration, CreditCurveConfiguration, Currency, CurveConfiguration, DiscountCurve, FixingStore, FxStore, Level, MarketIndex, QuoteStore, Simulation, SimulationConfiguration, VolatilityCube, VolatilityCubeConfiguration, VolatilitySurface, VolatilitySurfaceConfiguration, _CurrencyLike, _IndexLike
 from ..instruments import Instrument, ScriptedProduct, Side
 from ..risk import XvaResult
 __all__ = ['Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor',
@@ -618,6 +618,23 @@ Examples
        results = ctx.evaluate(trade, requests=["Value", "Sensitivities"])
 """
 
+    def advance_to(self, configuration: ForwardMarketConfiguration) -> PricingContext:
+        """Generate horizon inputs, including active source scenarios."""
+        ...
+    @property
+    def dividend_curve_configurations(self) -> list[CurveConfiguration]:
+        """Direct quote-based dividend construction inputs."""
+        ...
+    @dividend_curve_configurations.setter
+    def dividend_curve_configurations(self, value: Sequence[CurveConfiguration]) -> None:
+        """Replace dividend definitions and invalidate constructed market data."""
+        ...
+    @property
+    def market_advancement_details(self) -> dict[str, Any] | None:
+        """Source observations and assumptions of a generated forward context."""
+        ...
+
+
     @property
     def anchor_fixings(self) -> bool:
         """Require stored past index fixings when true; project all when false."""
@@ -634,7 +651,7 @@ Examples
         """
         ...
 
-    def __new__(cls, quotes: QuoteStore, curves: Sequence[CurveConfiguration], fixings: FixingStore | None = ..., fx: FxStore | None = ..., volatility_surfaces: Sequence[VolatilitySurfaceConfiguration] | None = ..., volatility_cubes: Sequence[VolatilityCubeConfiguration] | None = ..., pricer_configurations: Sequence[PricerConfiguration] | None = ..., simulations: Sequence[SimulationConfiguration] | None = ..., csa_policy: SingleCurveCSADiscountPolicy | None = ..., fixed_income_policy: FixedIncomeDiscountPolicy | None = ..., quote_level: Level | str | None = ..., credit_curves: Sequence[CreditCurveConfiguration] | None = ..., anchor_fixings: bool = ...) -> Self:
+    def __new__(cls, quotes: QuoteStore, curves: Sequence[CurveConfiguration], fixings: FixingStore | None = ..., fx: FxStore | None = ..., volatility_surfaces: Sequence[VolatilitySurfaceConfiguration] | None = ..., volatility_cubes: Sequence[VolatilityCubeConfiguration] | None = ..., pricer_configurations: Sequence[PricerConfiguration] | None = ..., simulations: Sequence[SimulationConfiguration] | None = ..., csa_policy: SingleCurveCSADiscountPolicy | None = ..., fixed_income_policy: FixedIncomeDiscountPolicy | None = ..., quote_level: Level | str | None = ..., credit_curves: Sequence[CreditCurveConfiguration] | None = ..., anchor_fixings: bool = ..., dividend_curves: Sequence[CurveConfiguration] | None = ...) -> Self:
         ...
 
     def initialize(self) -> None:

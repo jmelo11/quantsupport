@@ -6,6 +6,7 @@ use crate::{
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
+            fixingrequest::FixingRequest,
             fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
@@ -26,7 +27,7 @@ use std::collections::HashSet;
 /// The forward rate for the period is derived from the discount curve using
 /// the rate conventions in the market index metadata, not an instrument-level
 /// rate definition. Accrual uses that index's day count. Black expiry is measured
-/// from trade date to accrual start; volatility lookup uses the fixing date.
+/// from evaluation to fixing; historical fixings determine fixed-but-unpaid payoffs.
 ///
 /// The effective strike is resolved from the instrument's [`Strike`] before
 /// querying the volatility surface.
@@ -109,6 +110,10 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
             index.clone()
         };
         let rate_def = index.rate_index_details()?.rate_definition();
+        let evaluation_date = state
+            .get_discount_curve_element(&index)?
+            .curve()
+            .reference_date();
 
         Tape::start_recording_fwd();
         Tape::set_mark_fwd();
@@ -119,26 +124,38 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
             let start_date = c.start_accrual_date();
             let end_date = c.end_accrual_date();
             let payment_date = c.payment_date();
+            if payment_date < evaluation_date {
+                continue;
+            }
             let yf = c
                 .day_counter()
                 .unwrap_or_else(|| rate_def.day_counter())
                 .year_fraction(start_date, end_date);
 
-            // Time to expiry: from trade date to fixing date
+            // Remaining option time from the market evaluation date
             let tau = rate_def
                 .day_counter()
-                .year_fraction(trade.trade_date(), start_date);
+                .year_fraction(evaluation_date, fixing_date)
+                .max(0.0);
 
             // Forward rate using the conventions from the caplet's rate definition
-            let fwd: DualFwd = state
-                .get_discount_curve_element(&index)?
-                .curve()
-                .forward_rate(
-                    start_date,
-                    end_date,
-                    rate_def.compounding(),
-                    rate_def.frequency(),
-                )?;
+            let fwd: DualFwd = if fixing_date < evaluation_date
+                && state
+                    .get_market_data_reponse()
+                    .is_some_and(MarketData::anchor_fixings)
+            {
+                DualFwd::from(state.get_fixing(&index, fixing_date)?)
+            } else {
+                state
+                    .get_discount_curve_element(&index)?
+                    .curve()
+                    .forward_rate(
+                        start_date,
+                        end_date,
+                        rate_def.compounding(),
+                        rate_def.frequency(),
+                    )?
+            };
 
             // Resolve effective strike from the instrument's strike specification
             let effective_strike = match c.strike() {
@@ -153,14 +170,26 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
                 .curve()
                 .discount_factor(payment_date)?;
 
-            let vol = state
-                .get_volatility_surface_element(&index)?
-                .surface()
-                .volatility_from_date(fixing_date, effective_strike)?;
+            let vol = if tau <= 0.0 {
+                DualFwd::zero()
+            } else {
+                state
+                    .get_volatility_surface_element(&index)?
+                    .surface()
+                    .volatility_from_date(fixing_date, effective_strike)?
+            };
 
-            let undiscounted = match c.payoff_type() {
-                CapletFloorletType::Caplet => black_call_ad(fwd, effective_strike, vol, tau)?,
-                CapletFloorletType::Floorlet => black_put_ad(fwd, effective_strike, vol, tau)?,
+            let undiscounted = if tau <= 0.0 || vol.value().abs() < f64::EPSILON {
+                let payoff: DualFwd = match c.payoff_type() {
+                    CapletFloorletType::Caplet => (fwd - effective_strike).into(),
+                    CapletFloorletType::Floorlet => (DualFwd::from(effective_strike) - fwd).into(),
+                };
+                payoff.max(DualFwd::zero())
+            } else {
+                match c.payoff_type() {
+                    CapletFloorletType::Caplet => black_call_ad(fwd, effective_strike, vol, tau)?,
+                    CapletFloorletType::Floorlet => black_put_ad(fwd, effective_strike, vol, tau)?,
+                }
             };
 
             let value = df_pay * undiscounted * yf * trade.notional();
@@ -273,10 +302,29 @@ impl Pricer for ClosedFormBlackCapPricer {
         let eval_date = ctx.evaluation_date();
         let caplet = trade.instrument();
         let identifier = caplet.identifier();
+        if caplet
+            .caplet_floorlets()
+            .iter()
+            .all(|c| c.payment_date() < eval_date)
+        {
+            return Ok(EvaluationResults::new(eval_date, identifier)
+                .with_price(0.0)
+                .with_sensitivities(SensitivityMap::default()));
+        }
 
         let md_request = self
             .market_data_request(trade)
-            .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?;
+            .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?
+            .with_fixings_request(if ctx.anchor_fixings() {
+                caplet
+                    .caplet_floorlets()
+                    .iter()
+                    .filter(|c| c.fixing_date() < eval_date && c.payment_date() >= eval_date)
+                    .map(|c| FixingRequest::new(c.market_index(), c.fixing_date()))
+                    .collect()
+            } else {
+                Vec::new()
+            });
 
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = BlackCapState {

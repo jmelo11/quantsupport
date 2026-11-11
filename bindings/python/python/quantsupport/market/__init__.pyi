@@ -9,7 +9,7 @@ import quantsupport.pricing as _pricing
 _CurrencyLike = Currency | str
 _IndexLike = MarketIndex | str | Mapping[str, Any]
 
-__all__ = ['SnapshotSelectionRule', 'SnapshotSelector', 'MarketSnapshot', 'MarketSnapshotStore', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation']
+__all__ = ['ForwardMarketConfiguration', 'SnapshotSelectionRule', 'SnapshotSelector', 'MarketSnapshot', 'MarketSnapshotStore', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation']
 
 @final
 class SnapshotSelectionRule:
@@ -697,6 +697,10 @@ class FixingStore:
         """
         ...
 
+
+    def to_dict(self) -> dict[str, Any]:
+        """Export known and scenario fixing histories, including typed index keys."""
+        ...
 
     def add(self, index: _IndexLike, date: _DateLike, value: float) -> None:
         """Insert or replace an index observation on a date.
@@ -1966,3 +1970,27 @@ class Simulation:
     def market_index(self) -> MarketIndex:
         """Simulated market index."""
         ...
+
+@final
+class ForwardMarketConfiguration:
+    """Serializable assumptions for an independent horizon pricing context."""
+    def __new__(cls, target_date: _DateLike, curve_roll: str = "ImpliedForward", volatility_roll: str = "ConstantTenor", fixing_roll: str = "Project") -> Self: ...
+    @staticmethod
+    def from_dict(value: Mapping[str, Any]) -> ForwardMarketConfiguration:
+        """Restore the complete native configuration schema."""
+        ...
+    def to_dict(self) -> dict[str, Any]:
+        """Export dates, policies, overrides and quotation grids."""
+        ...
+    @property
+    def target_date(self) -> Date:
+        """Horizon evaluation date."""
+        ...
+    def with_curve_override(self, market_index: _IndexLike, roll: str) -> ForwardMarketConfiguration:
+        """Return a copy selecting a curve convention for one index."""
+        ...
+    def __repr__(self) -> str: ...
+    def keys(self) -> list[str]:
+        """Keys of the serialized configuration; supports dict(obj)."""
+        ...
+    def __getitem__(self, key: str) -> Any: ...
