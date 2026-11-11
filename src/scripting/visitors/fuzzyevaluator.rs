@@ -22,7 +22,7 @@ use std::cell::{Cell, RefCell};
 use crate::{
     ad::expr::FloatExt,
     scripting::{
-        data::simulationdata::{Scenario, SimulationData},
+        data::simulationdata::{SimulationData, SimulationPath},
         nodes::{node::Node, node::SpotUnderlying, traits::NodeConstVisitor},
         visitors::evaluator::{CapturedCashflow, Value},
         NumericType,
@@ -38,7 +38,7 @@ const ONE_MINUS_EPS: f64 = 1.0 - EPS;
 const AUTO_SMOOTHING_RELATIVE_WIDTH: f64 = 0.02;
 const AUTO_SMOOTHING_MIN_WIDTH: f64 = 1.0e-8;
 
-/// Single-scenario evaluator that smooths conditional branch transitions.
+/// Single-simulation_path evaluator that smooths conditional branch transitions.
 pub struct FuzzyEvaluator<'a> {
     variables: RefCell<Vec<Value>>,
     digit_stack: RefCell<Vec<NumericType>>,
@@ -47,7 +47,7 @@ pub struct FuzzyEvaluator<'a> {
     array_stack: RefCell<Vec<Vec<Value>>>,
     is_lhs_variable: RefCell<bool>,
     lhs_variable: RefCell<Option<Node>>,
-    scenario: Option<&'a Scenario>,
+    simulation_path: Option<&'a SimulationPath>,
     current_event: RefCell<usize>,
     current_event_date: RefCell<Option<Date>>,
     valuation_date: Option<Date>,
@@ -90,7 +90,7 @@ impl<'a> FuzzyEvaluator<'a> {
             array_stack: RefCell::new(Vec::new()),
             is_lhs_variable: RefCell::new(false),
             lhs_variable: RefCell::new(None),
-            scenario: None,
+            simulation_path: None,
             current_event: RefCell::new(0),
             current_event_date: RefCell::new(None),
             valuation_date: None,
@@ -115,9 +115,9 @@ impl<'a> FuzzyEvaluator<'a> {
         self
     }
 
-    /// Assigns the market-data scenario used by financial expressions.
-    pub fn with_scenario(mut self, scenario: &'a Scenario) -> Self {
-        self.scenario = Some(scenario);
+    /// Assigns the market-data simulation_path used by financial expressions.
+    pub fn with_simulation_path(mut self, simulation_path: &'a SimulationPath) -> Self {
+        self.simulation_path = Some(simulation_path);
         self
     }
 
@@ -169,18 +169,20 @@ impl<'a> FuzzyEvaluator<'a> {
     /// Returns market data for the active event.
     ///
     /// # Errors
-    /// Returns an error if no scenario is set or the event index is invalid.
+    /// Returns an error if no simulation_path is set or the event index is invalid.
     pub fn current_market_data(&self) -> Result<&SimulationData> {
-        let scenario = self
-            .scenario
-            .ok_or(QSError::ValueNotSetErr("No scenario set".into()))?;
-        scenario.get(*self.current_event.borrow()).ok_or_else(|| {
-            QSError::NotFoundErr(format!(
-                "market data for script event {}; scenario contains {} events",
-                self.current_event.borrow(),
-                scenario.len()
-            ))
-        })
+        let simulation_path = self
+            .simulation_path
+            .ok_or(QSError::ValueNotSetErr("No simulation_path set".into()))?;
+        simulation_path
+            .get(*self.current_event.borrow())
+            .ok_or_else(|| {
+                QSError::NotFoundErr(format!(
+                    "market data for script event {}; simulation path contains {} events",
+                    self.current_event.borrow(),
+                    simulation_path.len()
+                ))
+            })
     }
 
     /// Returns the active event index.

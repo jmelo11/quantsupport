@@ -28,7 +28,7 @@ use crate::{
     ad::expr::FloatExt,
     currencies::currency::Currency,
     scripting::{
-        data::simulationdata::{Scenario, SimulationData},
+        data::simulationdata::{SimulationData, SimulationPath},
         nodes::{event::EventStream, node::Node, node::SpotUnderlying, traits::NodeConstVisitor},
         NumericType,
     },
@@ -131,7 +131,7 @@ pub struct SingleScenarioEvaluator<'a> {
     array_stack: RefCell<Vec<Vec<Value>>>,
     is_lhs_variable: RefCell<bool>,
     lhs_variable: RefCell<Option<Node>>,
-    scenario: Option<&'a Scenario>,
+    simulation_path: Option<&'a SimulationPath>,
     current_event: RefCell<usize>,
     current_event_date: RefCell<Option<Date>>,
     valuation_date: Option<Date>,
@@ -142,7 +142,7 @@ pub struct SingleScenarioEvaluator<'a> {
 }
 
 impl<'a> SingleScenarioEvaluator<'a> {
-    /// Creates an evaluator without variables or scenario data.
+    /// Creates an evaluator without variables or simulation_path data.
     pub fn new() -> Self {
         SingleScenarioEvaluator {
             variables: RefCell::new(Vec::new()),
@@ -152,7 +152,7 @@ impl<'a> SingleScenarioEvaluator<'a> {
             array_stack: RefCell::new(Vec::new()),
             is_lhs_variable: RefCell::new(false),
             lhs_variable: RefCell::new(None),
-            scenario: None,
+            simulation_path: None,
             current_event: RefCell::new(0),
             current_event_date: RefCell::new(None),
             valuation_date: None,
@@ -163,9 +163,9 @@ impl<'a> SingleScenarioEvaluator<'a> {
         }
     }
 
-    /// Assigns the market-data scenario used by financial expressions.
-    pub fn with_scenario(mut self, scenario: &'a Scenario) -> Self {
-        self.scenario = Some(scenario);
+    /// Assigns the market-data simulation_path used by financial expressions.
+    pub fn with_simulation_path(mut self, simulation_path: &'a SimulationPath) -> Self {
+        self.simulation_path = Some(simulation_path);
         self
     }
 
@@ -219,18 +219,20 @@ impl<'a> SingleScenarioEvaluator<'a> {
     /// Returns market data for the active event.
     ///
     /// # Errors
-    /// Returns an error if no scenario is set or the event index is invalid.
+    /// Returns an error if no simulation_path is set or the event index is invalid.
     pub fn current_market_data(&self) -> Result<&SimulationData> {
-        let scenario = self
-            .scenario
-            .ok_or(QSError::ValueNotSetErr("No scenario set".to_string()))?;
-        scenario.get(*self.current_event.borrow()).ok_or_else(|| {
-            QSError::NotFoundErr(format!(
-                "market data for script event {}; scenario contains {} events",
-                self.current_event.borrow(),
-                scenario.len()
-            ))
-        })
+        let simulation_path = self.simulation_path.ok_or(QSError::ValueNotSetErr(
+            "No simulation_path set".to_string(),
+        ))?;
+        simulation_path
+            .get(*self.current_event.borrow())
+            .ok_or_else(|| {
+                QSError::NotFoundErr(format!(
+                    "market data for script event {}; simulation path contains {} events",
+                    self.current_event.borrow(),
+                    simulation_path.len()
+                ))
+            })
     }
 
     /// Returns the active event index.
@@ -944,19 +946,19 @@ impl<'a> SingleScenarioEvaluator<'a> {
 /// Evaluates and averages an event stream over a collection of scenarios.
 pub struct Evaluator<'a> {
     n_vars: usize,
-    scenarios: &'a Vec<Scenario>,
+    scenarios: &'a Vec<SimulationPath>,
 }
 
 impl<'a> Evaluator<'a> {
-    /// Creates a multi-scenario evaluator with `n_vars` variable slots.
-    pub fn new(n_vars: usize, scenarios: &'a Vec<Scenario>) -> Self {
+    /// Creates a multi-simulation_path evaluator with `n_vars` variable slots.
+    pub fn new(n_vars: usize, scenarios: &'a Vec<SimulationPath>) -> Self {
         Evaluator { n_vars, scenarios }
     }
 
     /// Evaluates scenarios serially and averages numeric variables.
     ///
     /// # Errors
-    /// Returns an error when any scenario cannot be evaluated.
+    /// Returns an error when any simulation_path cannot be evaluated.
     pub fn visit_events(
         &self,
         event_stream: &EventStream,
@@ -965,10 +967,10 @@ impl<'a> Evaluator<'a> {
         let tmp: Result<Vec<HashMap<String, Value>>> = self
             .scenarios
             .iter()
-            .map(|scenario| {
+            .map(|simulation_path| {
                 let evaluator = SingleScenarioEvaluator::new()
                     .with_variables(self.n_vars)
-                    .with_scenario(scenario);
+                    .with_simulation_path(simulation_path);
 
                 evaluator.visit_events(event_stream, var_indexes)
             })
@@ -995,7 +997,7 @@ impl<'a> Evaluator<'a> {
     /// Evaluates scenarios with Rayon and averages numeric variables.
     ///
     /// # Errors
-    /// Returns an error when any scenario cannot be evaluated.
+    /// Returns an error when any simulation_path cannot be evaluated.
     pub fn par_visit_events(
         &self,
         event_stream: &EventStream,
@@ -1004,10 +1006,10 @@ impl<'a> Evaluator<'a> {
         let tmp: Result<Vec<HashMap<String, Value>>> = self
             .scenarios
             .par_iter()
-            .map(|scenario| {
+            .map(|simulation_path| {
                 let evaluator = SingleScenarioEvaluator::new()
                     .with_variables(self.n_vars)
-                    .with_scenario(scenario);
+                    .with_simulation_path(simulation_path);
 
                 evaluator.visit_events(event_stream, var_indexes)
             })
@@ -1968,14 +1970,14 @@ mod ai_gen_tests {
 
     #[test]
     fn test_pays_node_discount() {
-        // Pays should apply the discount factor fetched from the scenario
+        // Pays should apply the discount factor fetched from the simulation_path
         let mut base = Node::new_base();
         let mut pays = Node::new_pays();
         pays.add_child(Node::new_constant(100.0));
         base.add_child(pays);
 
         let event_date = Date::new(2024, 1, 1);
-        let scenario = vec![SimulationData::new(
+        let simulation_path = vec![SimulationData::new(
             NumericType::new(1.0),
             vec![NumericType::new(0.5)],
             Vec::new(),
@@ -1989,7 +1991,7 @@ mod ai_gen_tests {
         indexer.visit_events(&mut events).unwrap();
 
         let evaluator = SingleScenarioEvaluator::new()
-            .with_scenario(&scenario)
+            .with_simulation_path(&simulation_path)
             .with_variables(indexer.get_variables_size());
         let expr = events.events().first().unwrap().expr();
         evaluator.const_visit(&expr).unwrap();
@@ -2011,7 +2013,7 @@ mod ai_gen_tests {
         base.add_child(pays);
 
         let event_date = Date::new(2024, 1, 1);
-        let scenario = vec![SimulationData::new(
+        let simulation_path = vec![SimulationData::new(
             NumericType::new(2.0),
             vec![NumericType::new(0.5)],
             Vec::new(),
@@ -2027,7 +2029,7 @@ mod ai_gen_tests {
         indexer.visit_events(&mut events).unwrap();
 
         let evaluator = SingleScenarioEvaluator::new()
-            .with_scenario(&scenario)
+            .with_simulation_path(&simulation_path)
             .with_variables(indexer.get_variables_size());
         let expr = events.events().first().unwrap().expr();
         evaluator.const_visit(&expr).unwrap();
@@ -2398,9 +2400,9 @@ mod ai_gen_tests {
     }
 
     #[test]
-    fn test_expr_evaluator_with_scenario_none() {
-        // Test the SingleScenarioEvaluator to ensure it correctly handles None scenario.
+    fn test_expr_evaluator_with_simulation_path_none() {
+        // Test the SingleScenarioEvaluator to ensure it correctly handles None simulation_path.
         let evaluator = SingleScenarioEvaluator::new();
-        assert!(evaluator.scenario.is_none());
+        assert!(evaluator.simulation_path.is_none());
     }
 }
