@@ -591,6 +591,9 @@ credit_curves : sequence of CreditCurveConfiguration, optional
 anchor_fixings : bool, optional
     True, the default, requires stored index fixings strictly before evaluation;
     today and future project. False projects all observations from curves.
+dividend_curves : sequence of CurveConfiguration, optional
+    Dividend discount-curve construction inputs. None, the default, configures
+    no dividend curves.
 
 Notes
 -----
@@ -619,7 +622,21 @@ Examples
 """
 
     def advance_to(self, configuration: ForwardMarketConfiguration) -> PricingContext:
-        """Generate horizon inputs, including active source scenarios."""
+        """Generate horizon inputs, including active source scenarios.
+
+Parameters
+----------
+configuration : ForwardMarketConfiguration
+    Target evaluation date and deterministic curve, volatility, and fixing
+    conventions used to generate the future market from source observations.
+
+Returns
+-------
+PricingContext
+    Independent context with generated quotes and fixings. Enter it for lazy
+    market construction or call initialize() to build every configured market.
+    Sensitivities refer to horizon inputs; the source context is unchanged.
+"""
         ...
     @property
     def dividend_curve_configurations(self) -> list[CurveConfiguration]:
@@ -627,7 +644,13 @@ Examples
         ...
     @dividend_curve_configurations.setter
     def dividend_curve_configurations(self, value: Sequence[CurveConfiguration]) -> None:
-        """Replace dividend definitions and invalidate constructed market data."""
+        """Replace dividend definitions and invalidate constructed market data.
+
+Parameters
+----------
+value : sequence of CurveConfiguration
+    New dividend discount-curve construction inputs, copied into the context.
+"""
         ...
     @property
     def market_advancement_details(self) -> dict[str, Any] | None:

@@ -290,13 +290,12 @@ impl CurveConfiguration {
     pub fn pillar_dates(&self) -> Vec<Date> {
         self.calibration_instruments
             .as_ref()
-            .map(|instruments| {
+            .map_or_else(Vec::new, |instruments| {
                 instruments
                     .iter()
                     .map(CalibrationInstrument::pillar_date)
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     #[must_use]
@@ -304,13 +303,12 @@ impl CurveConfiguration {
     pub fn pillar_labels(&self) -> Vec<String> {
         self.calibration_instruments
             .as_ref()
-            .map(|instruments| {
+            .map_or_else(Vec::new, |instruments| {
                 instruments
                     .iter()
                     .map(CalibrationInstrument::pillar_label)
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     #[must_use]
@@ -318,13 +316,12 @@ impl CurveConfiguration {
     pub fn quote_values(&self) -> Vec<f64> {
         self.calibration_instruments
             .as_ref()
-            .map(|instruments| {
+            .map_or_else(Vec::new, |instruments| {
                 instruments
                     .iter()
                     .map(CalibrationInstrument::quote_value)
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     /// Returns the full set of curve dependencies, including those implied

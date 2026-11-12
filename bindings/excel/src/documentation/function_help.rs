@@ -19,13 +19,13 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
             return "Future evaluation date for the generated pricing context"
         }
         ("QS.FORWARD.CONFIG", "curve_roll") => {
-            return "Optional ImpliedForward or ConstantTenor; defaults to ImpliedForward"
+            return "Optional ImpliedForward or ConstantTenor; omitted or blank defaults to ImpliedForward"
         }
         ("QS.FORWARD.CONFIG", "volatility_roll") => {
-            return "Optional ConstantTenor or ForwardVariance; defaults to ConstantTenor"
+            return "Optional ConstantTenor or ForwardVariance; omitted or blank defaults to ConstantTenor"
         }
         ("QS.FORWARD.CONFIG", "fixing_roll") => {
-            return "Optional Project or Preserve; defaults to Project"
+            return "Optional Project or Preserve; omitted or blank defaults to Project"
         }
         ("QS.CONTEXT.ADVANCE", "configuration") => {
             return "Current ForwardMarketConfiguration handle from QS.FORWARD.CONFIG"

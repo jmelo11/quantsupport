@@ -1973,11 +1973,41 @@ class Simulation:
 
 @final
 class ForwardMarketConfiguration:
-    """Serializable assumptions for an independent horizon pricing context."""
+    """Serializable assumptions for an independent horizon pricing context.
+
+Parameters
+----------
+target_date : Date, str, or datetime.date
+    Horizon evaluation date, on or after the source context's evaluation date.
+curve_roll : str, optional
+    ``ImpliedForward`` preserves source discount-factor ratios at absolute
+    dates. ``ConstantTenor`` preserves curve shape by remaining tenor.
+    Defaults to ``ImpliedForward``.
+volatility_roll : str, optional
+    ``ConstantTenor`` preserves quoted volatility by remaining expiry.
+    ``ForwardVariance`` subtracts elapsed total variance at the same smile
+    coordinate. Defaults to ``ConstantTenor``.
+fixing_roll : str, optional
+    ``Project`` generates intervening observations from source forwards.
+    ``Preserve`` retains source history without intervening observations;
+    horizon spots still advance. Defaults to ``Project``.
+"""
     def __new__(cls, target_date: _DateLike, curve_roll: str = "ImpliedForward", volatility_roll: str = "ConstantTenor", fixing_roll: str = "Project") -> Self: ...
     @staticmethod
     def from_dict(value: Mapping[str, Any]) -> ForwardMarketConfiguration:
-        """Restore the complete native configuration schema."""
+        """Restore the complete native configuration schema.
+
+Parameters
+----------
+value : mapping
+    Native configuration fields, including target_date, evolution policies,
+    optional per-index overrides, export grids, and dated-quote replacements.
+
+Returns
+-------
+ForwardMarketConfiguration
+    Assumptions restored from the supplied fields.
+"""
         ...
     def to_dict(self) -> dict[str, Any]:
         """Export dates, policies, overrides and quotation grids."""
@@ -1987,10 +2017,24 @@ class ForwardMarketConfiguration:
         """Horizon evaluation date."""
         ...
     def with_curve_override(self, market_index: _IndexLike, roll: str) -> ForwardMarketConfiguration:
-        """Return a copy selecting a curve convention for one index."""
+        """Return a copy selecting a curve convention for one index.
+
+Parameters
+----------
+market_index : MarketIndex, str, or mapping
+    Index receiving the override. Strings identify built-in rate indices;
+    parameterized indices use a typed MarketIndex or native tagged mapping.
+roll : str
+    ``ImpliedForward`` or ``ConstantTenor`` for this index.
+
+Returns
+-------
+ForwardMarketConfiguration
+    New assumptions with the override; the original remains unchanged.
+"""
         ...
     def __repr__(self) -> str: ...
     def keys(self) -> list[str]:
         """Keys of the serialized configuration; supports dict(obj)."""
         ...
-    def __getitem__(self, key: str) -> Any: ...
+    def __getitem__(self, key: str, /) -> Any: ...

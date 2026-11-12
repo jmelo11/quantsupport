@@ -432,10 +432,10 @@ impl<'a> MultiCurveBootstrapper<'a> {
             };
             let parent_labels = parent_curve.pillar_labels().map_or_else(
                 || {
-                    parent_curve
-                        .pillar_values()
-                        .map(|values| values.iter().map(|_| String::new()).collect())
-                        .unwrap_or_default()
+                    parent_curve.pillar_values().map_or_else(
+                        |_| Vec::new(),
+                        |values| values.iter().map(|_| String::new()).collect(),
+                    )
                 },
                 <[String]>::to_vec,
             );
@@ -447,10 +447,10 @@ impl<'a> MultiCurveBootstrapper<'a> {
                 parent_curve,
                 &parent_inputs,
             )? {
-                let parent_quote_values = parent_curve
-                    .pillar_values()
-                    .map(|values| values.iter().map(Scalar::value).collect())
-                    .unwrap_or_default();
+                let parent_quote_values = parent_curve.pillar_values().map_or_else(
+                    |_| Vec::new(),
+                    |values| values.iter().map(Scalar::value).collect(),
+                );
                 cross_deps.push(CrossCurveDep {
                     cross_df_sens,
                     parent_ift_sens: parent_ift,

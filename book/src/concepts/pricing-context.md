@@ -97,7 +97,8 @@ Rust pricers through `MarketDataProvider`. See the
 ## Generating a future market
 
 `PricingContext::advance_to` generates horizon quotes, spot observations and
-intervening fixing histories, then returns an ordinary independent context:
+intervening fixing histories, then returns an ordinary independent context.
+This fragment uses an existing source context, horizon, scenario, and trade:
 
 ```rust,ignore
 let assumptions = ForwardMarketConfiguration::new(horizon)
