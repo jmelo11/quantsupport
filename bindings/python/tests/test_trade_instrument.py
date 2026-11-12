@@ -178,6 +178,40 @@ class TradeInstrumentTests(unittest.TestCase):
                 with self.assertRaisesRegex(qs.QuantSupportError, "rate futures return quotes"):
                     context.evaluate(qs.Portfolio("PORTFOLIO", [deposit, futures]), requests)
 
+    def test_nested_portfolios_preserve_native_results_and_python_overrides(self):
+        class CustomTrade(qs.Trade):
+            pass
+
+        class OverridePricer:
+            def evaluate(self, trade, requests, context):
+                return qs.EvaluationResults(
+                    context.evaluation_date, "CUSTOM", price=99.0,
+                    sensitivities={"CUSTOM_RISK": 3.0}, cashflows=[
+                        dict(payment_date="2027-03-02", type="Redemption",
+                             amount=25.0, currency="USD"),
+                    ],
+                )
+
+        instrument = qs.FixedRateDeposit(
+            "DEPOSIT", "2026-03-02", "2027-03-02", 100_000, 0.04, "USD", "SOFR")
+        native = qs.Trade(instrument, "2026-02-24")
+        custom = CustomTrade(instrument, "2026-02-24")
+        nested = qs.Portfolio("NESTED", [native, custom])
+        portfolio = qs.Portfolio("BOOK", [nested, native, custom])
+        requests = ["Value", "Sensitivities", "Cashflows"]
+        context = self.make_context()
+        context.register_pricer(CustomTrade, OverridePricer())
+        with context:
+            single = context.evaluate(native, requests)
+            result = context.evaluate(portfolio, requests)
+        self.assertAlmostEqual(result.price, 2 * single.price + 198.0, places=7)
+        risk = dict(result.raw_sensitivities)
+        self.assertEqual(risk.pop("CUSTOM_RISK"), 6.0)
+        for pillar, exposure in single.raw_sensitivities:
+            self.assertAlmostEqual(risk[pillar], 2 * exposure, places=6)
+        self.assertAlmostEqual(result.cashflows.amount.sum(),
+                               2 * single.cashflows.amount.sum() + 50.0, places=7)
+
     def test_context_converts_members_to_base_currency_before_aggregation(self):
         date = "2026-02-24"
         curves = [
