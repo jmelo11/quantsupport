@@ -63,12 +63,12 @@ a `quantsupport` package is available; otherwise they report an explicit skip.
 Use a checkout-built binding rather than an older installed wheel for those
 checks. All temporary rendered test output stays under `docs/_build/`.
 
-Execute the main notebook sequence separately in an environment with the
+Execute the published notebook studies separately in an environment with the
 checkout-built package and `bindings/python/examples/requirements.txt`:
 
 ```sh
-python -m bindings.python.examples.run_notebooks
-python -m bindings.python.examples.run_notebooks --write
+python -m bindings.python.examples.run_notebooks bootstrap valuation volatilitysurface hullwhite sensitivity scripting cva
+python -m bindings.python.examples.run_notebooks bootstrap valuation volatilitysurface hullwhite sensitivity scripting cva --write
 ```
 
 The runner uses fresh kernels and verifies their actual interpreter, binding,
@@ -80,11 +80,11 @@ Without `--write`, sources remain unchanged;
 use `--write` only when intentionally refreshing publication outputs. The
 optional legacy sensitivity benchmark has additional external dependencies
 and sits outside this runner's default directory. Install its declared optional
-requirements and select all seventeen with:
+requirements and select all sixteen published studies with:
 
 ```sh
 python -m pip install "open-source-risk-engine==1.8.14.1" "curveengine @ git+https://github.com/jmelo11/curveengine.git@d7e000da626e08ff2be5d34561597065340b017e"
-python -m bindings.python.examples.run_notebooks --include-benchmark
+python -m bindings.python.examples.run_notebooks bootstrap valuation volatilitysurface hullwhite sensitivity scripting cva --include-benchmark
 ```
 
 The `benchmark` selector runs only that study. Its rendered page identifies

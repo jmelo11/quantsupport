@@ -399,18 +399,20 @@ class GuideAndStudyTests(unittest.TestCase):
         for code in guide_snippets().values():
             ast.parse(code)
 
-    def test_every_canonical_notebook_has_a_financial_topic_and_local_page(self):
+    def test_published_notebooks_have_a_financial_topic_and_local_page(self):
         entries = [entry for group in STUDIES.values() for entry in group]
-        self.assertEqual(len(STUDIES), 9)
-        self.assertEqual(len(entries), 17)
-        self.assertEqual(len({slug for slug, _ in entries}), 17)
+        self.assertEqual(len(STUDIES), 8)
+        self.assertEqual(len(entries), 16)
+        self.assertEqual(len({slug for slug, _ in entries}), 16)
         source_paths = {path for _, path in entries}
         actual = {path.relative_to(ROOT).as_posix()
                   for directory in ("bindings/python/examples", "examples")
                   for path in (ROOT / directory).rglob("*.ipynb")
                   if ".ipynb_checkpoints" not in path.parts}
-        self.assertEqual(source_paths, actual)
+        unpublished = {"bindings/python/examples/nii_forecasting/nii_forecast.ipynb"}
+        self.assertEqual(source_paths, actual - unpublished)
         index = (ROOT / "docs/python/studies/index.rst").read_text()
+        self.assertNotIn("notebooks/nii-forecast", index)
         for slug, source in entries:
             self.assertIn(f"notebooks/{slug}", index)
             self.assertTrue((ROOT / source).is_file())
@@ -593,7 +595,10 @@ class RenderedReferenceTests(unittest.TestCase):
                         destination = parsed.setdefault(target, Text(target.read_text()))
                         self.assertIn(unquote(link.fragment), destination.ids)
         studies = list((output / "python/studies/notebooks").glob("*.html"))
-        self.assertEqual(len(studies), 17)
+        self.assertEqual(len(studies), 16)
+        self.assertFalse((output / "python/studies/notebooks/nii-forecast.html").exists())
+        self.assertFalse((ROOT / "docs/python/studies/notebooks/nii-forecast.ipynb").exists())
+        self.assertEqual(list((output / "_downloads").rglob("nii-forecast.ipynb")), [])
         canonical = {slug: source for group in STUDIES.values() for slug, source in group}
         for path in studies:
             page = Text(path.read_text())

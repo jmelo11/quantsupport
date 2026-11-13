@@ -76,19 +76,6 @@ calibration or volatility sensitivities.
 
    notebooks/simulations
 
-Net interest income
--------------------
-
-Project accrued portfolio income as loans amortize and prepay, floating rates
-reset, deposits mature, and new production replaces runoff. Compare a running
-book with replacement and planned growth, including explicit funding and
-rate-scenario assumptions.
-
-.. toctree::
-   :maxdepth: 1
-
-   notebooks/nii-forecast
-
 Portfolio risk and benchmarking
 -----------------------------------
 
@@ -139,11 +126,11 @@ Reproduction
 ------------
 
 From the repository root, install the example dependencies into the environment
-containing the freshly built native package, then run:
+containing the freshly built native package, then select the published studies:
 
 .. code-block:: console
 
-   python -m bindings.python.examples.run_notebooks
+   python -m bindings.python.examples.run_notebooks bootstrap valuation volatilitysurface hullwhite sensitivity scripting cva
    python -m bindings.python.examples.run_notebooks valuation/swaps --write
 
 The runner starts a clean kernel for each selected study and uses that
@@ -154,13 +141,13 @@ rejecting stale bindings. Saved ``execution_environment`` metadata records
 sanitized Python/package versions and whether the kernel matched its caller;
 inspect this provenance rather than inferring identity from a launch command.
 The legacy external benchmark lives outside that runner's directory
-but is available through its ``benchmark`` selector. To validate all seventeen,
+but is available through its ``benchmark`` selector. To validate all sixteen published studies,
 install the benchmark's optional requirements and include it explicitly:
 
 .. code-block:: console
 
    python -m pip install "open-source-risk-engine==1.8.14.1" "curveengine @ git+https://github.com/jmelo11/curveengine.git@d7e000da626e08ff2be5d34561597065340b017e"
-   python -m bindings.python.examples.run_notebooks --include-benchmark
+   python -m bindings.python.examples.run_notebooks bootstrap valuation volatilitysurface hullwhite sensitivity scripting cva --include-benchmark
 
 Every rendered study links its canonical source
 and companion-file directory so a downloaded notebook is not mistaken for a
