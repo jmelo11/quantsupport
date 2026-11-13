@@ -47,5 +47,7 @@ jobs:
       run: cargo +stable test -p quantsupport --features jit --lib --verbose
     - name: Run Cranelift MC example
       run: cargo +stable run --release -p quantsupport --features jit --example compiled_mc
+    - name: Benchmark compiled AD against existing tape
+      run: cargo +stable run --release -p quantsupport --features jit --example compiled_ad_benchmark
     - name: Verify crate packaging
       run: cargo +stable publish -p quantsupport --dry-run
