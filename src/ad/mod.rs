@@ -7,6 +7,10 @@
 //! backward-mode adjoint propagation. Mixed mode is available as
 //! `Dual<FwdN>` (e.g. [`DualFwd`](crate::ad::dual::DualFwd)).
 
+/// Experimental record-once Cranelift numerical compiler and parallel executor.
+#[cfg(feature = "jit")]
+pub mod compiled;
+
 pub mod blocklist;
 pub mod constant;
 pub mod dual;

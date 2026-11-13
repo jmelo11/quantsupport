@@ -47,6 +47,10 @@ sobol_burley = { version = "0.5.0", default-features = false }
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 nalgebra = "0.34.1"
+cranelift-codegen = { version = "0.137.1", optional = true }
+cranelift-frontend = { version = "0.137.1", optional = true }
+cranelift-jit = { version = "0.137.1", optional = true }
+cranelift-module = { version = "0.137.1", optional = true }
 num-complex = "0.4"
 num-traits = "0.2"
 plotters = { version = "0.3", optional = true, default-features = false, features = ["bitmap_backend", "bitmap_encoder", "svg_backend", "ttf", "all_series", "all_elements", "full_palette"] }
@@ -57,6 +61,13 @@ serde_json = "1.0.149"
 [features]
 default = []
 plot = ["plotters"]
+# Experimental record-once Cranelift value/gradient compiler; no default behavior changes.
+jit = [
+    "dep:cranelift-codegen",
+    "dep:cranelift-frontend",
+    "dep:cranelift-jit",
+    "dep:cranelift-module",
+]
 
 [lints.rust]
 missing_docs = "forbid"
