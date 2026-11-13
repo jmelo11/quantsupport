@@ -22,6 +22,7 @@ PYTHON_SECTIONS = {
         "Currencies and Indices": "Currency MarketIndex",
         "Quotes, Fixings, and FX": "QuoteStore FixingStore FxStore Level",
         "Historical Snapshots": "SnapshotSelectionRule SnapshotSelector MarketSnapshot MarketSnapshotStore",
+        "Forward Markets": "ForwardMarketConfiguration",
         "Curve Construction": "CurveConfiguration CreditCurveConfiguration Interpolator",
         "Yield Curves": "DiscountCurve ZeroRateTermStructure TenorBasedZeroRateTermStructure",
         "Volatility": "VolatilitySurface VolatilityCube VolatilitySurfaceConfiguration VolatilityCubeConfiguration VolatilityType SmileType",
@@ -153,6 +154,8 @@ def excel_section(name):
         return "Pricing", "Bond Analytics"
     if name in ("QS.PRICE", "QS.FAIR.RATE", "QS.CASHFLOWS", "QS.SENSITIVITIES"):
         return "Pricing", "Valuation and Risk"
+    if name.startswith("QS.FORWARD.") or name == "QS.CONTEXT.ADVANCE":
+        return "Pricing", "Forward Markets"
     if name.startswith("QS.CONTEXT."):
         return "Pricing", "Contexts and Constructed Objects"
     if name.startswith(("QS.SNAPSHOT.", "QS.SNAPSHOTS.")):

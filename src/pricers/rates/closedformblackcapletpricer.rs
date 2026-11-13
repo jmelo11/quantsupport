@@ -6,6 +6,7 @@ use crate::{
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
+            fixingrequest::FixingRequest,
             fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
@@ -28,10 +29,8 @@ use std::collections::HashSet;
 /// not from a separately supplied coupon rate definition. Rates and strikes
 /// are decimals; Black volatility is annualized relative volatility.
 ///
-/// This implementation measures option time from the trade date to the
-/// accrual start under the index day counter. It is not automatically rolled
-/// to the market provider's evaluation date and does not settle a past fixing
-/// from the historical fixing store.
+/// Option time runs from the evaluation date to fixing. Historical observations
+/// determine fixed-but-unpaid payoffs; payments before evaluation are settled.
 ///
 /// The effective strike is resolved from the instrument's [`Strike`] before
 /// querying the volatility surface.
@@ -121,31 +120,48 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for ClosedFormBlackCaple
         let end_date = caplet.end_accrual_date();
         let payment_date = caplet.payment_date();
         let rate_def = index.rate_index_details()?.rate_definition();
+        let evaluation_date = state
+            .get_discount_curve_element(&index)?
+            .curve()
+            .reference_date();
         let yf = caplet
             .day_counter()
             .unwrap_or_else(|| rate_def.day_counter())
             .year_fraction(start_date, end_date);
 
-        // Time to expiry: from trade date to fixing date
+        // Remaining option time from the market evaluation date
         let tau = rate_def
             .day_counter()
-            .year_fraction(trade.trade_date(), start_date);
+            .year_fraction(evaluation_date, fixing_date)
+            .max(0.0);
 
+        if payment_date < evaluation_date {
+            state.value = Some(DualFwd::zero());
+            return Ok(0.0);
+        }
         Tape::start_recording_fwd();
         Tape::set_mark_fwd();
 
         state.put_pillars_on_tape()?;
 
         // Forward rate using the conventions from the caplet's rate definition
-        let fwd: DualFwd = state
-            .get_discount_curve_element(&index)?
-            .curve()
-            .forward_rate(
-                start_date,
-                end_date,
-                rate_def.compounding(),
-                rate_def.frequency(),
-            )?;
+        let fwd: DualFwd = if fixing_date < evaluation_date
+            && state
+                .get_market_data_reponse()
+                .is_some_and(MarketData::anchor_fixings)
+        {
+            DualFwd::from(state.get_fixing(&index, fixing_date)?)
+        } else {
+            state
+                .get_discount_curve_element(&index)?
+                .curve()
+                .forward_rate(
+                    start_date,
+                    end_date,
+                    rate_def.compounding(),
+                    rate_def.frequency(),
+                )?
+        };
 
         // Resolve effective strike from the instrument's strike specification
         let effective_strike = match caplet.strike() {
@@ -160,14 +176,26 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for ClosedFormBlackCaple
             .curve()
             .discount_factor(payment_date)?;
 
-        let vol = state
-            .get_volatility_surface_element(&index)?
-            .surface()
-            .volatility_from_date(fixing_date, effective_strike)?;
+        let vol = if tau <= 0.0 {
+            DualFwd::zero()
+        } else {
+            state
+                .get_volatility_surface_element(&index)?
+                .surface()
+                .volatility_from_date(fixing_date, effective_strike)?
+        };
 
-        let undiscounted = match caplet.payoff_type() {
-            CapletFloorletType::Caplet => black_call_ad(fwd, effective_strike, vol, tau)?,
-            CapletFloorletType::Floorlet => black_put_ad(fwd, effective_strike, vol, tau)?,
+        let undiscounted = if tau <= 0.0 || vol.value().abs() < f64::EPSILON {
+            let payoff: DualFwd = match caplet.payoff_type() {
+                CapletFloorletType::Caplet => (fwd - effective_strike).into(),
+                CapletFloorletType::Floorlet => (DualFwd::from(effective_strike) - fwd).into(),
+            };
+            payoff.max(DualFwd::zero())
+        } else {
+            match caplet.payoff_type() {
+                CapletFloorletType::Caplet => black_call_ad(fwd, effective_strike, vol, tau)?,
+                CapletFloorletType::Floorlet => black_put_ad(fwd, effective_strike, vol, tau)?,
+            }
         };
 
         let value: DualFwd = (df_pay * undiscounted * yf * trade.notional()).into();
@@ -279,10 +307,28 @@ impl Pricer for ClosedFormBlackCapletPricer {
         let eval_date = ctx.evaluation_date();
         let caplet = trade.instrument();
         let identifier = caplet.identifier();
+        if caplet.payment_date() < eval_date {
+            return Ok(EvaluationResults::new(eval_date, identifier)
+                .with_price(0.0)
+                .with_sensitivities(SensitivityMap::default()));
+        }
 
         let md_request = self
             .market_data_request(trade)
-            .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?;
+            .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?
+            .with_fixings_request(
+                if ctx.anchor_fixings()
+                    && caplet.fixing_date() < eval_date
+                    && caplet.payment_date() >= eval_date
+                {
+                    vec![FixingRequest::new(
+                        caplet.market_index(),
+                        caplet.fixing_date(),
+                    )]
+                } else {
+                    Vec::new()
+                },
+            );
 
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = BlackCapletState {

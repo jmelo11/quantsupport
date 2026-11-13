@@ -3,7 +3,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    core::{pricerconfiguration::PricerConfiguration, pricingcontext::PricingContext},
+    core::{
+        forwardmarket::configuration::MarketAdvancementDetails,
+        pricerconfiguration::PricerConfiguration, pricingcontext::PricingContext,
+    },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     models::modelconfiguration::SimulationConfiguration,
@@ -34,6 +37,8 @@ use crate::{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MarketSnapshot {
     timestamp: DateTime,
+    #[serde(default)]
+    market_advancement_details: Option<MarketAdvancementDetails>,
     quotes: QuoteStore,
     #[serde(default)]
     fx: Vec<FxRateRecord>,
@@ -41,6 +46,8 @@ pub struct MarketSnapshot {
     curves: Vec<CurveConfiguration>,
     #[serde(default)]
     credit_curves: Vec<CreditCurveConfiguration>,
+    #[serde(default)]
+    dividend_curves: Vec<CurveConfiguration>,
     #[serde(default)]
     volatility_surfaces: Vec<VolatilitySurfaceConfiguration>,
     #[serde(default)]
@@ -69,9 +76,11 @@ impl MarketSnapshot {
         }
         Ok(Self {
             timestamp,
+            market_advancement_details: context.market_advancement_details().cloned(),
             quotes: context.quote_store().clone(),
             fx: context.fx_store().records(),
             curves: context.curve_configurations().clone(),
+            dividend_curves: context.dividend_curve_configurations().clone(),
             credit_curves: context.credit_curve_configurations().clone(),
             volatility_surfaces: context.volatility_surface_configurations().clone(),
             volatility_cubes: context.volatility_cube_configurations().clone(),
@@ -101,12 +110,13 @@ impl MarketSnapshot {
     /// historical fixing dataset if revisions or publication times matter.
     #[must_use]
     pub fn pricing_context(&self, fixings: FixingStore, level: Level) -> PricingContext {
-        PricingContext::new()
+        let context = PricingContext::new()
             .with_quote_store(self.quotes.clone())
             .with_quote_level(level)
             .with_fx_store(FxStore::from_records(self.fx.clone()))
             .with_fixing_store(fixings)
             .with_curve_configurations(self.curves.clone())
+            .with_dividend_curve_configurations(self.dividend_curves.clone())
             .with_credit_curve_configurations(self.credit_curves.clone())
             .with_volatility_surface_configurations(self.volatility_surfaces.clone())
             .with_volatility_cube_configurations(self.volatility_cubes.clone())
@@ -114,6 +124,10 @@ impl MarketSnapshot {
             .with_pricer_configurations(self.pricers.clone())
             .with_base_currency(self.base_currency)
             .with_base_index(self.base_index.clone())
-            .with_snapshot_timestamp(self.timestamp)
+            .with_snapshot_timestamp(self.timestamp);
+        match &self.market_advancement_details {
+            Some(details) => context.with_market_advancement_details(details.clone()),
+            None => context,
+        }
     }
 }

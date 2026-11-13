@@ -30,7 +30,7 @@ Explicit zero curves accept separate ordered pillar and rate arrays:
 .. code-block:: text
 
    =QS.CONTEXT.ADD.ZERO.CURVE(B2,"SOFR",A30:A34,F30:F34,"Actual360","Linear",TRUE,"Continuous","Annual")
-   =QS.CONTEXT.ADD.COMPOSITE.CURVE(B2,"FUNDING","SOFR","FUNDINGSPREAD")
+   =QS.CONTEXT.ADD.COMPOSITE.CURVE(B2,"OTHER:FUNDING","SOFR","OTHER:FUNDINGSPREAD")
 
 Pillars can be ISO date text or tenors such as 0D, 1Y and 10Y. Rates are annual
 decimals under the specified compounding and frequency. The zero curve is a
@@ -51,7 +51,7 @@ Fixings, FX, credit and volatility
 
    =QS.CONTEXT.ADD.FIXINGS(B2,A40:A50,F40:F50,J40:J50)
    =QS.CONTEXT.ADD.FX(B2,A60:A65,F60:F65,J60:J65)
-   =QS.CONTEXT.ADD.CREDIT.CURVE(B2,"Credit:BORROWER","USD","SOFR",0.4,A70:A75,F70:F75)
+   =QS.CONTEXT.ADD.CREDIT.CURVE(B2,"CREDIT:BORROWER","USD","SOFR",0.4,A70:A75,F70:F75)
    =QS.CONTEXT.ADD.VOL.SURFACE(B2,"SOFR","Black","Strike",A80:A90,F80:F90)
    =QS.CONTEXT.ADD.VOL.CUBE(B2,"SOFR","Black","Strike",A100:A110,F100:F110)
 
@@ -84,7 +84,7 @@ trade shortcuts have been removed.
 
 The native FX carry convention depends on the selected pricer. FX outrights are
 quote currency per base unit; quote points are raw forward-minus-spot amounts,
-not automatically pip-scaled. Equity indices use identifiers such as Equity:SPX.
+not automatically pip-scaled. Equity indices use identifiers such as EQ:SPX.
 Futures contract size is currency per price point, not per basis point.
 
 Relative dates and pending trades

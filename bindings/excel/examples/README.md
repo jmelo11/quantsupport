@@ -39,7 +39,7 @@ Load the matching `quantsupport.xll` and `QuantSupport.Ribbon64.xll` in **64-bit
 
 Start with **Context-first pricing** for the shorter API. Its additions all reference the same root; the engine commits the owned additions after the definition pass. Every study now creates its market through a context and independent additions. The detailed studies use the library's explicit **instrument → trade → discount policy → pricer → evaluation → result** objects. FUNDING is an ordinary composite curve selected by a discount policy. Coupon schedules use independent period, rate and index arrays. Contract settings use named QS.LOAN.SETTINGS arguments.
 
-The swap study keeps USD/SOFR and EUR/ESTR bootstrap configurations in separate contexts. Bootstrapping EUR OIS inside a USD collateral context would require a `Collateral:EUR/USD` curve calibrated from additional market data. The ESTR comparison context has no role in the USD swap's valuation.
+The swap study keeps USD/SOFR and EUR/ESTR bootstrap configurations in separate contexts. Bootstrapping EUR OIS inside a USD collateral context would require a `COLL:EUR/USD` curve calibrated from additional market data. The ESTR comparison context has no role in the USD swap's valuation.
 
 Loan fair-rate columns correspond to zero-based coupon segments. Each `QS.REQUEST.FAIR.RATE(index)` evaluation returns one scalar. A mixed or stepped solve fixes earlier segments before solving the requested segment. Empty segment columns mean that segment does not exist; bounded floating coupons have no fair-rate solve.
 

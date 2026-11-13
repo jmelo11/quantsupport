@@ -338,6 +338,6 @@ In Rust, `Scenario::new(vec![Shock::new(target, value, ScenarioType::Absolute)])
 creates the same combination. `scenario.apply(&context)?` returns a borrowed
 `MarketDataProvider` accepted by pricers and `Evaluator`; the context stays unchanged.
 Funding-spread sensitivities use the original zero-rate quote identifiers
-`ZeroRate_EUR_FUNDINGSPREAD_<tenor>`. The notebook isolates those derivatives by funding tenor,
+`ZeroRate_EUR_OTHER:FUNDINGSPREAD_<tenor>`. The notebook isolates those derivatives by funding tenor,
 reports EUR changes for +1 bp, and compares the parallel funding exposure with
 fully repriced funding stress.

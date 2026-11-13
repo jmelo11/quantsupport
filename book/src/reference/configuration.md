@@ -50,7 +50,7 @@ discount factors directly. All numeric observations belong in the quote store:
     "market_index": {"Other": "FUNDINGSPREAD"},
     "day_counter": "Actual360",
     "interpolator": "Linear",
-    "quotes": ["ZeroRate_EUR_FUNDINGSPREAD_0D", "ZeroRate_EUR_FUNDINGSPREAD_1Y", "ZeroRate_EUR_FUNDINGSPREAD_5Y"]
+    "quotes": ["ZeroRate_EUR_OTHER:FUNDINGSPREAD_0D", "ZeroRate_EUR_OTHER:FUNDINGSPREAD_1Y", "ZeroRate_EUR_OTHER:FUNDINGSPREAD_5Y"]
   },
   {
     "market_index": {"Other": "COSTOFFUNDS"},

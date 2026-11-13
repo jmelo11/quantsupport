@@ -330,7 +330,7 @@ fn main() -> ExampleResult<()> {
         .iter()
         .zip([0.005, 0.006, 0.008, 0.01, 0.012, 0.013, 0.0135])
     {
-        let identifier = format!("ZeroRate_EUR_FUNDINGSPREAD_{tenor}");
+        let identifier = format!("ZeroRate_EUR_OTHER:FUNDINGSPREAD_{tenor}");
         quotes.add_quote(Quote::new(identifier.parse()?, QuoteLevels::with_mid(rate)));
         identifiers.push(identifier);
     }
@@ -375,7 +375,7 @@ fn main() -> ExampleResult<()> {
     }
     let scenario = Scenario::new(vec![
         Shock::new("EURIBOR12m", 0.01, ScenarioType::Absolute),
-        Shock::new("FUNDINGSPREAD", 0.005, ScenarioType::Absolute),
+        Shock::new("OTHER:FUNDINGSPREAD", 0.005, ScenarioType::Absolute),
     ]);
     let stressed_market = scenario.apply(&funding_context)?;
     let stressed = funding_pricer.evaluate(&trade, &[Request::Value], &stressed_market)?;

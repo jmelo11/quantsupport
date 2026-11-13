@@ -21,7 +21,7 @@ use crate::{
         bootstrapping::creditcurveconfiguration::CreditCurveConfiguration,
         yieldtermstructure::{
             discounttermstructure::DiscountTermStructure,
-            interestratestermstructure::InterestRatesTermStructure,
+            interestratestermstructure::InterestRatesTermStructure, primalcurve::PrimalCurve,
         },
     },
     time::{date::Date, daycounter::DayCounter, enums::Frequency, schedule::MakeSchedule},
@@ -83,7 +83,8 @@ impl CreditCurveBootstrapper {
                 spec.market_index()
             ))
         })?;
-        let discount = discount_element.to_f64_term_structure(spec.day_counter())?;
+        let discount_curve = discount_element.curve();
+        let discount = PrimalCurve::new(&*discount_curve);
 
         // Keep each quote's premium day count separate from survival-curve time.
         let mut pillars: Vec<(Date, f64, String, DayCounter)> =
@@ -181,7 +182,7 @@ impl CreditCurveBootstrapper {
 
 /// Shared data for stripping the hazards of one credit curve.
 struct StripContext<'a> {
-    discount: &'a DiscountTermStructure<f64>,
+    discount: &'a dyn InterestRatesTermStructure<f64>,
     ref_date: Date,
     day_counter: DayCounter,
     frequency: Frequency,

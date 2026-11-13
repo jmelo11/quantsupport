@@ -1,5 +1,7 @@
 //! Typed worksheet values shared by range readers and portable input validation.
 
+use quantsupport::indices::marketindex::MarketIndex;
+
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub enum Cell {
     Blank,
@@ -107,47 +109,18 @@ pub fn rows<'a>(table: &'a Table, columns: usize, name: &str) -> Result<Vec<&'a 
 }
 
 /// Canonical worksheet index text, including parameterized native index variants.
-pub fn market_index(value: &str) -> Result<quantsupport::prelude::MarketIndex, String> {
-    use quantsupport::prelude::{Currency, FxPair, MarketIndex};
-    let value = value.trim();
-    let currency = |text: &str| {
-        text.trim()
-            .parse::<Currency>()
-            .map_err(|error| error.to_string())
-    };
-    for (prefix, equity) in [("Equity:", true), ("Credit:", false)] {
-        if let Some(name) = value.strip_prefix(prefix) {
-            return Ok(if equity {
-                MarketIndex::Equity(name.to_string())
-            } else {
-                MarketIndex::Credit(name.to_string())
-            });
-        }
-    }
-    if let Some(pair) = value.strip_prefix("FX:") {
-        let (base, quote) = pair
-            .split_once('/')
-            .ok_or_else(|| format!("invalid FX market index '{value}'"))?;
-        return FxPair::new(currency(base)?, currency(quote)?)
-            .map(MarketIndex::FxPair)
-            .map_err(|error| error.to_string());
-    }
-    if let Some(pair) = value.strip_prefix("Collateral:") {
-        let (base, collateral) = pair
-            .split_once('/')
-            .ok_or_else(|| format!("invalid collateral market index '{value}'"))?;
-        return Ok(MarketIndex::Collateral(
-            currency(base)?,
-            currency(collateral)?,
-        ));
-    }
-    Ok(value.parse().unwrap_or_else(|never| match never {}))
+pub fn market_index(value: &str) -> Result<MarketIndex, String> {
+    value
+        .trim()
+        .parse::<MarketIndex>()
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
 mod array_tests {
     use super::*;
     use crate::runtime::{loan_inputs, market_inputs, pricing};
+    use quantsupport::core::collateral::DiscountPolicy;
     use quantsupport::prelude::{Currency, Date, Level, MarketIndex};
 
     fn text(value: &str) -> Cell {
@@ -155,6 +128,21 @@ mod array_tests {
     }
     fn column(values: &[Cell]) -> Table {
         values.iter().cloned().map(|value| vec![value]).collect()
+    }
+
+    #[test]
+    fn worksheet_indices_use_the_native_tagged_grammar() {
+        assert_eq!(
+            market_index("OTHER:Funding").unwrap(),
+            MarketIndex::Other("Funding".into())
+        );
+        assert_eq!(
+            market_index("COLL:EUR/USD").unwrap(),
+            MarketIndex::Collateral(Currency::EUR, Currency::USD)
+        );
+        assert!(market_index("Funding").is_err());
+        assert!(market_index("FxPair(EURUSD)").is_err());
+        assert!(market_index("FX:EUR/USD").is_err());
     }
 
     #[test]
@@ -248,7 +236,6 @@ mod array_tests {
             false,
         )
         .unwrap();
-        use quantsupport::prelude::DiscountPolicy;
         assert_eq!(policy.discount_indices().len(), 2);
     }
 

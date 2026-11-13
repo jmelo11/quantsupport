@@ -5,6 +5,7 @@
 
 use pyo3::prelude::*;
 use quantsupport::prelude::EvaluationResults as QsEvaluationResults;
+use quantsupport::utils::tools::sort_sensitivities_by_tenor;
 use serde::Deserialize;
 
 use crate::common::conversion::{dataframe, datetime_column, extract_date, from_py};
@@ -313,7 +314,7 @@ impl EvaluationResults {
     }
 
     /// Sensitivities as a DataFrame with columns pillar/value (duplicated
-    /// pillars summed, sorted by pillar), if `"Sensitivities"` was requested.
+    /// pillars summed, sorted by tenor/date), if `"Sensitivities"` was requested.
     #[getter]
     fn sensitivities<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
         let Some(pairs) = &self.sensitivities else {
@@ -324,11 +325,24 @@ impl EvaluationResults {
             *map.entry(k.clone()).or_insert(0.0) += v;
         }
         let (pillars, values): (Vec<String>, Vec<f64>) = map.into_iter().unzip();
+        let risk = quantsupport::prelude::SensitivityMap::default()
+            .with_instrument_keys(&pillars)
+            .with_exposure(&values);
+        let risk = sort_sensitivities_by_tenor(&risk, self.evaluation_date);
         Ok(Some(dataframe(
             py,
             &[
-                ("pillar", pillars.into_pyobject(py)?.into_any()),
-                ("value", values.into_pyobject(py)?.into_any()),
+                (
+                    "pillar",
+                    risk.instrument_keys()
+                        .to_vec()
+                        .into_pyobject(py)?
+                        .into_any(),
+                ),
+                (
+                    "value",
+                    risk.exposure().to_vec().into_pyobject(py)?.into_any(),
+                ),
             ],
         )?))
     }

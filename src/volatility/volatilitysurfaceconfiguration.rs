@@ -31,6 +31,13 @@ const fn default_smile_type() -> SmileType {
 }
 
 impl VolatilitySurfaceConfiguration {
+    /// Replaces the quote identifiers while retaining construction conventions.
+    #[must_use]
+    pub fn with_quotes(mut self, quotes: Vec<String>) -> Self {
+        self.quotes = quotes;
+        self
+    }
+
     /// Creates a new surface configuration.
     #[must_use]
     pub const fn new(

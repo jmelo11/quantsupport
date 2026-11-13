@@ -27,7 +27,7 @@ use crate::{
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     scripting::{
-        data::simulationdata::{Scenario, SimulationData},
+        data::simulationdata::{SimulationData, SimulationPath},
         nodes::{event::EventStream, traits::NodeVisitor},
         request::SimulationDataRequest,
         visitors::{
@@ -434,7 +434,7 @@ impl ScriptEngine {
                     error.context(format!("generating script pilot path {path_index}"))
                 })?;
                 let scenario = self.scenario_from_path(&path, &numeraires, compact_responses)?;
-                let values = self.evaluate_scenario(&scenario)?;
+                let values = self.evaluate_path(&scenario)?;
                 let result = result_variable
                     .and_then(|name| values.get(name))
                     .and_then(|value| match value {
@@ -460,7 +460,7 @@ impl ScriptEngine {
                 .map_err(|error| error.context(format!("generating script path {path_index}")))?;
             let scenario = self.scenario_from_path(&path, &numeraires, compact_responses)?;
             let values =
-                self.evaluate_scenario_collecting(&scenario, &mut cashflows, 1.0 / n_scenarios)?;
+                self.evaluate_path_collecting(&scenario, &mut cashflows, 1.0 / n_scenarios)?;
             let adjusted_result: Option<DualFwd> = if use_controls {
                 let controls = self.path_controls(&path, &numeraires, compact_responses)?;
                 result_variable
@@ -676,7 +676,7 @@ impl ScriptEngine {
                     error.context(format!("generating script pilot path {path_index}"))
                 })?;
                 let scenario = self.scenario_from_path(&path, &numeraires, compact_responses)?;
-                let values = self.evaluate_scenario(&scenario)?;
+                let values = self.evaluate_path(&scenario)?;
                 let result = result_variable
                     .and_then(|name| values.get(name))
                     .and_then(|value| match value {
@@ -723,11 +723,8 @@ impl ScriptEngine {
                     error.context(format!("generating script path {path_index}"))
                 })?;
                 let scenario = self.scenario_from_path(&path, numeraires, compact_responses)?;
-                let values = self.evaluate_scenario_collecting(
-                    &scenario,
-                    &mut cashflows,
-                    1.0 / n_scenarios,
-                )?;
+                let values =
+                    self.evaluate_path_collecting(&scenario, &mut cashflows, 1.0 / n_scenarios)?;
                 let adjusted_result = if use_controls {
                     let controls = self.path_controls(&path, numeraires, compact_responses)?;
                     result_variable
@@ -782,31 +779,31 @@ impl ScriptEngine {
     }
 
     /// Executes the script with the evaluator suited to its conditional nesting depth.
-    fn evaluate_scenario(&self, scenario: &Scenario) -> Result<HashMap<String, Value>> {
+    fn evaluate_path(&self, scenario: &SimulationPath) -> Result<HashMap<String, Value>> {
         if self.max_nested_ifs == 0 {
             SingleScenarioEvaluator::new()
                 .with_variables(self.n_variables)
-                .with_scenario(scenario)
+                .with_simulation_path(scenario)
                 .visit_events(&self.events, &self.variable_indexes)
         } else {
             FuzzyEvaluator::new(self.n_variables, self.max_nested_ifs)
-                .with_scenario(scenario)
+                .with_simulation_path(scenario)
                 .visit_events(&self.events, &self.variable_indexes)
         }
     }
 
     /// Evaluates one scenario while accumulating its payments into `sink`,
     /// each weighted by `weight` (one over the total path count).
-    fn evaluate_scenario_collecting(
+    fn evaluate_path_collecting(
         &self,
-        scenario: &Scenario,
+        scenario: &SimulationPath,
         sink: &mut Vec<ExpectedCashflow>,
         weight: f64,
     ) -> Result<HashMap<String, Value>> {
         if self.max_nested_ifs == 0 {
             let evaluator = SingleScenarioEvaluator::new()
                 .with_variables(self.n_variables)
-                .with_scenario(scenario)
+                .with_simulation_path(scenario)
                 .with_cashflow_capture();
             let values = evaluator.visit_events(&self.events, &self.variable_indexes)?;
             accumulate_cashflows(
@@ -818,7 +815,7 @@ impl ScriptEngine {
             Ok(values)
         } else {
             let evaluator = FuzzyEvaluator::new(self.n_variables, self.max_nested_ifs)
-                .with_scenario(scenario)
+                .with_simulation_path(scenario)
                 .with_cashflow_capture();
             let values = evaluator.visit_events(&self.events, &self.variable_indexes)?;
             accumulate_cashflows(
@@ -919,7 +916,7 @@ impl ScriptEngine {
     pub fn generate_scenarios(
         &self,
         model: &mut dyn MarketModel<DualFwd>,
-    ) -> Result<Vec<Scenario>> {
+    ) -> Result<Vec<SimulationPath>> {
         if model.n_paths() == 0 {
             return Err(QSError::InvalidValueErr(
                 "market model exposes no paths".to_string(),
@@ -952,7 +949,7 @@ impl ScriptEngine {
         if self.max_nested_ifs == 0 {
             let evaluator = SingleScenarioEvaluator::new()
                 .with_variables(self.n_variables)
-                .with_scenario(&scenario)
+                .with_simulation_path(&scenario)
                 .with_valuation_date(valuation_date)
                 .with_payment_capture(payment_id);
             evaluator.visit_events(&self.events, &self.variable_indexes)?;
@@ -961,7 +958,7 @@ impl ScriptEngine {
                 .unwrap_or_else(DualFwd::zero))
         } else {
             let evaluator = FuzzyEvaluator::new(self.n_variables, self.max_nested_ifs)
-                .with_scenario(&scenario)
+                .with_simulation_path(&scenario)
                 .with_valuation_date(valuation_date)
                 .with_payment_capture(payment_id);
             evaluator.visit_events(&self.events, &self.variable_indexes)?;
@@ -1000,7 +997,7 @@ impl ScriptEngine {
         path: &PathScenario<DualFwd>,
         numeraires: &[DualFwd],
         compact_responses: bool,
-    ) -> Result<Scenario> {
+    ) -> Result<SimulationPath> {
         if path.len() != self.response_maps.len() {
             return Err(QSError::EvaluationErr(format!(
                 "model returned {} dates for {} scripted events",
@@ -1050,7 +1047,7 @@ impl ScriptEngine {
     fn scenario_from_responses(
         &self,
         responses: &[SimulationResponse<DualFwd>],
-    ) -> Result<Scenario> {
+    ) -> Result<SimulationPath> {
         self.response_maps
             .iter()
             .enumerate()
@@ -1357,7 +1354,7 @@ mod tests {
         ] {
             let engine = error_test_engine(source)?;
             let error = engine
-                .evaluate_scenario(&vec![SimulationData::default()])
+                .evaluate_path(&vec![SimulationData::default()])
                 .unwrap_err();
             assert!(matches!(error.root_cause(), QSError::NotFoundErr(_)));
             assert!(error.to_string().contains("spot at index 0"));
@@ -1366,9 +1363,11 @@ mod tests {
                 .contains("evaluating script event 0 dated 2025-01-01"));
             assert!(error.to_string().contains("0 spot observations"));
 
-            let error = engine.evaluate_scenario(&vec![]).unwrap_err();
+            let error = engine.evaluate_path(&vec![]).unwrap_err();
             assert!(matches!(error.root_cause(), QSError::NotFoundErr(_)));
-            assert!(error.to_string().contains("scenario contains 0 events"));
+            assert!(error
+                .to_string()
+                .contains("simulation path contains 0 events"));
         }
         Ok(())
     }

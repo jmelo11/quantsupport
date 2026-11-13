@@ -48,3 +48,6 @@ pub mod snapshotselector;
 pub mod trade;
 /// Visitor pattern module.
 pub mod visitable;
+
+/// Deterministic forward markets generated as ordinary pricing-context inputs.
+pub mod forwardmarket;

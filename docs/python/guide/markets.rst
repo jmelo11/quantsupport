@@ -1,6 +1,13 @@
 Constructing and selecting a market
 ===================================
 
+Named index strings use explicit colon tags: ``EQ:SPX``, ``FX:EURUSD``,
+``CREDIT:ACME``, ``COLL:EUR/USD``, and ``OTHER:MyCurve``. Built-in rate
+names such as ``SOFR`` remain case insensitive. Bare custom names and
+parenthesized named forms are rejected. Use these tagged names in quote
+identifiers, for example ``ZeroRate_USD_OTHER:MyCurve_1Y``. Python typed
+constructors and tagged dictionaries retain their existing schemas.
+
 From observations to curves
 -------------------------------
 
@@ -302,3 +309,39 @@ the fixing set that was known at each observation instant.
 Continue with :doc:`valuation` to choose product-specific requests and models,
 or study the :doc:`curve notebook <../studies/notebooks/curves>` for a larger
 calibration investigation.
+
+Forward market contexts
+-----------------------
+
+Generate a normal pricing context at a future date from today's constructed
+market and explicit advancement assumptions::
+
+    assumptions = qs.ForwardMarketConfiguration(
+        "2027-01-05", volatility_roll="ConstantTenor", fixing_roll="Project"
+    )
+    future = context.advance_to(assumptions)
+    with future:
+        result = future.evaluate(trade, requests=["Value", "Sensitivities"])
+
+The result owns generated quotes, forward FX spots and projected intervening
+fixings. Its evaluation date is the horizon. Configured curves, volatility grids,
+models and simulations use ordinary construction. An active source ``Scenario``
+is included in quote generation. Scenarios entered on ``future`` instead shock
+the horizon market.
+
+``curve_roll`` accepts ``ImpliedForward`` or ``ConstantTenor``. Volatility accepts
+``ConstantTenor`` or ``ForwardVariance``; forward variance is a deterministic
+smile-coordinate convention and rejects negative increments. ``fixing_roll``
+accepts ``Project`` or ``Preserve``. Full per-index overrides, dated-quote
+replacements and runtime export grids are available through ``from_dict()`` and
+``to_dict()``. ``future.market_advancement_details`` identifies the source and assumptions.
+
+Sensitivities refer to generated horizon inputs. To measure sensitivity to
+source inputs, shock the source and regenerate the forward context. Keep the
+forward fixing store alongside a serialized market snapshot for replay, using
+``future.fixings.to_dict()`` and ``qs.FixingStore.from_dict()``. Horizon spots
+advance even when intervening fixings use ``Preserve``.
+
+The context's optional ``dividend_curves`` input accepts direct curve specifications.
+``DividendDiscountFactor_USD_EQ:AAPL_1Y`` is a dividend discount-factor quote for
+an equity index; the distinct prefix separates it from financing discount factors.

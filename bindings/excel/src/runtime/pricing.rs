@@ -592,7 +592,7 @@ mod tests {
             .trade(date, Side::LongReceive, &PositionTerms::default())
             .unwrap();
         let risk_free = PricerObject::new("LoanPricer", Some(&policy("ESTR")), &vec![]).unwrap();
-        let funded = PricerObject::new("LoanPricer", Some(&policy("FUNDING")), &vec![]).unwrap();
+        let funded = PricerObject::new("LoanPricer", Some(&policy("OTHER:FUNDING")), &vec![]).unwrap();
         let first = risk_free
             .evaluate(
                 &trade,
@@ -643,7 +643,7 @@ mod tests {
             Some(&policy("ESTR")),
             &vec![vec![
                 Cell::Text("Discount index".into()),
-                Cell::Text("FUNDING".into())
+                Cell::Text("OTHER:FUNDING".into())
             ]]
         )
         .is_err());
@@ -721,7 +721,7 @@ mod tests {
         let collateral = fixed_income_policy(
             &vec![vec![
                 Cell::Text("EUR".into()),
-                Cell::Text("Collateral:EUR/USD".into()),
+                Cell::Text("COLL:EUR/USD".into()),
             ]],
             false,
         )

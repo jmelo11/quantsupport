@@ -3,6 +3,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::{
     core::{
         collateral::SingleCurveCSADiscountPolicy,
+        elements::curveelement::DividendCurveElement,
+        forwardmarket::configuration::MarketAdvancementDetails,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
             constructedelementstore::ConstructedElementStore,
@@ -62,6 +64,8 @@ pub struct PricingContext {
     fx_store: FxStore,
     /// Curve specifications for curve construction.    
     curve_configurations: Vec<CurveConfiguration>,
+    /// Direct quote-based dividend curve specifications.
+    dividend_curve_configurations: Vec<CurveConfiguration>,
     /// Credit (survival) curve specifications.
     credit_curve_configurations: Vec<CreditCurveConfiguration>,
     /// Volatility surface specifications.
@@ -80,6 +84,7 @@ pub struct PricingContext {
     supplied_elements: ConstructedElementStore,
     /// Selected market observation instant, cleared when market inputs change.
     snapshot_timestamp: Option<DateTime>,
+    market_advancement_details: Option<MarketAdvancementDetails>,
     /// Base collateral currency used for curve construction and default discounting; defaults to USD.
     base_currency: Currency,
     /// Base collateral remuneration index used with the base currency; defaults to SOFR.
@@ -99,6 +104,7 @@ impl PricingContext {
     /// Clears snapshot identity and cached market data while retaining supplied elements.
     fn invalidate_market(&mut self) {
         self.snapshot_timestamp = None;
+        self.market_advancement_details = None;
         self.request_cache = MarketCache::default();
         self.constructed_elements = self.supplied_elements.clone();
     }
@@ -127,6 +133,7 @@ impl PricingContext {
             fixing_store: FixingStore::default(),
             fx_store: FxStore::default(),
             curve_configurations: Vec::new(),
+            dividend_curve_configurations: Vec::new(),
             credit_curve_configurations: Vec::new(),
             volatility_surface_configurations: Vec::new(),
             volatility_cube_configurations: Vec::new(),
@@ -136,6 +143,7 @@ impl PricingContext {
             request_cache: MarketCache::default(),
             supplied_elements: ConstructedElementStore::default(),
             snapshot_timestamp: None,
+            market_advancement_details: None,
             base_currency: Currency::USD, // Default base currency
             base_index: MarketIndex::SOFR,
             anchor_fixings: true,
@@ -174,6 +182,19 @@ impl PricingContext {
     #[must_use]
     pub const fn with_snapshot_timestamp(mut self, timestamp: DateTime) -> Self {
         self.snapshot_timestamp = Some(timestamp);
+        self
+    }
+
+    /// Describes the source observations and assumptions of a generated forward market.
+    #[must_use]
+    pub const fn market_advancement_details(&self) -> Option<&MarketAdvancementDetails> {
+        self.market_advancement_details.as_ref()
+    }
+
+    /// Records the source date, source scenario, and advancement assumptions.
+    #[must_use]
+    pub fn with_market_advancement_details(mut self, details: MarketAdvancementDetails) -> Self {
+        self.market_advancement_details = Some(details);
         self
     }
 
@@ -268,6 +289,20 @@ impl PricingContext {
         self.supplied_elements = constructed_elements.clone();
         self.constructed_elements = constructed_elements;
         self
+    }
+
+    /// Sets direct quote-based dividend curve configurations.
+    #[must_use]
+    pub fn with_dividend_curve_configurations(mut self, configs: Vec<CurveConfiguration>) -> Self {
+        self.invalidate_market();
+        self.dividend_curve_configurations = configs;
+        self
+    }
+
+    /// Returns dividend curve construction inputs.
+    #[must_use]
+    pub const fn dividend_curve_configurations(&self) -> &Vec<CurveConfiguration> {
+        &self.dividend_curve_configurations
     }
 
     /// Sets the curve configurations for bootstrapping.
@@ -438,6 +473,12 @@ impl PricingContext {
                 .insert(index, curve);
         }
 
+        // Dividend curves use direct zero-rate or discount-factor quotes.
+        let dividend_curves = self.build_dividend_curves(self.quote_store())?;
+        self.constructed_elements
+            .dividend_curves_mut()
+            .extend(dividend_curves);
+
         // Bootstrap credit (survival) curves. Runs after the discount curves
         // since CDS pillar instruments are discounted with them.
         if !self.credit_curve_configurations.is_empty() {
@@ -508,6 +549,35 @@ impl PricingContext {
             .seed(self.constructed_elements.clone(), snapshots);
         Ok(())
     }
+    /// Builds configured dividend curves from selected market quotes.
+    ///
+    /// # Errors
+    /// Returns an error when quotes or construction dependencies are missing.
+    pub fn build_dividend_curves(
+        &self,
+        selector: &impl QuoteSelector,
+    ) -> Result<HashMap<MarketIndex, crate::core::elements::curveelement::DividendCurveElement>>
+    {
+        let policy = BootstrapDiscountPolicy::new(self.base_index.clone(), self.base_currency);
+        let curves =
+            MultiCurveBootstrapper::new(self.dividend_curve_configurations.clone(), policy)
+                .with_market_stores(&self.fx_store, &self.fixing_store)
+                .bootstrap(selector, self.quote_level)?;
+        curves
+            .into_iter()
+            .map(|(index, element)| {
+                let curve = element.curve().clone_curve()?;
+                Ok((
+                    index.clone(),
+                    DividendCurveElement::new(
+                        index,
+                        std::rc::Rc::new(std::cell::RefCell::new(curve)),
+                    ),
+                ))
+            })
+            .collect()
+    }
+
     /// Validates pricer compatibility and unique market configuration indices.
     ///
     /// # Errors
@@ -536,6 +606,13 @@ impl PricingContext {
                     .iter()
                     .map(CurveConfiguration::market_index)
                     .collect::<Vec<_>>(),
+            ),
+            (
+                "dividend curve",
+                self.dividend_curve_configurations
+                    .iter()
+                    .map(CurveConfiguration::market_index)
+                    .collect(),
             ),
             (
                 "credit curve",
@@ -1022,7 +1099,7 @@ mod tests {
                 .iter()
                 .zip(rates)
             {
-                let identifier = format!("ZeroRate_USD_{index}_{date}");
+                let identifier = format!("ZeroRate_USD_OTHER:{index}_{date}");
                 quotes.add_quote(Quote::new(identifier.parse()?, QuoteLevels::with_mid(rate)));
                 identifiers.push(identifier);
             }
@@ -1063,8 +1140,8 @@ mod tests {
         };
         let base = factor(&context)?;
         let scenario = Scenario::new(vec![
-            Shock::new("SPREAD_2028-02-24", 0.01, ScenarioType::Absolute),
-            Shock::new("SPREAD", 0.10, ScenarioType::Relative),
+            Shock::new("OTHER:SPREAD_2028-02-24", 0.01, ScenarioType::Absolute),
+            Shock::new("OTHER:SPREAD", 0.10, ScenarioType::Relative),
         ]);
         let market = scenario.apply(&context)?;
         let tau = DayCounter::Actual360.year_fraction(reference, date);

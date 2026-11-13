@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     indices::marketindex::MarketIndex,
@@ -12,13 +12,16 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
+type ObservationMap = HashMap<MarketIndex, BTreeMap<Date, f64>>;
+
 /// Fixing store for market indices, providing access to historical fixings and the ability to fill missing
 /// fixings using interpolation.
 ///
 /// Clones share immutable history; updates copy shared data before changing it.
 #[derive(Serialize, Debug, Default, Deserialize, Clone)]
 pub struct FixingStore {
-    values: Arc<HashMap<MarketIndex, BTreeMap<Date, f64>>>,
+    #[serde(with = "ObservationMapSerde")]
+    values: Arc<ObservationMap>,
 }
 
 impl FixingStore {
@@ -36,6 +39,31 @@ impl FixingStore {
     /// ## Errors
     /// Returns [`QSError`] if the fixing is unavailable for the requested date.
     pub fn fixing(&self, market_index: &MarketIndex, date: Date) -> Result<f64> {
+        if let MarketIndex::FxPair(pair) = market_index {
+            if self
+                .values
+                .get(market_index)
+                .and_then(|values| values.get(&date))
+                .is_none()
+            {
+                let records = self
+                    .values
+                    .iter()
+                    .filter_map(|(index, values)| match index {
+                        MarketIndex::FxPair(observed) => values.get(&date).map(|value| {
+                            crate::quotes::fxstore::FxRateRecord::new(
+                                observed.base(),
+                                observed.quote(),
+                                *value,
+                            )
+                        }),
+                        _ => None,
+                    });
+                return crate::quotes::fxstore::FxStore::from_records(records)
+                    .get_fx_rate(pair.base(), pair.quote())
+                    .map(|value| value.value());
+            }
+        }
         let fixing = self.fixings(market_index)?.get(&date).ok_or_else(|| {
             QSError::NotFoundErr(format!(
                 "Fixings of index {market_index} for date {date} not found in fixings data."
@@ -124,6 +152,7 @@ impl FixingStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::currencies::currency::Currency;
 
     #[test]
     fn clones_share_history_until_an_observation_changes() {
@@ -145,6 +174,39 @@ mod tests {
     }
 
     #[test]
+    fn named_observation_keys_round_trip_with_explicit_types() {
+        let date = Date::new(2026, 1, 15);
+        let mut original = FixingStore::default();
+        let indices = [
+            MarketIndex::Equity("SPX".into()),
+            MarketIndex::Credit("AcmeCorp".into()),
+            MarketIndex::Other("SOFR".into()),
+            MarketIndex::Other("MyCurve".into()),
+            MarketIndex::Collateral(Currency::EUR, Currency::USD),
+        ];
+        for index in &indices {
+            original.add_fixing(index, date, 0.04);
+        }
+        let value = serde_json::to_value(&original).unwrap();
+        assert!(value["values"].get("OTHER:SOFR").is_some());
+        let restored: FixingStore = serde_json::from_value(value).unwrap();
+        for index in indices {
+            assert_eq!(restored.fixing(&index, date).unwrap(), 0.04);
+        }
+    }
+
+    #[test]
+    fn observation_keys_reject_unstructured_or_malformed_indices() {
+        for index in ["MyCurve", "FX:BadPair", "CREDIT:", "OTHER:"] {
+            let value = serde_json::json!({"values": {index: {"2026-01-15": 0.04}}});
+            assert!(
+                serde_json::from_value::<FixingStore>(value).is_err(),
+                "{index}"
+            );
+        }
+    }
+
+    #[test]
     fn shared_history_preserves_json_and_interpolation_isolation() {
         let json = r#"{"values":{"SOFR":{"2026-01-15":0.04,"2026-01-17":0.06}}}"#;
         let original: FixingStore = serde_json::from_str(json).unwrap();
@@ -157,5 +219,41 @@ mod tests {
         let middle = Date::new(2026, 1, 16);
         assert!((filled.fixing(&MarketIndex::SOFR, middle).unwrap() - 0.05).abs() < 1e-12);
         assert!(original.fixing(&MarketIndex::SOFR, middle).is_err());
+    }
+}
+
+// JSON object keys cannot directly serialize parameterized enum variants.
+// Fieldless index keys retain their existing schema; tagged keys round-trip
+// equity, FX, collateral, credit and explicitly named custom indices.
+struct ObservationMapSerde;
+
+impl ObservationMapSerde {
+    fn serialize<S: Serializer>(
+        values: &Arc<ObservationMap>,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(values.len()))?;
+        for (index, observations) in values.iter() {
+            map.serialize_entry(&index.to_string(), observations)?;
+        }
+        map.end()
+    }
+
+    fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Arc<ObservationMap>, D::Error> {
+        let values = HashMap::<String, BTreeMap<Date, f64>>::deserialize(deserializer)?;
+        let mut result = ObservationMap::new();
+        for (key, observations) in values {
+            let index = key
+                .parse::<MarketIndex>()
+                .map_err(serde::de::Error::custom)?;
+            if result.insert(index, observations).is_some() {
+                return Err(serde::de::Error::custom(format!(
+                    "Duplicate fixing index {key}"
+                )));
+            }
+        }
+        Ok(Arc::new(result))
     }
 }

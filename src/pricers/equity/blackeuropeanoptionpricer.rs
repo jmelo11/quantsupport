@@ -42,7 +42,7 @@ impl PricerState for EquityOptionState {
 ///
 /// It calculates the option price and sensitivities based on the spot price,
 /// volatility surface, discount curve, and dividend curve obtained from the market data.
-/// Spot is observed on the trade date, and option time runs from trade date
+/// Spot is observed on the evaluation date, and option time runs from that date
 /// to expiry. A missing dividend curve means zero dividends. The surface key
 /// is `strike.resolve(0.0)`, whereas the payoff strike is resolved using the
 /// computed forward; these differ for ATM/relative strikes.
@@ -85,16 +85,19 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
             index.clone()
         };
 
-        // move to the instrument level
+        let evaluation_date = state
+            .get_discount_curve_element(&index)?
+            .curve()
+            .reference_date();
         let tau = option
             .day_counter()
-            .year_fraction(trade.trade_date(), option.expiry_date());
+            .year_fraction(evaluation_date, option.expiry_date());
 
         Tape::start_recording_fwd();
         Tape::set_mark_fwd();
 
         // get and put the spot in the tape
-        let spot = state.get_fixing(&index, trade.trade_date())?;
+        let spot = state.get_fixing(&index, evaluation_date)?;
         let mut spot_ad = DualFwd::new(spot);
         spot_ad.put_on_tape();
         state.spot = Some(spot_ad);
@@ -102,10 +105,14 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
         state.put_pillars_on_tape()?;
 
         let strike = option.strike();
-        let vol = state
-            .get_volatility_surface_element(&index)?
-            .surface()
-            .volatility_from_date(expiry, strike.resolve(0.0))?;
+        let vol = if tau <= 0.0 {
+            DualFwd::zero()
+        } else {
+            state
+                .get_volatility_surface_element(&index)?
+                .surface()
+                .volatility_from_date(expiry, strike.resolve(0.0))?
+        };
 
         // this should discount the underyling currency curve
         let df_r = state
@@ -121,13 +128,22 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
 
         let fwd: DualFwd = (spot_ad * df_q / df_r).into();
 
-        let undiscounted = BrownianMotion::<DualFwd>::closed_form_price(
-            fwd,
-            strike.resolve(fwd.value()),
-            vol,
-            tau,
-            matches!(option.option_type(), EuroOptionType::Call),
-        )?;
+        let undiscounted = if tau <= 0.0 || vol.value().abs() < f64::EPSILON {
+            let strike = strike.resolve(fwd.value());
+            let payoff: DualFwd = match option.option_type() {
+                EuroOptionType::Call => (fwd - strike).into(),
+                EuroOptionType::Put => (DualFwd::from(strike) - fwd).into(),
+            };
+            payoff.max(DualFwd::zero())
+        } else {
+            BrownianMotion::<DualFwd>::closed_form_price(
+                fwd,
+                strike.resolve(fwd.value()),
+                vol,
+                tau,
+                matches!(option.option_type(), EuroOptionType::Call),
+            )?
+        };
 
         let value: DualFwd = (df_r * undiscounted * trade.notional()).into();
         let source = Discountable::currency(option);
@@ -239,10 +255,19 @@ impl Pricer for BlackEuropeanOptionPricer {
         let eval_date = ctx.evaluation_date();
         let option = trade.instrument();
         let identifier = option.identifier();
+        if option.expiry_date() < eval_date {
+            return Ok(EvaluationResults::new(eval_date, identifier)
+                .with_price(0.0)
+                .with_sensitivities(SensitivityMap::default()));
+        }
 
         let md_request = self
             .market_data_request(trade)
-            .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?;
+            .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?
+            .with_fixings_request(vec![FixingRequest::new(
+                option.market_index().clone(),
+                eval_date,
+            )]);
 
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = EquityOptionState {
@@ -275,7 +300,7 @@ impl Pricer for BlackEuropeanOptionPricer {
             ConstructedElementRequest::DiscountCurve {
                 market_index: index.clone(),
             },
-            ConstructedElementRequest::DividendCurve {
+            ConstructedElementRequest::OptionalDividendCurve {
                 market_index: index.clone(),
             },
             ConstructedElementRequest::VolatilitySurface {

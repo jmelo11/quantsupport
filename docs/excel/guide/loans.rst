@@ -110,7 +110,7 @@ cell references so the formula remains readable.
        It does not set the coupon spread or forecast market rates.
    * - ``credit_index``
      - No borrower default
-     - Borrower survival curve, e.g. ``"Credit:BORROWER"``.
+     - Borrower survival curve, e.g. ``"CREDIT:BORROWER"``.
    * - ``recovery``
      - ``0.40``
      - Fraction of opening principal recovered on default; [0,1].
@@ -242,10 +242,10 @@ construct its curve in the same root, then compose a FUNDING index:
 
 .. code-block:: text
 
-   B6 =QS.CONTEXT.ADD.ZERO.CURVE(B2,"FUNDINGSPREAD",A10:A14,N10:N14,"Actual360","Linear",TRUE,"Continuous","Annual")
-   B7 =QS.CONTEXT.ADD.COMPOSITE.CURVE(B2,"FUNDING","EURIBOR12m","FUNDINGSPREAD")
+   B6 =QS.CONTEXT.ADD.ZERO.CURVE(B2,"OTHER:FUNDINGSPREAD",A10:A14,N10:N14,"Actual360","Linear",TRUE,"Continuous","Annual")
+   B7 =QS.CONTEXT.ADD.COMPOSITE.CURVE(B2,"OTHER:FUNDING","EURIBOR12m","OTHER:FUNDINGSPREAD")
    B8 =B2
-   D8 =QS.LOAN.PRICER("funded.loan","EUR","FUNDING")
+   D8 =QS.LOAN.PRICER("funded.loan","EUR","OTHER:FUNDING")
    D9 =QS.EVALUATE(B8,D4,"Value",D8)
 
 Keep B3:B7 exclusively for addition handles or blanks. Prepared contexts belong
@@ -257,8 +257,8 @@ For borrower credit use an independent CDS identifier and spread array:
 
 .. code-block:: text
 
-   =QS.CONTEXT.ADD.CREDIT.CURVE(B2,"Credit:BORROWER","EUR","ESTR",0.4,A30:A36,F30:F36)
-   =QS.DISCOUNT.POLICY.FIXED.INCOME("policy","EUR","FUNDING")
+   =QS.CONTEXT.ADD.CREDIT.CURVE(B2,"CREDIT:BORROWER","EUR","ESTR",0.4,A30:A36,F30:F36)
+   =QS.DISCOUNT.POLICY.FIXED.INCOME("policy","EUR","OTHER:FUNDING")
 
 Attach the same credit index and compatible recovery assumption through Loan
 Settings. Credit and prepayment can affect the future receipt schedule. Preserve
@@ -281,7 +281,7 @@ amortization schedule is rebuilt during solving.
 
 .. code-block:: text
 
-   =QS.LOAN.PRICER("refinancing","EUR","FUNDING","EURIBOR12m",TRUE)
+   =QS.LOAN.PRICER("refinancing","EUR","OTHER:FUNDING","EURIBOR12m",TRUE)
    =QS.EVALUATE.RESULTS(H2,D4,{"Value","Cashflows","Sensitivities"},D5)
 
 Value is signed future receipt PV under the native loan conventions and excludes

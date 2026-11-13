@@ -1,11 +1,11 @@
 use crate::{
-    ad::{dual::DualFwd, tape::Tape},
-    core::{
+    ad::{dual::DualFwd, tape::Tape}, core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::{AssetClass, Instrument},
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
+            fixingrequest::FixingRequest,
             fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
@@ -14,23 +14,23 @@ use crate::{
         pricerstate::PricerState,
         request::{HandleFairRate, HandleSensitivities, HandleValue, Request},
         trade::Trade,
-    },
-    currencies::currency::Currency,
-    instruments::fx::fxforward::FxForwardTrade,
-    utils::errors::{QSError, Result},
+    }, currencies::currency::Currency, indices::{fxpair::FxPair, marketindex::MarketIndex}, instruments::fx::fxforward::{FxForward, FxForwardTrade}, time::date::Date, utils::errors::{QSError, Result},
 };
 use std::collections::HashSet;
 
 /// Pricer for FX forward trades.
 ///
 /// The model forward is computed as
-/// `F = S * DF_quote(T) / DF_base(T)`,
+/// `F = S * DF_base(T) / DF_quote(T)`,
 /// and the NPV of the trade (from the buyer's side) is
 /// `NPV = N * (F - K) * DF_quote(T)`,
 /// where `K` is the agreed forward price and the trade side signs the result.
-/// This is the implemented DF ratio; the FX option pricer uses the reciprocal
-/// ratio. A strike-free calibration instrument returns `N * F * DF_quote`
+/// This uses the same FX forward convention as calibration and FX options.
+/// A strike-free calibration instrument returns `N * F * DF_quote`
 /// without a side multiplier.
+///
+/// NDFs use the fixing-date forward before fixing and the historical fixing
+/// afterwards. Settlement may be in either pair currency. Settled trades have zero value.
 ///
 /// A [`DiscountPolicy`] is required and resolves curves for both currencies.
 /// Spot and strike are quote-currency units per base-currency unit.
@@ -81,6 +81,7 @@ impl Default for FxForwardPricer {
 
 #[derive(Default)]
 struct FxForwardState {
+    evaluation_date: Date,
     value: Option<DualFwd>,
     market_data: Option<MarketData>,
 }
@@ -111,6 +112,46 @@ impl Discountable for CurrencyDiscountable {
     }
 }
 
+impl FxForwardState {
+    fn forward_or_fixing(
+        &self,
+        instrument: &FxForward,
+        base_index: &MarketIndex,
+        quote_index: &MarketIndex,
+    ) -> Result<DualFwd> {
+        let fixing = instrument.fixing_date();
+        if self
+            .get_market_data_reponse()
+            .is_some_and(MarketData::anchor_fixings)
+        {
+            if let Some(date) = fixing.filter(|date| *date < self.evaluation_date) {
+                let pair = MarketIndex::FxPair(
+                    FxPair::new(
+                        instrument.base_currency(),
+                        instrument.quote_currency(),
+                    )?,
+                );
+                return self.get_fixing(&pair, date).map(DualFwd::from);
+            }
+        }
+        let date = fixing.unwrap_or_else(|| instrument.delivery_date());
+        let base = self
+            .get_discount_curve_element(base_index)?
+            .curve()
+            .discount_factor(date)?;
+        let quote = self
+            .get_discount_curve_element(quote_index)?
+            .curve()
+            .discount_factor(date)?;
+        Ok(
+            (self.get_exchange_rate(instrument.base_currency(), instrument.quote_currency())?
+                * base
+                / quote)
+                .into(),
+        )
+    }
+}
+
 impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
     fn handle_value(&self, trade: &FxForwardTrade, state: &mut FxForwardState) -> Result<f64> {
         Tape::start_recording_fwd();
@@ -136,19 +177,27 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
             .curve()
             .discount_factor(inst.delivery_date())?;
 
-        let spot = state.get_exchange_rate(base, quote)?;
-        let forward: DualFwd = (spot * df_quote / df_base).into();
+        let forward = state.forward_or_fixing(inst, &base_idx, &quote_idx)?;
+        let source = inst.settlement_currency().unwrap_or(quote);
+        let factor = if source == quote {
+            df_quote
+        } else if source == base {
+            (df_base / forward).into()
+        } else {
+            return Err(QSError::InvalidValueErr(
+                "NDF settlement currency must be the base or quote currency".into(),
+            ));
+        };
 
         // NPV = notional * (F_model - K) * DF_quote * side
         let notional = DualFwd::new(trade.notional());
         let npv: DualFwd = inst.forward_price().map_or_else(
-            || (notional * forward * df_quote).into(),
+            || (notional * forward * factor).into(),
             |k| {
                 let side = DualFwd::new(trade.side().sign());
-                (notional * (forward - k) * df_quote * side).into()
+                (notional * (forward - k) * factor * side).into()
             },
         );
-        let source = inst.quote_currency();
         let npv = if let Some(target) = state
             .get_market_data_reponse()
             .and_then(MarketData::base_currency)
@@ -166,7 +215,7 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
 }
 
 impl HandleFairRate<FxForwardTrade, FxForwardState> for FxForwardPricer {
-    /// Computes the fair (par) forward rate, defined as `F = S * DF_quote / DF_base`.
+    /// Computes the fair (par) forward rate, defined as `F = S * DF_base / DF_quote`.
     /// This is the strike at which the trade has zero NPV.
     fn handle_fair_rate(
         &self,
@@ -189,17 +238,7 @@ impl HandleFairRate<FxForwardTrade, FxForwardState> for FxForwardPricer {
         let base_idx = policy.accept(&CurrencyDiscountable { currency: base })?;
         let quote_idx = policy.accept(&CurrencyDiscountable { currency: quote })?;
 
-        let df_base = state
-            .get_discount_curve_element(&base_idx)?
-            .curve()
-            .discount_factor(inst.delivery_date())?;
-        let df_quote = state
-            .get_discount_curve_element(&quote_idx)?
-            .curve()
-            .discount_factor(inst.delivery_date())?;
-
-        let spot = state.get_exchange_rate(base, quote)?;
-        let forward: DualFwd = (spot * df_quote / df_base).into();
+        let forward = state.forward_or_fixing(inst, &base_idx, &quote_idx)?;
         Ok(forward.value())
     }
 }
@@ -287,11 +326,40 @@ impl Pricer for FxForwardPricer {
         }
         let eval_date = ctx.evaluation_date();
         let identifier = trade.instrument().identifier();
-        let md_request = self.market_data_request(trade).ok_or_else(|| {
-            QSError::InvalidValueErr("Missing market-data request for FX forward".into())
-        })?;
+        if trade.instrument().delivery_date() < eval_date {
+            return Ok(EvaluationResults::new(eval_date, identifier)
+                .with_price(0.0)
+                .with_sensitivities(SensitivityMap::default()));
+        }
+        let md_request = self
+            .market_data_request(trade)
+            .ok_or_else(|| {
+                QSError::InvalidValueErr("Missing market-data request for FX forward".into())
+            })?
+            .with_fixings_request(if ctx.anchor_fixings() {
+                if let Some(date) = trade
+                    .instrument()
+                    .fixing_date()
+                    .filter(|date| *date < eval_date)
+                {
+                    vec![FixingRequest::new(
+                        crate::indices::marketindex::MarketIndex::FxPair(
+                            crate::indices::fxpair::FxPair::new(
+                                trade.instrument().base_currency(),
+                                trade.instrument().quote_currency(),
+                            )?,
+                        ),
+                        date,
+                    )]
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            });
 
         let mut state = FxForwardState {
+            evaluation_date: eval_date,
             value: None,
             market_data: Some(ctx.handle_request(&md_request)?),
         };
@@ -561,7 +629,7 @@ mod tests {
 
         let (df_base, df_quote) =
             discount_factors(trade_date, delivery_date, base_rate, quote_rate)?;
-        let expected = spot * df_quote / df_base;
+        let expected = spot * df_base / df_quote;
         assert!(
             (fair - expected).abs() < 1e-12,
             "Fair forward {fair} should match parity {expected}"
@@ -579,7 +647,7 @@ mod tests {
 
         let (df_base, df_quote) =
             discount_factors(trade_date, delivery_date, base_rate, quote_rate)?;
-        let fair = spot * df_quote / df_base;
+        let fair = spot * df_base / df_quote;
 
         let results = evaluate_fx_forward(
             trade_date,
@@ -611,7 +679,7 @@ mod tests {
 
         let (df_base, df_quote) =
             discount_factors(trade_date, delivery_date, base_rate, quote_rate)?;
-        let fair = spot * df_quote / df_base;
+        let fair = spot * df_base / df_quote;
 
         let strikes = [1.00, 1.05, 1.10, 1.15, 1.20];
         let mut npvs = Vec::new();

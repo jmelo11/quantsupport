@@ -17,7 +17,8 @@ use crate::{
         scripting::ScriptedProduct,
     },
     market::{
-        scenario::{enter_context, exit_context},
+        forward::ForwardMarketConfiguration,
+        scenario::{enter_context, exit_context, market_view},
         stores::{
             CreditCurveConfiguration, CurveConfiguration, FixingStore, FxStore,
             PricerConfiguration, QuoteStore, SimulationConfiguration, VolatilityCubeConfiguration,
@@ -314,6 +315,7 @@ impl PricingContext {
         quote_level = None,
         credit_curves = None,
         anchor_fixings = true,
+        dividend_curves = None,
     ))]
     fn new(
         quotes: QuoteStore,
@@ -329,6 +331,7 @@ impl PricingContext {
         quote_level: Option<&Bound<'_, PyAny>>,
         credit_curves: Option<Vec<CreditCurveConfiguration>>,
         anchor_fixings: bool,
+        dividend_curves: Option<Vec<CurveConfiguration>>,
     ) -> PyResult<Self> {
         let mut ctx = QsPricingContext::new()
             .with_anchor_fixings(anchor_fixings)
@@ -368,6 +371,14 @@ impl PricingContext {
         if let Some(d) = csa_policy {
             ctx = ctx.with_csa_policy(&d.build());
         }
+        if let Some(configurations) = dividend_curves {
+            ctx = ctx.with_dividend_curve_configurations(
+                configurations
+                    .into_iter()
+                    .map(|configuration| configuration.inner)
+                    .collect(),
+            );
+        }
         if let Some(configurations) = credit_curves {
             ctx = ctx.with_credit_curve_configurations(
                 configurations
@@ -387,6 +398,28 @@ impl PricingContext {
             risk_basis: None,
             risk_context: None,
         })
+    }
+
+    /// Generate a normal independent pricing context at the configured horizon.
+    ///
+    /// Active source scenarios are included. Enter the returned context or call
+    /// initialize() before pricing. Risk is reported against horizon inputs.
+    fn advance_to(
+        &self,
+        py: Python<'_>,
+        configuration: &ForwardMarketConfiguration,
+    ) -> PyResult<Self> {
+        let view = market_view(self, self.generation, &self.inner)?;
+        let inner = view.advance_to(&configuration.inner).map_err(qs_err)?;
+        let mut result = Self::from_snapshot_context(inner, self.fixed_income_policy.clone());
+        result.python_pricers = self.python_pricers.clone_ref(py);
+        Ok(result)
+    }
+
+    /// Origin and assumptions of generated horizon observations, or None.
+    #[getter]
+    fn market_advancement_details<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(py, &self.inner.market_advancement_details()).map_err(qs_err)
     }
 
     /// Constructs curves, volatility surfaces/cubes, and simulations.
@@ -526,6 +559,33 @@ impl PricingContext {
                 inner: configuration.clone(),
             })
             .collect()
+    }
+
+    /// Direct quote-based dividend curve construction inputs.
+    #[getter]
+    fn dividend_curve_configurations(&self) -> Vec<CurveConfiguration> {
+        self.inner
+            .dividend_curve_configurations()
+            .iter()
+            .map(|configuration| CurveConfiguration {
+                inner: configuration.clone(),
+            })
+            .collect()
+    }
+
+    #[setter]
+    fn set_dividend_curve_configurations(
+        &mut self,
+        value: Vec<CurveConfiguration>,
+    ) -> PyResult<()> {
+        self.update_market_inputs(|context| {
+            context.with_dividend_curve_configurations(
+                value
+                    .into_iter()
+                    .map(|configuration| configuration.inner)
+                    .collect(),
+            )
+        })
     }
 
     /// The original volatility surface configurations.
@@ -1228,6 +1288,18 @@ impl PricingContext {
         }
 
         let market = slf.market_view()?;
+        let result = slf.evaluate_native_trade(py, trade, reqs, &market)?;
+        Py::new(py, EvaluationResults::from_qs(&result))
+    }
+
+    /// Keeps built-in trade results numeric until the Python API boundary.
+    fn evaluate_native_trade<'py>(
+        &self,
+        py: Python<'py>,
+        trade: &Bound<'py, PyAny>,
+        reqs: &[QsRequest],
+        market: &impl MarketDataProvider,
+    ) -> PyResult<QsEvaluationResults> {
         // Native pricers start a fresh tape and attach their market pillars.
         // Build contractual amounts/rates without tape nodes: recording them
         // here would leave pointers into storage reused by that fresh tape,
@@ -1243,22 +1315,22 @@ impl PricingContext {
 
         if let Ok(loan) = instrument.extract::<crate::instruments::loan::Loan>() {
             let trade = loan.build_native_loan_trade(&position)?;
-            let mut pricer = slf
+            let mut pricer = self
                 .inner
                 .pricer_configuration(InstrumentType::Loan)
                 .map_or_else(|| Ok(LoanPricer::new()), LoanPricer::from_configuration)
                 .map_err(qs_err)?;
-            pricer.set_discount_policy(Box::new(slf.build_loan_discount_policy()));
-            let result = pricer.evaluate(&trade, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.build_loan_discount_policy()));
+            let result = pricer.evaluate(&trade, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
 
         if let Ok(swap) = instrument.extract::<Swap>() {
             let t = swap.build_trade_dual(&position)?;
             let mut pricer = DiscountedCashflowPricer::<QsSwap<DualFwd>, SwapTrade<DualFwd>>::new();
-            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(xccy) = instrument.extract::<CrossCurrencySwap>() {
             let t = xccy.build_trade_dual(&position)?;
@@ -1266,17 +1338,17 @@ impl PricingContext {
                 FloatFloatCrossCurrencySwap<DualFwd>,
                 FloatFloatCrossCurrencySwapTrade<DualFwd>,
             >::new();
-            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(basis) = instrument.extract::<BasisSwap>() {
             let t = basis.build_trade_dual(&position)?;
             let mut pricer =
                 DiscountedCashflowPricer::<QsBasisSwap<DualFwd>, BasisSwapTrade<DualFwd>>::new();
-            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(xccy) = instrument.extract::<FixFloatCrossCurrencySwap>() {
             let t = xccy.build_trade_dual(&position)?;
@@ -1284,33 +1356,33 @@ impl PricingContext {
                 QsFixFloatXccy<DualFwd>,
                 FixFloatCrossCurrencySwapTrade<DualFwd>,
             >::new();
-            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(bond) = instrument.extract::<FixedRateBond>() {
             let t = bond.build_trade_dual(&position)?;
             let mut pricer = BondPricer::new();
-            pricer.set_discount_policy(Box::new(slf.bond_discount_policy(true)));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.bond_discount_policy(true)));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(bond) = instrument.extract::<SteppedCouponBond>() {
             let t = bond.build_trade_dual(&position)?;
-            let res = match slf
+            let res = match self
                 .inner
                 .pricer_configuration(InstrumentType::SteppedCouponBond)
                 .map(|configuration| configuration.pricer())
             {
                 Some(PricerImplementation::BackwardFourierEvolution { .. }) => {
                     let mut pricer = BackwardFourierEvolutionBondPricer::new();
-                    pricer.set_discount_policy(Box::new(slf.bond_discount_policy(false)));
-                    pricer.evaluate(&t, reqs, &market)
+                    pricer.set_discount_policy(Box::new(self.bond_discount_policy(false)));
+                    pricer.evaluate(&t, reqs, market)
                 }
                 Some(PricerImplementation::TreeBased { .. }) => {
                     let mut pricer = TreeBasedBondPricer::new();
-                    pricer.set_discount_policy(Box::new(slf.bond_discount_policy(false)));
-                    pricer.evaluate(&t, reqs, &market)
+                    pricer.set_discount_policy(Box::new(self.bond_discount_policy(false)));
+                    pricer.evaluate(&t, reqs, market)
                 }
                 Some(other) => Err(quantsupport::prelude::QSError::InvalidValueErr(format!(
                     "Configured pricer {other:?} cannot price a stepped-coupon bond"
@@ -1320,7 +1392,7 @@ impl PricingContext {
                 )),
             }
             .map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&res));
+            return Ok(res);
         }
         if let Ok(frn) = instrument.extract::<FloatingRateNote>() {
             let t = frn.build_trade_dual(&position)?;
@@ -1328,9 +1400,9 @@ impl PricingContext {
                 QsFloatingRateNote<DualFwd>,
                 FloatingRateNoteTrade<DualFwd>,
             >::new();
-            pricer.set_discount_policy(Box::new(slf.bond_discount_policy(true)));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.bond_discount_policy(true)));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(deposit) = instrument.extract::<FixedRateDeposit>() {
             let t = deposit.build_trade_dual(&position)?;
@@ -1338,33 +1410,33 @@ impl PricingContext {
                 QsFixedRateDeposit<DualFwd>,
                 FixedRateDepositTrade<DualFwd>,
             >::new();
-            pricer.set_discount_policy(Box::new(slf.bond_discount_policy(true)));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.bond_discount_policy(true)));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(fwd) = instrument.extract::<FxForwardPy>() {
             let t = fwd.build_trade(&position)?;
             let mut pricer = FxForwardPricer::new();
-            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(opt) = instrument.extract::<FxOptionPy>() {
             let t = opt.build_trade(&position)?;
             let mut pricer = FxEuropeanOptionPricer::new();
-            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(fwd) = instrument.extract::<crate::instruments::products::EquityForward>() {
             let trade = fwd.build_trade(&position)?;
             let mut pricer = quantsupport::prelude::EquityForwardPricer::new();
-            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let result = pricer.evaluate(&trade, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
+            let result = pricer.evaluate(&trade, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(option) = instrument.extract::<crate::instruments::products::EuropeanSwaption>() {
-            let configuration = slf
+            let configuration = self
                 .inner
                 .pricer_configuration(InstrumentType::EuropeanSwaption)
                 .ok_or_else(|| {
@@ -1378,44 +1450,44 @@ impl PricingContext {
                     &option.market_index,
                 )
                 .map_err(qs_err)?;
-            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
+            pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
             let trade = option.build_trade_dual(&position)?;
-            let result = pricer.evaluate(&trade, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            let result = pricer.evaluate(&trade, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(opt) = instrument.extract::<EquityOption>() {
             let t = opt.build_trade(&position)?;
             let mut pricer = BlackEuropeanOptionPricer::new();
-            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(cds) = instrument.extract::<CreditDefaultSwapPy>() {
             let t = cds.build_trade(&position)?;
             let mut pricer = CdsPricer::new();
-            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(cap) = instrument.extract::<CapFloorPy>() {
             let t = cap.build_trade(&position)?;
             let mut pricer = ClosedFormBlackCapPricer::new();
-            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(caplet) = instrument.extract::<CapletFloorletPy>() {
             let t = caplet.build_trade(&position)?;
             let mut pricer = ClosedFormBlackCapletPricer::new();
-            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
         if let Ok(futures) = instrument.extract::<RateFuturesPy>() {
             let t = futures.build_trade(&position)?;
             let pricer = RateFuturesPricer::new();
-            let result = pricer.evaluate(&t, reqs, &market).map_err(qs_err)?;
-            return Py::new(py, EvaluationResults::from_qs(&result));
+            let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
+            return Ok(result);
         }
 
         Err(crate::common::errors::invalid_value(format!(
@@ -1439,24 +1511,32 @@ impl Pricer for ContextMemberPricer {
         &self,
         trade: &Self::Item,
         requests: &[QsRequest],
-        _market: &impl MarketDataProvider,
+        market: &impl MarketDataProvider,
     ) -> QsResult<QsEvaluationResults> {
         Python::attach(|py| {
             let context = self.context.try_borrow(py)?;
             let member = trade.bind(py);
-            if requests.iter().any(|request| matches!(request, QsRequest::Value | QsRequest::Sensitivities)) {
+            if let Some(pricer) = context.python_pricers.resolve(py, member)? {
+                let context = context.into_pyobject(py)?;
+                return call_pricer(py, &pricer, member, requests, context.as_any())
+                    .and_then(|result| result.borrow(py).to_qs());
+            }
+            if member.is_instance_of::<Portfolio>() {
+                return PricingContext::evaluate_trade(context, py, member, requests)
+                    .and_then(|result| result.borrow(py).to_qs());
+            }
+            if requests.iter().any(|request| {
+                matches!(request, QsRequest::Value | QsRequest::Sensitivities)
+            }) {
                 if let Ok(position) = member.extract::<PyRef<'_, Trade>>() {
-                    if position.instrument_bound(py).is_instance_of::<RateFuturesPy>()
-                        && context.python_pricers.resolve(py, member)?.is_none()
-                    {
+                    if position.instrument_bound(py).is_instance_of::<RateFuturesPy>() {
                         return Err(crate::common::errors::invalid_value(
                             "Portfolio monetary aggregation requires currency-valued results; rate futures return quotes",
                         ));
                     }
                 }
             }
-            PricingContext::evaluate_trade(context, py, member, requests)
-                .and_then(|result| result.borrow(py).to_qs())
+            context.evaluate_native_trade(py, member, requests, market)
         }).map_err(|error| QSError::InvalidValueErr(error.to_string()))
     }
 

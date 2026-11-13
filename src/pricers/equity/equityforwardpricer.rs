@@ -252,9 +252,11 @@ impl Pricer for EquityForwardPricer {
             ));
         }
         if trade.instrument().delivery_date() < eval_date {
-            return Err(QSError::InvalidValueErr(
-                "Equity forward delivery precedes the evaluation date".into(),
-            ));
+            return Ok(
+                EvaluationResults::new(eval_date, trade.instrument().identifier())
+                    .with_price(0.0)
+                    .with_sensitivities(SensitivityMap::default()),
+            );
         }
         let forward = trade.instrument();
         let identifier = forward.identifier();

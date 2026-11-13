@@ -50,3 +50,6 @@ pub mod configuration_inputs;
 
 #[cfg(windows)]
 pub mod arguments;
+
+#[cfg_attr(not(windows), allow(dead_code))]
+pub mod forwardmarket;

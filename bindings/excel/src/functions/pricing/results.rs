@@ -1,5 +1,6 @@
 //! Read-only views of native EvaluationResults.
 use crate::{functions::helpers::*, runtime::registry::with_registry};
+use quantsupport::utils::tools::sort_sensitivities_by_tenor;
 use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::{XllError, XLOPER12};
 #[xll_bindgen(
@@ -143,6 +144,7 @@ pub fn qs_result_sensitivities(
         let sensitivities = results
             .sensitivities()
             .ok_or_else(|| not_found("request Sensitivities in QS.EVALUATE"))?;
+        let sensitivities = sort_sensitivities_by_tenor(sensitivities, results.evaluation_date());
         let rows = sensitivities.instrument_keys().len() + 1;
         let mut cells = vec![
             XLOPER12::from_str("Risk factor"),

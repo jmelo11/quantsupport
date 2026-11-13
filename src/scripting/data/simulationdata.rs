@@ -124,4 +124,4 @@ impl SimulationData {
 }
 
 /// Chronological market data supplied to every event in one simulated path.
-pub type Scenario = Vec<SimulationData>;
+pub type SimulationPath = Vec<SimulationData>;

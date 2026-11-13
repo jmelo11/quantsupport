@@ -98,7 +98,7 @@ class ScopedScenarioTests(unittest.TestCase):
     def test_active_scenario_cache_tracks_public_input_reassignment(self):
         context = funding_context()
         replacement = funding_context(funding_shift=0.002)
-        scenario = qs.Scenario(shocks=[qs.Shock(target="FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute)])
+        scenario = qs.Scenario(shocks=[qs.Shock(target="OTHER:FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute)])
         with context, scenario:
             before = context.curve(index=FUNDING).discount_factor(date="2028-02-24")
             context.quotes = replacement.quotes
@@ -115,7 +115,7 @@ class ScopedScenarioTests(unittest.TestCase):
         context = funding_context()
         scenarios = qs.Scenario(shocks=[
             qs.Shock(target="EURIBOR12m", value=0.01, shock_type=qs.ScenarioType.Absolute),
-            qs.Shock(target="FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute),
+            qs.Shock(target="OTHER:FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute),
         ])
         original = [curve.to_dict() for curve in context.curves]
         for _ in range(2):
@@ -196,7 +196,7 @@ class ScopedScenarioTests(unittest.TestCase):
             base = context.evaluate(trade=trade, requests=requests)
             with qs.Scenario(shocks=[
                 qs.Shock(target="EURIBOR12m", value=0.01, shock_type=qs.ScenarioType.Absolute),
-                qs.Shock(target="FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute),
+                qs.Shock(target="OTHER:FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute),
             ]):
                 stressed = context.evaluate(trade=trade, requests=requests)
                 self.assertNotAlmostEqual(stressed.price, base.price)
@@ -216,7 +216,7 @@ class ScopedScenarioTests(unittest.TestCase):
             with context:
                 base = context.evaluate(trade=trade,
                     requests=[qs.Request.Value, qs.Request.Sensitivities, qs.Request.Cashflows()])
-                funding_risk = base.sensitivities.loc[base.sensitivities.pillar.str.startswith("ZeroRate_EUR_FUNDINGSPREAD_")]
+                funding_risk = base.sensitivities.loc[base.sensitivities.pillar.str.startswith("ZeroRate_EUR_OTHER:FUNDINGSPREAD_")]
                 self.assertEqual(len(funding_risk), 4)
                 for row in funding_risk.itertuples(index=False):
                     prices = []

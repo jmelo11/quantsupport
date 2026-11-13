@@ -3,14 +3,26 @@
 use crate::{
     functions::helpers::*,
     runtime::{
+        configuration_inputs::WorksheetConfiguration,
         context::{self, InputData},
         market_inputs,
         registry::{with_registry, with_registry_mut},
     },
 };
-use quantsupport::prelude::{
-    CreditCurveConfiguration, DayCounter, Frequency, Interpolator, Level,
-    VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
+use quantsupport::{
+    math::interpolation::interpolator::Interpolator,
+    quotes::{
+        quote::{Level, Quote, QuoteLevels},
+        quotestore::QuoteStore,
+    },
+    rates::bootstrapping::{
+        creditcurveconfiguration::CreditCurveConfiguration, curveconfiguration::CurveConfiguration,
+    },
+    time::{daycounter::DayCounter, enums::Frequency},
+    volatility::{
+        volatilitycubeconfiguration::VolatilityCubeConfiguration,
+        volatilitysurfaceconfiguration::VolatilitySurfaceConfiguration,
+    },
 };
 use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::{XllError, XLOPER12};
@@ -87,7 +99,6 @@ pub fn qs_context_add_quote(
     value: f64,
     level: Option<String>,
 ) -> Result<String, XllError> {
-    use quantsupport::prelude::{Quote, QuoteLevels, QuoteStore};
     if !value.is_finite() {
         return Err(value_error("quote value must be finite"));
     }
@@ -295,7 +306,6 @@ pub fn qs_context_add_credit_curve(
     )
     .with_day_counter(dc)
     .with_premium_frequency(frequency);
-    use crate::runtime::configuration_inputs::WorksheetConfiguration;
     configuration.validate().map_err(value_error)?;
     let key = input_key(&("credit", &configuration, &table))?;
     add(
@@ -394,8 +404,6 @@ pub fn qs_context_add_zero_curve(
     interpolator: &str,
     extrapolate: *const XLOPER12,
 ) -> Result<String, XllError> {
-    use crate::runtime::configuration_inputs::WorksheetConfiguration;
-    use quantsupport::prelude::{CurveConfiguration, Quote, QuoteLevels, QuoteStore};
     let pillars = string_values(pillars, "pillars")?;
     let rates = numeric_values(rates, "rates")?;
     if pillars.is_empty() || pillars.len() != rates.len() {
@@ -404,13 +412,7 @@ pub fn qs_context_add_zero_curve(
         ));
     }
     let index = parse_index(market_index)?;
-    let index_label = match &index {
-        quantsupport::prelude::MarketIndex::Credit(entity) => format!("Credit({entity})"),
-        quantsupport::prelude::MarketIndex::Collateral(currency, collateral) => {
-            format!("Collateral({currency}/{collateral})")
-        }
-        _ => index.to_string(),
-    };
+    let index_label = index.to_string();
     let compounding = parse_compounding(compounding)?;
     let frequency = parse_frequency(frequency)?;
     let (currency, level) = with_registry(|registry| {
@@ -466,8 +468,6 @@ pub fn qs_context_add_composite_curve(
     base_index: &str,
     spread_index: &str,
 ) -> Result<String, XllError> {
-    use crate::runtime::configuration_inputs::WorksheetConfiguration;
-    use quantsupport::prelude::{CurveConfiguration, QuoteStore};
     let configuration = CurveConfiguration::composite(
         parse_index(market_index)?,
         parse_index(base_index)?,
@@ -497,7 +497,7 @@ fn smile(value: &str) -> Result<quantsupport::prelude::SmileType, XllError> {
 mod array_boundary_tests {
     use super::*;
     use crate::runtime::registry::CellId;
-    use quantsupport::prelude::MarketDataProvider;
+    use quantsupport::core::marketdatahandling::marketdata::MarketDataProvider;
     use xll_rs::{convert::build_multi, memory::xlAutoFree12};
 
     struct Array(*mut XLOPER12);

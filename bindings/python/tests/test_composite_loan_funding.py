@@ -16,7 +16,7 @@ def funding_context(funding_shift=0):
     quotes = qs.QuoteStore.from_dict({"reference_date": REFERENCE, "quotes": [
         {"identifier": f"FixedRateDeposit_EUR_{index}_{tenor}", "mid": rate}
         for index, rates in inputs for tenor, rate in zip(TENORS, rates)
-    ] + zero_rate_quotes("FUNDINGSPREAD", ["0D", "1Y", "2Y", "3Y"],
+    ] + zero_rate_quotes("OTHER:FUNDINGSPREAD", ["0D", "1Y", "2Y", "3Y"],
                          [rate + funding_shift for rate in [0.005, 0.0075, 0.01, 0.0125]])})
     curves = [qs.CurveConfiguration.from_dict({
         "market_index": index,
@@ -27,7 +27,7 @@ def funding_context(funding_shift=0):
             "spread_index": {"Other": "FUNDINGSPREAD"},
         },
         {"market_index": {"Other": "FUNDINGSPREAD"}, "interpolator": "Linear",
-         "quotes": [f"ZeroRate_EUR_FUNDINGSPREAD_{tenor}" for tenor in ["0D", "1Y", "2Y", "3Y"]]},
+         "quotes": [f"ZeroRate_EUR_OTHER:FUNDINGSPREAD_{tenor}" for tenor in ["0D", "1Y", "2Y", "3Y"]]},
     ]))
     fixings = qs.FixingStore()
     fixings.add("EURIBOR12m", "2026-02-20", 0.04)
@@ -138,7 +138,7 @@ class CompositeLoanFundingTests(unittest.TestCase):
                     f"FixedRateDeposit_EUR_ESTR_{tenor}" for tenor in TENORS
                 ]},
                 {"market_index": {"Other": "SPREAD"}, "interpolator": "Linear",
-                 "quotes": [f"ZeroRate_EUR_SPREAD_{tenor}" for tenor in ["0D", "1Y", "3Y"]]},
+                 "quotes": [f"ZeroRate_EUR_OTHER:SPREAD_{tenor}" for tenor in ["0D", "1Y", "3Y"]]},
             ]
             quotes = qs.QuoteStore.from_dict({"reference_date": REFERENCE, "quotes": [
                 {"identifier": f"FixedRateDeposit_EUR_ESTR_{tenor}", "mid": 0.03 + benchmark_shift}
@@ -146,7 +146,7 @@ class CompositeLoanFundingTests(unittest.TestCase):
             ] + [
                 {"identifier": f"Swap_EUR_EURIBOR3m_{tenor}", "mid": rate}
                 for tenor, rate in [("1Y", 0.04), ("2Y", 0.045), ("3Y", 0.047)]
-            ] + zero_rate_quotes("SPREAD", ["0D", "1Y", "3Y"], [rate + spread_shift for rate in [0.005, 0.01, 0.02]] )})
+            ] + zero_rate_quotes("OTHER:SPREAD", ["0D", "1Y", "3Y"], [rate + spread_shift for rate in [0.005, 0.01, 0.02]] )})
             with qs.PricingContext(
                 quotes, qs.CurveConfiguration.from_dict_list(specifications),
                 csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.EUR, qs.MarketIndex.other("PARENT")),
@@ -169,7 +169,7 @@ class CompositeLoanFundingTests(unittest.TestCase):
                 self.assertAlmostEqual(analytic, numerical, delta=max(0.02, abs(numerical) * 1e-5))
 
     def test_configuration_serialization_and_dependency_validation(self):
-        identifiers = [f"ZeroRate_EUR_SPREAD_{pillar}" for pillar in [REFERENCE, "2029-02-24"]]
+        identifiers = [f"ZeroRate_EUR_OTHER:SPREAD_{pillar}" for pillar in [REFERENCE, "2029-02-24"]]
         def make_context(specifications):
             return qs.PricingContext(qs.QuoteStore.from_dict({
                 "reference_date": REFERENCE,
@@ -189,7 +189,7 @@ class CompositeLoanFundingTests(unittest.TestCase):
                 context.curve(qs.MarketIndex.other("SPREAD")).discount_factor("2028-02-24") ** 2,
                 places=13,
             )
-        with self.assertRaisesRegex(qs.QuantSupportError, "requires SPREAD"):
+        with self.assertRaisesRegex(qs.QuantSupportError, "requires OTHER:SPREAD"):
             make_context([composite]).initialize()
         with self.assertRaisesRegex(qs.QuantSupportError, "Duplicate curve"):
             make_context([zero, zero]).initialize()

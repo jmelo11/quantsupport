@@ -65,6 +65,10 @@ pub enum QsObject {
     /// A collection of constructed market-data elements.
     #[cfg(test)]
     ConstructedElements(Box<ConstructedElementStore>),
+    /// Deterministic forward market assumptions.
+    ForwardMarketConfiguration(
+        Box<quantsupport::core::forwardmarket::configuration::ForwardMarketConfiguration>,
+    ),
     /// An initialized pricing context.
     PricingContext(std::rc::Rc<PricingContext>),
     /// Immutable historical market inputs.
@@ -131,6 +135,7 @@ impl QsObject {
             Self::DiscountCurve(_) => "DiscountCurveElement",
             #[cfg(test)]
             Self::ConstructedElements(_) => "ConstructedElementStore",
+            Self::ForwardMarketConfiguration(_) => "ForwardMarketConfiguration",
             Self::PricingContext(_) => "PricingContext",
             Self::MarketSnapshot(_) => "MarketSnapshot",
             Self::MarketSnapshotStore(_) => "MarketSnapshotStore",
@@ -961,6 +966,12 @@ impl Registry {
         PricingContext,
         PricingContext,
         "PricingContext"
+    );
+    accessor!(
+        forward_market_configuration,
+        ForwardMarketConfiguration,
+        quantsupport::core::forwardmarket::configuration::ForwardMarketConfiguration,
+        "ForwardMarketConfiguration"
     );
     accessor!(
         market_snapshot,

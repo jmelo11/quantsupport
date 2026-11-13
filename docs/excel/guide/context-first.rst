@@ -98,3 +98,17 @@ validates upstream revisions before reuse.
 For complete editable formulas open ``context_pricing_example.xlsx``. Continue
 with :doc:`workbook` for installation and debugging, :doc:`markets-and-products`
 for construction conventions, or :doc:`risk-and-history` for snapshots and historical batches.
+
+Forward market contexts
+-----------------------
+
+``QS.FORWARD.CONFIG(name, target_date, curve_roll, volatility_roll, fixing_roll)``
+creates serializable horizon assumptions. Defaults are ``ImpliedForward``,
+``ConstantTenor`` and ``Project``. Optional alternatives are ``ConstantTenor``
+for curves, ``ForwardVariance`` for volatility, and ``Preserve`` for fixings.
+
+``QS.CONTEXT.ADVANCE(name, context, configuration)`` generates a normal independent
+context from the committed source market. The returned handle works with ordinary
+curve queries and valuation functions. It depends on the source revision and
+configuration, and identical inputs reuse the existing handle. Source historical
+observations remain unchanged. Generated sensitivities refer to horizon quotes.

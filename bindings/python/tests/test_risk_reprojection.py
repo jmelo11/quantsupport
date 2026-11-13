@@ -20,7 +20,7 @@ def context(level="Mid", bump=0.0):
             {"identifier": label, "mid": rate + bump,
              "bid": rate - 0.001 + bump, "ask": rate + 0.001 + bump}
             for label, rate in zip(DEPOSITS, [0.03, 0.04])
-        ] + [{"identifier": "ZeroRate_EUR_UNUSED_1Y", "mid": 0.05}],
+        ] + [{"identifier": "ZeroRate_EUR_OTHER:UNUSED_1Y", "mid": 0.05}],
     })
     curves = [qs.CurveConfiguration("ESTR", DEPOSITS, "Actual365", "LogLinear", True)]
     return qs.PricingContext(

@@ -53,7 +53,7 @@ target : str
     succeeds first; otherwise all target tokens must occur in the identifier.
     Token order and repeated-token counts are ignored, so supplying a full
     identifier does not make the match exact-only. For example,
-    EURIBOR12m selects its deposit and swap quotes; FUNDINGSPREAD selects
+    EURIBOR12m selects its deposit and swap quotes; OTHER:FUNDINGSPREAD selects
     every zero-rate quote of that funding-spread curve.
 value : float
     Finite additive change in the selected input's units for Absolute shocks
