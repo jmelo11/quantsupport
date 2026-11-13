@@ -1,6 +1,8 @@
 name: Rust
 
 on:
+  push:
+    branches: [feature/cranelift-parallel-ad]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -41,5 +43,9 @@ jobs:
       run: cargo +stable clippy -p quantsupport --lib -- -D warnings
     - name: Run tests
       run: cargo +stable test -p quantsupport --verbose
+    - name: Test experimental Cranelift compiler
+      run: cargo +stable test -p quantsupport --features jit --lib --verbose
+    - name: Run Cranelift MC example
+      run: cargo +stable run --release -p quantsupport --features jit --example compiled_mc
     - name: Verify crate packaging
       run: cargo +stable publish -p quantsupport --dry-run
