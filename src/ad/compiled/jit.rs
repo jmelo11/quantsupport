@@ -107,6 +107,7 @@ pub(super) fn compile(graph: &Graph) -> Result<CompiledKernel, CompileError> {
     let mut context = module.make_context();
     context.func.signature = signature;
     let mut fbc = FunctionBuilderContext::new();
+    let frontend_config = module.target_config();
 
     {
         let mut b = FunctionBuilder::new(&mut context.func, &mut fbc);
@@ -132,7 +133,7 @@ pub(super) fn compile(graph: &Graph) -> Result<CompiledKernel, CompileError> {
         for op in &graph.ops {
             let (value, dependency) = match *op {
                 Op::Input(index) => (
-                    b.ins().load(types::F64, MemFlags::new(), input_ptr, offset(index)?),
+                    b.ins().load(types::F64, MemFlags::from_u32(0), input_ptr, offset(index)?),
                     true,
                 ),
                 Op::Constant(v) => (b.ins().f64const(v), false),
@@ -157,7 +158,7 @@ pub(super) fn compile(graph: &Graph) -> Result<CompiledKernel, CompileError> {
             values.push(value);
             active.push(dependency);
         }
-        b.ins().store(MemFlags::new(), values[graph.output], output_ptr, 0);
+        b.ins().store(MemFlags::from_u32(0), values[graph.output], output_ptr, 0);
 
         let mut adjoints = vec![None; values.len()];
         adjoints[graph.output] = Some(b.ins().f64const(1.0));
@@ -290,10 +291,10 @@ pub(super) fn compile(graph: &Graph) -> Result<CompiledKernel, CompileError> {
         }
         for i in 0..graph.inputs {
             let gradient = adjoints[i].unwrap_or_else(|| b.ins().f64const(0.0));
-            b.ins().store(MemFlags::new(), gradient, grad_ptr, offset(i)?);
+            b.ins().store(MemFlags::from_u32(0), gradient, grad_ptr, offset(i)?);
         }
         b.ins().return_(&[]);
-        b.finalize();
+        b.finalize(frontend_config);
     }
 
     module.define_function(function_id, &mut context).map_err(jit_err)?;
