@@ -6,7 +6,7 @@ use super::bondpricinganchor::BondPricingAnchor;
 use crate::time::daycounter::DayCounter;
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     core::{
         collateral::Discountable,
         instrument::{AssetClass, Instrument},
@@ -309,7 +309,7 @@ impl<T: Scalar> BondTerms<T> for SteppedCouponBondTrade<T> {
     }
 }
 
-impl From<SteppedCouponBond<f64>> for SteppedCouponBond<DualFwd> {
+impl From<SteppedCouponBond<f64>> for SteppedCouponBond<Recorded> {
     fn from(value: SteppedCouponBond<f64>) -> Self {
         Self {
             identifier: value.identifier,
@@ -323,8 +323,8 @@ impl From<SteppedCouponBond<f64>> for SteppedCouponBond<DualFwd> {
     }
 }
 
-impl From<SteppedCouponBond<DualFwd>> for SteppedCouponBond<f64> {
-    fn from(value: SteppedCouponBond<DualFwd>) -> Self {
+impl From<SteppedCouponBond<Recorded>> for SteppedCouponBond<f64> {
+    fn from(value: SteppedCouponBond<Recorded>) -> Self {
         Self {
             identifier: value.identifier,
             units: value.units,
@@ -337,7 +337,7 @@ impl From<SteppedCouponBond<DualFwd>> for SteppedCouponBond<f64> {
     }
 }
 
-impl From<SteppedCouponBondTrade<f64>> for SteppedCouponBondTrade<DualFwd> {
+impl From<SteppedCouponBondTrade<f64>> for SteppedCouponBondTrade<Recorded> {
     fn from(value: SteppedCouponBondTrade<f64>) -> Self {
         let mut trade = Self::new(
             value.instrument.into(),
@@ -352,8 +352,8 @@ impl From<SteppedCouponBondTrade<f64>> for SteppedCouponBondTrade<DualFwd> {
     }
 }
 
-impl From<SteppedCouponBondTrade<DualFwd>> for SteppedCouponBondTrade<f64> {
-    fn from(value: SteppedCouponBondTrade<DualFwd>) -> Self {
+impl From<SteppedCouponBondTrade<Recorded>> for SteppedCouponBondTrade<f64> {
+    fn from(value: SteppedCouponBondTrade<Recorded>) -> Self {
         let mut trade = Self::new(
             value.instrument.into(),
             value.trade_date,

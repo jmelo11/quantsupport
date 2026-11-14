@@ -601,7 +601,7 @@ mod tests {
                     Rc::new(RefCell::new(
                         FlatForwardTermStructure::new(
                             date,
-                            DualFwd::from(0.03),
+                            Recorded::from(0.03),
                             RateDefinition::new(
                                 DayCounter::Actual360,
                                 Compounding::Continuous,
@@ -621,7 +621,7 @@ mod tests {
     #[test]
     fn pricing_queries_cover_trades_and_instrument_previews_without_storing_results() {
         let date = Date::new(2026, 1, 15);
-        let swap = MakeSwap::<DualFwd>::default()
+        let swap = MakeSwap::<Recorded>::default()
             .with_identifier("swap".into())
             .with_start_date(date)
             .with_maturity_date(Date::new(2029, 1, 15))
@@ -774,7 +774,7 @@ mod tests {
     #[test]
     fn bond_instrument_previews_require_a_valid_explicit_anchor() {
         let date = Date::new(2026, 1, 15);
-        let bond = MakeFixedRateBond::<DualFwd>::default()
+        let bond = MakeFixedRateBond::<Recorded>::default()
             .with_identifier("bond".into())
             .with_start_date(date)
             .with_maturity_date(Date::new(2031, 1, 15))

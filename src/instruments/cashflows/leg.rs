@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     core::{collateral::Discountable, instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -180,7 +180,7 @@ where
     }
 }
 
-impl From<Leg<f64>> for Leg<DualFwd> {
+impl From<Leg<f64>> for Leg<Recorded> {
     fn from(value: Leg<f64>) -> Self {
         Self::new(
             value.id,
@@ -188,7 +188,7 @@ impl From<Leg<f64>> for Leg<DualFwd> {
             value.currency,
             value.discount_index,
             value.forward_index,
-            value.spread.map(DualFwd::new),
+            value.spread.map(Recorded::new),
             value.interest_rate.map(Into::into),
             value.side,
             value.is_linear,
@@ -199,8 +199,8 @@ impl From<Leg<f64>> for Leg<DualFwd> {
     }
 }
 
-impl From<Leg<DualFwd>> for Leg<f64> {
-    fn from(value: Leg<DualFwd>) -> Self {
+impl From<Leg<Recorded>> for Leg<f64> {
+    fn from(value: Leg<Recorded>) -> Self {
         Self::new(
             value.id,
             value.cashflows.into_iter().map(Into::into).collect(),

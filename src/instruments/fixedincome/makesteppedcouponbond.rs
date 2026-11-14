@@ -569,14 +569,14 @@ impl<T: Scalar> MakeInstrument for MakeSteppedCouponBond<T> {
 mod tests {
     use super::*;
     use crate::{
-        ad::dual::DualFwd, indices::marketindex::MarketIndex,
+        ad::compiled::Recorded, indices::marketindex::MarketIndex,
         instruments::cashflows::cashflow::Cashflow,
     };
 
     #[test]
     fn repeats_last_coupon_and_notional_percentage() {
         let start = Date::new(2025, 1, 1);
-        let bond = MakeSteppedCouponBond::<DualFwd>::default()
+        let bond = MakeSteppedCouponBond::<Recorded>::default()
             .with_identifier("STEP-CALL".into())
             .with_start_date(start)
             .with_maturity_date(Date::new(2028, 1, 1))
@@ -625,7 +625,7 @@ mod tests {
 
     #[test]
     fn rejects_increasing_outstanding_notional() {
-        let result = MakeSteppedCouponBond::<DualFwd>::default()
+        let result = MakeSteppedCouponBond::<Recorded>::default()
             .with_identifier("BAD-NOTIONAL".into())
             .with_start_date(Date::new(2025, 1, 1))
             .with_maturity_date(Date::new(2027, 1, 1))
@@ -640,7 +640,7 @@ mod tests {
     #[test]
     fn rejects_call_dates_outside_the_bond_life() {
         for call_date in [Date::new(2025, 1, 1), Date::new(2027, 1, 1)] {
-            let result = MakeSteppedCouponBond::<DualFwd>::default()
+            let result = MakeSteppedCouponBond::<Recorded>::default()
                 .with_identifier("BAD-CALL-DATE".into())
                 .with_start_date(Date::new(2025, 1, 1))
                 .with_maturity_date(Date::new(2027, 1, 1))
@@ -657,7 +657,7 @@ mod tests {
     #[test]
     fn validates_call_windows() {
         let build = |calls| {
-            MakeSteppedCouponBond::<DualFwd>::default()
+            MakeSteppedCouponBond::<Recorded>::default()
                 .with_identifier("CALL-WINDOW-VALIDATION".into())
                 .with_start_date(Date::new(2025, 1, 1))
                 .with_maturity_date(Date::new(2027, 1, 1))
@@ -694,7 +694,7 @@ mod tests {
 
     #[test]
     fn floating_floor_and_cap_bound_the_all_in_rate() -> Result<()> {
-        let bond = MakeSteppedCouponBond::<DualFwd>::default()
+        let bond = MakeSteppedCouponBond::<Recorded>::default()
             .with_identifier("COLLARED-FLOAT".into())
             .with_start_date(Date::new(2025, 1, 1))
             .with_maturity_date(Date::new(2026, 1, 1))
@@ -720,12 +720,12 @@ mod tests {
             .ok_or_else(|| QSError::NotFoundErr("collared coupon".into()))?;
         let capped = coupon
             .payoff_ops()
-            .eval(DualFwd::from(0.10))?
+            .eval(Recorded::from(0.10))?
             .add_val(coupon.spread())
             .value();
         let floored = coupon
             .payoff_ops()
-            .eval(DualFwd::from(-0.10))?
+            .eval(Recorded::from(-0.10))?
             .add_val(coupon.spread())
             .value();
         assert!((capped - 0.05).abs() < 1.0e-12);

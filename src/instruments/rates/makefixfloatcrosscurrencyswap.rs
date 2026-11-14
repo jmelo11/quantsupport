@@ -1,5 +1,5 @@
 #[cfg(test)]
-use crate::ad::dual::DualFwd;
+use crate::ad::compiled::Recorded;
 use crate::{
     ad::scalar::Scalar,
     core::{
@@ -41,7 +41,7 @@ use std::marker::PhantomData;
 ///     Frequency::Semiannual,
 /// );
 ///
-/// let xccy = MakeFixFloatCrossCurrencySwap::<DualFwd>::default()
+/// let xccy = MakeFixFloatCrossCurrencySwap::<Recorded>::default()
 ///     .with_identifier("XCCY-USDEUR".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2029, 1, 1))
@@ -425,8 +425,8 @@ mod tests {
         )
     }
 
-    fn base_builder() -> MakeFixFloatCrossCurrencySwap<DualFwd> {
-        MakeFixFloatCrossCurrencySwap::<DualFwd>::default()
+    fn base_builder() -> MakeFixFloatCrossCurrencySwap<Recorded> {
+        MakeFixFloatCrossCurrencySwap::<Recorded>::default()
             .with_identifier("xccy_swap_test".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))
@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn test_build_cross_currency_swap_missing_domestic_currency_fails() {
-        let result = MakeFixFloatCrossCurrencySwap::<DualFwd>::default()
+        let result = MakeFixFloatCrossCurrencySwap::<Recorded>::default()
             .with_identifier("xccy_missing_dom_ccy".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))

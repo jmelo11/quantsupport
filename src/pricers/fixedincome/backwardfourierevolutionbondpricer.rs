@@ -9,7 +9,7 @@ use super::{
 };
 use crate::instruments::fixedincome::bondterms::BondTerms;
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     core::{
         collateral::DiscountPolicy,
         evaluationresults::EvaluationResults,
@@ -242,7 +242,7 @@ impl BondPricingEngine for BackwardFourierEvolutionBondPricer {
     }
     fn prepare(
         &self,
-        trade: &impl BondTerms<DualFwd>,
+        trade: &impl BondTerms<Recorded>,
         index: &MarketIndex,
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, Self::Model<f64>)> {
@@ -270,7 +270,7 @@ impl BondPricingEngine for BackwardFourierEvolutionBondPricer {
         &self,
         model: &Self::Model<f64>,
         market: &MarketData,
-    ) -> Result<Self::Model<DualFwd>> {
+    ) -> Result<Self::Model<Recorded>> {
         Ok((
             model
                 .0
@@ -301,9 +301,9 @@ impl BondPricingEngine for BackwardFourierEvolutionBondPricer {
         }
     }
 }
-impl<T: BondTerms<DualFwd>> HandleCashflows<T, BondState> for BackwardFourierEvolutionBondPricer {}
+impl<T: BondTerms<Recorded>> HandleCashflows<T, BondState> for BackwardFourierEvolutionBondPricer {}
 impl Pricer for BackwardFourierEvolutionBondPricer {
-    type Item = SteppedCouponBondTrade<DualFwd>;
+    type Item = SteppedCouponBondTrade<Recorded>;
     type Policy = dyn DiscountPolicy;
 
     fn evaluate(
@@ -351,7 +351,7 @@ pub mod test_support {
     /// Returns a bond's Fourier value, panicking if evaluation fails.
     pub fn fourier_value(
         pricer: &BackwardFourierEvolutionBondPricer,
-        trade: &SteppedCouponBondTrade<DualFwd>,
+        trade: &SteppedCouponBondTrade<Recorded>,
         provider: &TestProvider,
     ) -> f64 {
         pricer

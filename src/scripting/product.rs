@@ -20,7 +20,7 @@ This attribution and license notice must be preserved at the top of this file.
 use std::sync::Arc;
 
 use crate::{
-    ad::dual::DualFwd,
+    ad::compiled::Recorded,
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -169,8 +169,8 @@ impl ScriptedPayoff {
     pub fn evaluate(
         &self,
         valuation_date: Date,
-        responses: &[SimulationResponse<DualFwd>],
-    ) -> Result<DualFwd> {
+        responses: &[SimulationResponse<Recorded>],
+    ) -> Result<Recorded> {
         self.engine
             .evaluate_payment(self.payment_id, valuation_date, responses)
             .map_err(|error| {
@@ -297,9 +297,13 @@ mod tests {
         let reference_date = Date::new(2025, 1, 1);
         let maturity = Date::new(2026, 1, 1);
         let final_date = Date::new(2027, 1, 1);
-        let curve = DiscountTermStructure::<DualFwd>::new(
+        let curve = DiscountTermStructure::<Recorded>::new(
             vec![reference_date, maturity, final_date],
-            vec![DualFwd::from(1.0), DualFwd::from(0.97), DualFwd::from(0.94)],
+            vec![
+                Recorded::from(1.0),
+                Recorded::from(0.97),
+                Recorded::from(0.94),
+            ],
             DayCounter::Actual365,
             Interpolator::LogLinear,
             true,

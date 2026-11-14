@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     core::{
         elements::{
             volatilitycubelement::VolatilityCubeElement,
@@ -287,8 +287,8 @@ impl TimeDependentVolatility<f64> for SurfaceTermVolatility {
     }
 }
 
-impl TimeDependentVolatility<DualFwd> for SurfaceTermVolatility {
-    fn vol(&self, t: f64) -> Result<DualFwd> {
+impl TimeDependentVolatility<Recorded> for SurfaceTermVolatility {
+    fn vol(&self, t: f64) -> Result<Recorded> {
         let period = period_from_year_fraction(t)?;
         self.element
             .surface()
@@ -333,8 +333,8 @@ impl TimeDependentVolatility<f64> for CubeTermVolatility {
     }
 }
 
-impl TimeDependentVolatility<DualFwd> for CubeTermVolatility {
-    fn vol(&self, t: f64) -> Result<DualFwd> {
+impl TimeDependentVolatility<Recorded> for CubeTermVolatility {
+    fn vol(&self, t: f64) -> Result<Recorded> {
         let period = period_from_year_fraction(t)?;
         self.element
             .cube()
@@ -423,7 +423,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ad::dual::DualFwd,
+        ad::compiled::Recorded,
         time::date::Date,
         volatility::{
             interpolatedvolatilitycube::InterpolatedVolatilityCube,
@@ -438,15 +438,15 @@ mod tests {
         points.insert(
             Period::new(6, TimeUnit::Months),
             BTreeMap::from([
-                (F64Key::new(90.0), DualFwd::from(0.20)),
-                (F64Key::new(110.0), DualFwd::from(0.30)),
+                (F64Key::new(90.0), Recorded::from(0.20)),
+                (F64Key::new(110.0), Recorded::from(0.30)),
             ]),
         );
         points.insert(
             Period::new(12, TimeUnit::Months),
             BTreeMap::from([
-                (F64Key::new(90.0), DualFwd::from(0.22)),
-                (F64Key::new(110.0), DualFwd::from(0.34)),
+                (F64Key::new(90.0), Recorded::from(0.22)),
+                (F64Key::new(110.0), Recorded::from(0.34)),
             ]),
         );
         let surface = InterpolatedVolatilitySurface::new(
@@ -468,8 +468,8 @@ mod tests {
             let mut tenor_map = BTreeMap::new();
             for ten_n in [1, 5] {
                 let smile = BTreeMap::from([
-                    (F64Key::new(0.02), DualFwd::from(exp_v)),
-                    (F64Key::new(0.05), DualFwd::from(exp_v)),
+                    (F64Key::new(0.02), Recorded::from(exp_v)),
+                    (F64Key::new(0.05), Recorded::from(exp_v)),
                 ]);
                 tenor_map.insert(Period::new(ten_n, TimeUnit::Years), smile);
             }
@@ -513,7 +513,7 @@ mod tests {
         // t = 0.75y ≈ 9M: bilinear between 6M (0.25 at key 100) and 12M (0.28).
         let vol: f64 = TimeDependentVolatility::<f64>::vol(&source, 0.75)?;
         assert!((vol - 0.265).abs() < 5e-3, "got {vol}");
-        let vol_ad: DualFwd = TimeDependentVolatility::<DualFwd>::vol(&source, 0.75)?;
+        let vol_ad: Recorded = TimeDependentVolatility::<Recorded>::vol(&source, 0.75)?;
         assert!((vol_ad.value() - vol).abs() < 1e-15);
         Ok(())
     }
@@ -614,8 +614,8 @@ mod tests {
     ) -> ConstructedElementStore {
         let smile = |v: f64| {
             BTreeMap::from([
-                (F64Key::new(0.0), DualFwd::from(v)),
-                (F64Key::new(0.10), DualFwd::from(v)),
+                (F64Key::new(0.0), Recorded::from(v)),
+                (F64Key::new(0.10), Recorded::from(v)),
             ])
         };
         let mut points = BTreeMap::new();

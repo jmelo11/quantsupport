@@ -29,7 +29,7 @@ fn build_initialized_loan_market(fixings: FixingStore) -> ExampleResult<PricingC
 }
 /// Supplies common 30-year EUR mortgage terms: 250,000 principal, 6% fixed coupon,
 /// monthly French payments, Actual/360, TARGET, and a two-business-day fixing lag.
-fn default_loan_terms(reference: Date, identifier: &str) -> Result<MakeLoan<DualFwd>> {
+fn default_loan_terms(reference: Date, identifier: &str) -> Result<MakeLoan<Recorded>> {
     Ok(MakeLoan::default()
         .with_identifier(identifier.into())
         .with_start_date(reference)
@@ -39,7 +39,7 @@ fn default_loan_terms(reference: Date, identifier: &str) -> Result<MakeLoan<Dual
         .with_coupons(vec![CashflowType::FixedRateCoupon(FixedRateCoupon::new(
             1.0,
             Box::new(InterestRate::new(
-                DualFwd::new(0.06),
+                Recorded::new(0.06),
                 Compounding::Simple,
                 Frequency::Annual,
                 DayCounter::Actual360,
@@ -69,7 +69,7 @@ fn estr_loan_pricer() -> LoanPricer {
 /// Propagates pricing errors or a missing Value result.
 fn evaluate_loan_receipt_present_value(
     pricer: &LoanPricer,
-    trade: &LoanTrade<DualFwd>,
+    trade: &LoanTrade<Recorded>,
     context: &impl MarketDataProvider,
 ) -> Result<f64> {
     pricer
@@ -182,7 +182,7 @@ fn main() -> ExampleResult<()> {
         .with_identifier("CPR".into())
         .with_prepayment_configuration(PrepaymentModelConfiguration::Cpr(0.25))
         .build()?;
-    let fixed_redemptions = |loan: &Loan<DualFwd>| {
+    let fixed_redemptions = |loan: &Loan<Recorded>| {
         loan.contractual_leg()
             .cashflows()
             .iter()

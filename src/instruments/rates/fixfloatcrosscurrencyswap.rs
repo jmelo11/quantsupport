@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     core::{
         instrument::Instrument,
         request::LegsProvider,
@@ -187,7 +187,7 @@ impl FixFloatCrossCurrencySwapTrade<f64> {
 }
 
 #[allow(clippy::expect_used)]
-impl From<FixFloatCrossCurrencySwap<f64>> for FixFloatCrossCurrencySwap<DualFwd> {
+impl From<FixFloatCrossCurrencySwap<f64>> for FixFloatCrossCurrencySwap<Recorded> {
     fn from(value: FixFloatCrossCurrencySwap<f64>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
@@ -202,8 +202,8 @@ impl From<FixFloatCrossCurrencySwap<f64>> for FixFloatCrossCurrencySwap<DualFwd>
 }
 
 #[allow(clippy::expect_used)]
-impl From<FixFloatCrossCurrencySwap<DualFwd>> for FixFloatCrossCurrencySwap<f64> {
-    fn from(value: FixFloatCrossCurrencySwap<DualFwd>) -> Self {
+impl From<FixFloatCrossCurrencySwap<Recorded>> for FixFloatCrossCurrencySwap<f64> {
+    fn from(value: FixFloatCrossCurrencySwap<Recorded>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
             value.identifier,
@@ -216,7 +216,7 @@ impl From<FixFloatCrossCurrencySwap<DualFwd>> for FixFloatCrossCurrencySwap<f64>
     }
 }
 
-impl From<FixFloatCrossCurrencySwapTrade<f64>> for FixFloatCrossCurrencySwapTrade<DualFwd> {
+impl From<FixFloatCrossCurrencySwapTrade<f64>> for FixFloatCrossCurrencySwapTrade<Recorded> {
     fn from(value: FixFloatCrossCurrencySwapTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -228,8 +228,8 @@ impl From<FixFloatCrossCurrencySwapTrade<f64>> for FixFloatCrossCurrencySwapTrad
     }
 }
 
-impl From<FixFloatCrossCurrencySwapTrade<DualFwd>> for FixFloatCrossCurrencySwapTrade<f64> {
-    fn from(value: FixFloatCrossCurrencySwapTrade<DualFwd>) -> Self {
+impl From<FixFloatCrossCurrencySwapTrade<Recorded>> for FixFloatCrossCurrencySwapTrade<f64> {
+    fn from(value: FixFloatCrossCurrencySwapTrade<Recorded>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

@@ -3,7 +3,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    ad::dual::DualFwd,
+    ad::compiled::Recorded,
     calibration::impliedquote::ImpliedQuotePricer,
     core::{
         elements::curveelement::{ADCurveElement, DiscountCurveElement},
@@ -721,7 +721,7 @@ impl<'a> ForwardQuotation<'a> {
         &self,
         index: &MarketIndex,
         curve: &dyn ADCurveElement,
-    ) -> Result<Vec<(Date, DualFwd)>> {
+    ) -> Result<Vec<(Date, Recorded)>> {
         let config = self.configuration;
         let dates = if let Some(tenors) = config.curve_grid(index) {
             tenors

@@ -1,7 +1,7 @@
 //! Resolved Hull–White parameters and differentiable calibration state.
 use crate::rates::yieldtermstructure::primalcurve::PrimalCurve;
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     core::marketdatahandling::marketdata::MarketData,
     indices::marketindex::MarketIndex,
     models::{
@@ -158,11 +158,11 @@ impl HullWhiteParameters {
     ///
     /// # Errors
     /// Returns an error for missing calibration data or invalid Jacobian dimensions.
-    pub fn ad_parameters(&self, market_data: &MarketData) -> Result<HullWhiteParameters<DualFwd>> {
+    pub fn ad_parameters(&self, market_data: &MarketData) -> Result<HullWhiteParameters<Recorded>> {
         let mut schedule = self
             .sigma_schedule()
             .iter()
-            .map(|&(time, sigma)| (time, DualFwd::scalar(sigma)))
+            .map(|&(time, sigma)| (time, Recorded::scalar(sigma)))
             .collect::<Vec<_>>();
         if let Some((quality, sensitivities)) = &self.calibration {
             let ModelConfiguration::HullWhite {
@@ -210,7 +210,7 @@ impl HullWhiteParameters {
                             .volatility_from_period(record.expiry, tenor, record.effective_strike)?
                     }
                 };
-                sampled_vols.push(volatility.sub_val(DualFwd::scalar(record.market_vol)));
+                sampled_vols.push(volatility.sub_val(Recorded::scalar(record.market_vol)));
             }
             if sensitivities.len() != schedule.len()
                 || sensitivities
@@ -223,7 +223,7 @@ impl HullWhiteParameters {
             }
             for ((_, sigma), row) in schedule.iter_mut().zip(sensitivities) {
                 for (&delta, &derivative) in sampled_vols.iter().zip(row) {
-                    *sigma = sigma.add_val(delta.mul_val(DualFwd::scalar(derivative)));
+                    *sigma = sigma.add_val(delta.mul_val(Recorded::scalar(derivative)));
                 }
             }
         }

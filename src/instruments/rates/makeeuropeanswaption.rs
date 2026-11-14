@@ -389,7 +389,7 @@ impl<T: Scalar> MakeInstrument for MakeSwaption<T> {
 mod tests {
     use super::*;
     use crate::{
-        ad::dual::DualFwd,
+        ad::compiled::Recorded,
         core::instrument::Instrument,
         rates::compounding::Compounding,
         time::{daycounter::DayCounter, enums::Frequency},
@@ -403,8 +403,8 @@ mod tests {
         )
     }
 
-    fn base_builder() -> MakeSwaption<DualFwd> {
-        MakeSwaption::<DualFwd>::default()
+    fn base_builder() -> MakeSwaption<Recorded> {
+        MakeSwaption::<Recorded>::default()
             .with_identifier("swaption_test".to_string())
             .with_expiry(Date::new(2024, 6, 1))
             .with_swap_tenor_date(Date::new(2026, 6, 1))
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_build_swaption_missing_swap_tenor_fails() {
-        let result = MakeSwaption::<DualFwd>::default()
+        let result = MakeSwaption::<Recorded>::default()
             .with_identifier("swaption_missing_tenor".to_string())
             .with_expiry(Date::new(2024, 6, 1))
             .with_strike(0.03)

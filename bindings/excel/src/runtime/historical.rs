@@ -584,7 +584,7 @@ mod tests {
         let pricer = registry
             .upsert_if_changed("pricer", QsObject::Pricer(Box::new(pricer)), "pricer")
             .unwrap();
-        let deposit = MakeFixedRateDeposit::<DualFwd>::default()
+        let deposit = MakeFixedRateDeposit::<Recorded>::default()
             .with_identifier("deposit".into())
             .with_start_date(Date::new(2025, 1, 3))
             .with_maturity_date(Date::new(2025, 6, 15))
@@ -768,7 +768,7 @@ mod tests {
             );
         }
         let store = archive(&mut registry, "archive", &snapshots).unwrap();
-        let instrument = MakeFixedRateDeposit::<DualFwd>::default()
+        let instrument = MakeFixedRateDeposit::<Recorded>::default()
             .with_identifier("same-deposit".into())
             .with_start_date(Date::new(2025, 1, 17))
             .with_maturity_date(Date::new(2025, 6, 17))
@@ -790,8 +790,8 @@ mod tests {
             Side::LongReceive,
         );
         let pricer = DiscountedCashflowPricer::<
-            FixedRateDeposit<DualFwd>,
-            FixedRateDepositTrade<DualFwd>,
+            FixedRateDeposit<Recorded>,
+            FixedRateDepositTrade<Recorded>,
         >::new();
         let mut prices = Vec::new();
         for (day, snapshot) in [(15, &snapshots[0]), (16, &snapshots[1])] {

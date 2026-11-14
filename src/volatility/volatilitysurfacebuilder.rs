@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    ad::dual::DualFwd,
+    ad::compiled::Recorded,
     core::elements::volatilitysurfaceelement::VolatilitySurfaceElement,
     indices::marketindex::MarketIndex,
     quotes::{quote::Level, quoteselector::QuoteSelector},
@@ -85,7 +85,7 @@ impl VolatilitySurfaceBuilder {
         selector: &impl QuoteSelector,
         level: Level,
         reference_date: Date,
-    ) -> Result<(InterpolatedVolatilitySurface<DualFwd>, Vec<String>)> {
+    ) -> Result<(InterpolatedVolatilitySurface<Recorded>, Vec<String>)> {
         if spec.quotes().is_empty() {
             return Err(QSError::InvalidValueErr(format!(
                 "Volatility surface for {} requires at least one quote",
@@ -93,7 +93,7 @@ impl VolatilitySurfaceBuilder {
             )));
         }
         let mut coordinates = BTreeSet::new();
-        let mut points: BTreeMap<Period, BTreeMap<F64Key, DualFwd>> = BTreeMap::new();
+        let mut points: BTreeMap<Period, BTreeMap<F64Key, Recorded>> = BTreeMap::new();
         let mut node_labels: BTreeMap<Period, BTreeMap<F64Key, String>> = BTreeMap::new();
 
         for qid in spec.quotes() {
@@ -142,7 +142,7 @@ impl VolatilitySurfaceBuilder {
             points
                 .entry(expiry)
                 .or_default()
-                .insert(key, DualFwd::from(val));
+                .insert(key, Recorded::from(val));
         }
 
         // Keep labels in exactly the same canonical coordinate order used by

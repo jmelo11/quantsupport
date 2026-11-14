@@ -32,14 +32,14 @@ fn main() -> Result<()> {
 
     let notional = 1_000_000.0;
     let swap =
-        MakeOvernightIndexSwap::<DualFwd>::new(MarketIndex::ESTR, date, "18M".parse()?, 0.035)
+        MakeOvernightIndexSwap::<Recorded>::new(MarketIndex::ESTR, date, "18M".parse()?, 0.035)
             .with_identifier("EUR_ESTR_OIS_18M".into())
             .with_notional(notional)
             .build()?;
     let trade = OvernightIndexSwapTrade::new(swap, date, notional, Side::LongReceive);
     let mut pricer = DiscountedCashflowPricer::<
-        OvernightIndexSwap<DualFwd>,
-        OvernightIndexSwapTrade<DualFwd>,
+        OvernightIndexSwap<Recorded>,
+        OvernightIndexSwapTrade<Recorded>,
     >::new();
     pricer.set_discount_policy(Box::new(context.csa_policy()));
     let requests = [Request::Value, Request::Sensitivities];

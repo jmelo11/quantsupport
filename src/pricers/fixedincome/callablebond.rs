@@ -3,7 +3,7 @@ use super::bondevents::{bond_event_grid, BondEventGrid};
 use super::bondpricer::{contractual_market_request, BondValuation};
 use crate::instruments::fixedincome::bondterms::BondTerms;
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     core::{
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
@@ -22,7 +22,7 @@ pub struct CallableBondModel<T: Scalar> {
 }
 impl CallableBondModel<f64> {
     /// Rebuilds Hull-White parameters from market pillars for differentiable callable-bond valuation.
-    pub fn ad_model(&self, market: &MarketData) -> Result<CallableBondModel<DualFwd>> {
+    pub fn ad_model(&self, market: &MarketData) -> Result<CallableBondModel<Recorded>> {
         Ok(CallableBondModel {
             parameters: self.parameters.ad_parameters(market)?,
             time_grid: self.time_grid,
@@ -64,7 +64,7 @@ pub fn pricer_configuration(
 }
 /// Loads contractual and calibration data, resolves Hull-White parameters and aligns the time grid.
 pub fn prepare_callable_bond(
-    trade: &impl BondTerms<DualFwd>,
+    trade: &impl BondTerms<Recorded>,
     index: &MarketIndex,
     context: &impl MarketDataProvider,
     configuration: &PricerConfiguration,

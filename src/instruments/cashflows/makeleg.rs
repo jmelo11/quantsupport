@@ -1,5 +1,5 @@
 #[cfg(test)]
-use crate::ad::dual::DualFwd;
+use crate::ad::compiled::Recorded;
 use crate::{
     ad::scalar::Scalar,
     core::{
@@ -63,7 +63,7 @@ pub enum PaymentStructure {
 /// use quantsupport::prelude::*;
 ///
 /// let rate = InterestRate::from_rate_definition(
-///     DualFwd::new(0.05),
+///     Recorded::new(0.05),
 ///     RateDefinition::new(DayCounter::Actual360, Compounding::Simple, Frequency::Annual),
 /// );
 ///
@@ -1543,11 +1543,11 @@ mod tests {
         Ok(())
     }
 
-    fn create_test_leg_builder() -> MakeLeg<DualFwd> {
+    fn create_test_leg_builder() -> MakeLeg<Recorded> {
         let start_date = Date::new(2024, 1, 1);
         let end_date = Date::new(2025, 1, 1);
         let rate = InterestRate::from_rate_definition(
-            DualFwd::new(0.05),
+            Recorded::new(0.05),
             RateDefinition::new(
                 DayCounter::Actual360,
                 Compounding::Simple,
@@ -1555,7 +1555,7 @@ mod tests {
             ),
         );
 
-        MakeLeg::<DualFwd>::default()
+        MakeLeg::<Recorded>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .with_notional(100_000.0)
@@ -1630,7 +1630,7 @@ mod tests {
         let start_date = Date::new(2024, 1, 1);
         let end_date = Date::new(2025, 1, 1);
 
-        let leg_builder = MakeLeg::<DualFwd>::default()
+        let leg_builder = MakeLeg::<Recorded>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .bullet()
@@ -1648,7 +1648,7 @@ mod tests {
         let start_date = Date::new(2024, 1, 1);
         let end_date = Date::new(2025, 1, 1);
 
-        let leg_builder = MakeLeg::<DualFwd>::default()
+        let leg_builder = MakeLeg::<Recorded>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .with_notional(100_000.0)
@@ -1676,7 +1676,7 @@ mod tests {
         let mut redemptions = HashMap::new();
         redemptions.insert(end_date, 100_000.0);
 
-        let leg_builder = MakeLeg::<DualFwd>::default()
+        let leg_builder = MakeLeg::<Recorded>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .with_notional(100_000.0)
@@ -1706,7 +1706,7 @@ mod tests {
         let mut redemptions = HashMap::new();
         redemptions.insert(end_date, 95_000.0); // Unequal amount
 
-        let leg_builder = MakeLeg::<DualFwd>::default()
+        let leg_builder = MakeLeg::<Recorded>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .other()

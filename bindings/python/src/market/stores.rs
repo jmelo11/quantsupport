@@ -10,10 +10,10 @@ use crate::common::conversion::{
 use pyo3::prelude::*;
 use quantsupport::prelude::{
     CreditCurveConfiguration as QsCreditCurveConfiguration,
-    CurveConfiguration as QsCurveConfiguration, DayCounter, DualFwd, FixingStore as QsFixingStore,
+    CurveConfiguration as QsCurveConfiguration, DayCounter, FixingStore as QsFixingStore,
     FxRateRecord, FxStore as QsFxStore, InstrumentType, Interpolator,
     PricerConfiguration as QsPricerConfiguration, PricerImplementation, QuoteStore as QsQuoteStore,
-    QuoteStoreRecords, SimulationConfiguration as QsSimulationConfiguration,
+    QuoteStoreRecords, Recorded, SimulationConfiguration as QsSimulationConfiguration,
     VolatilityCubeConfiguration as QsVolatilityCubeConfiguration,
     VolatilitySurfaceConfiguration as QsVolatilitySurfaceConfiguration,
 };
@@ -460,7 +460,7 @@ impl FxStore {
         self.inner.add_fx_rate(
             extract_currency(base)?,
             extract_currency(quote)?,
-            DualFwd::from(rate),
+            Recorded::from(rate),
         );
         Ok(())
     }

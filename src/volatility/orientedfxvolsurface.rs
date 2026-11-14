@@ -23,7 +23,7 @@
 use std::cell::Ref;
 
 use crate::{
-    ad::dual::DualFwd,
+    ad::compiled::Recorded,
     core::elements::volatilitysurfaceelement::{
         ADVolatilitySurfaceElement, VolatilitySurfaceElement,
     },
@@ -78,7 +78,7 @@ impl<'a> OrientedFxVolSurface<'a> {
         &self,
         expiry: crate::time::date::Date,
         strike: f64,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let key = if self.inverted { 1.0 / strike } else { strike };
         self.element.surface().volatility_from_date(expiry, key)
     }

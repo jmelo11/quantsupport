@@ -9,7 +9,7 @@
 //! or the [`MakeContingentClaim`](super::makecontigentclaim::MakeContingentClaim) builder.
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     core::{
         collateral::Discountable,
         instrument::AssetClass,
@@ -439,7 +439,7 @@ impl ContingentClaim {
     ///
     /// # Errors
     /// Returns an error for scripted strategies, which require
-    /// `evaluate_dualfwd`, or propagates an inner claim's error.
+    /// `evaluate_recorded`, or propagates an inner claim's error.
     pub fn evaluate<T: Scalar + 'static>(&self, response: &SimulationResponse<T>) -> Result<T> {
         let sign = self.side().sign();
         let notional = self.notional();
@@ -477,7 +477,7 @@ impl ContingentClaim {
 
             ClaimEvaluationStrategy::Scripted { .. } => {
                 return Err(QSError::NotImplementedErr(
-                    "scripted claims require scenario-row DualFwd evaluation".to_string(),
+                    "scripted claims require scenario-row Recorded evaluation".to_string(),
                 ));
             }
         };
@@ -488,16 +488,16 @@ impl ContingentClaim {
             .mul_val(T::scalar(sign * notional)))
     }
 
-    /// Evaluates this claim from its indexed response block in a `DualFwd` scenario row.
+    /// Evaluates this claim from its indexed response block in a `Recorded` scenario row.
     ///
     /// # Errors
     /// Returns an error if preprocessing has not assigned an index, the model
     /// returned an incomplete response block, or the scripted payoff fails.
-    pub fn evaluate_dualfwd(
+    pub fn evaluate_recorded(
         &self,
         evaluation_date: Date,
-        responses: &[SimulationResponse<DualFwd>],
-    ) -> Result<DualFwd> {
+        responses: &[SimulationResponse<Recorded>],
+    ) -> Result<Recorded> {
         let index = self.idx.ok_or_else(|| {
             QSError::EvaluationErr(format!(
                 "contingent claim '{}' has not been indexed",
@@ -526,13 +526,13 @@ impl ContingentClaim {
                 ))
             })?;
         let raw = payoff.evaluate(evaluation_date, script_responses)?;
-        let discount = primary.discounts.unwrap_or_else(DualFwd::one);
-        let fx = primary.fx_rates.unwrap_or_else(DualFwd::one);
+        let discount = primary.discounts.unwrap_or_else(Recorded::one);
+        let fx = primary.fx_rates.unwrap_or_else(Recorded::one);
 
         Ok(raw
             .mul_val(discount)
             .mul_val(fx)
-            .mul_val(DualFwd::scalar(self.side.sign() * self.notional)))
+            .mul_val(Recorded::scalar(self.side.sign() * self.notional)))
     }
 }
 

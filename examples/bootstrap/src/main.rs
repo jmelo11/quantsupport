@@ -133,7 +133,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // FX spot from fixings: 1 USD = 935 CLP
     let mut fx_store = FxStore::new();
-    fx_store.add_fx_rate(Currency::USD, Currency::CLP, DualFwd::new(935.0));
+    fx_store.add_fx_rate(Currency::USD, Currency::CLP, Recorded::new(935.0));
 
     let bootstrapper = MultiCurveBootstrapper::new(curve_specs, policy).with_fx_store(fx_store);
     let curves = bootstrapper.bootstrap(&quote_store, Level::Mid)?;

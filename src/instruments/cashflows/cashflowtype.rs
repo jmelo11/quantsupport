@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     indices::marketindex::MarketIndex,
     instruments::cashflows::{
         cashflow::SimpleCashflow, fixedratecoupon::FixedRateCoupon,
@@ -322,7 +322,7 @@ mod tests {
     }
 }
 
-impl From<CashflowType<f64>> for CashflowType<DualFwd> {
+impl From<CashflowType<f64>> for CashflowType<Recorded> {
     fn from(value: CashflowType<f64>) -> Self {
         match value {
             CashflowType::FixedRateCoupon(coupon) => Self::FixedRateCoupon(coupon.into()),
@@ -338,8 +338,8 @@ impl From<CashflowType<f64>> for CashflowType<DualFwd> {
     }
 }
 
-impl From<CashflowType<DualFwd>> for CashflowType<f64> {
-    fn from(value: CashflowType<DualFwd>) -> Self {
+impl From<CashflowType<Recorded>> for CashflowType<f64> {
+    fn from(value: CashflowType<Recorded>) -> Self {
         match value {
             CashflowType::FixedRateCoupon(coupon) => Self::FixedRateCoupon(coupon.into()),
             CashflowType::FloatingRateCoupon(coupon) => Self::FloatingRateCoupon(coupon.into()),

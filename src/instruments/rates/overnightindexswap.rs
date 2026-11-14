@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     core::{
         collateral::Discountable,
         instrument::Instrument,
@@ -160,7 +160,7 @@ impl<T: Scalar> Trade<OvernightIndexSwap<T>> for OvernightIndexSwapTrade<T> {
     }
 }
 
-impl From<OvernightIndexSwap<f64>> for OvernightIndexSwap<DualFwd> {
+impl From<OvernightIndexSwap<f64>> for OvernightIndexSwap<Recorded> {
     fn from(value: OvernightIndexSwap<f64>) -> Self {
         Self {
             identifier: value.identifier,
@@ -171,8 +171,8 @@ impl From<OvernightIndexSwap<f64>> for OvernightIndexSwap<DualFwd> {
     }
 }
 
-impl From<OvernightIndexSwap<DualFwd>> for OvernightIndexSwap<f64> {
-    fn from(value: OvernightIndexSwap<DualFwd>) -> Self {
+impl From<OvernightIndexSwap<Recorded>> for OvernightIndexSwap<f64> {
+    fn from(value: OvernightIndexSwap<Recorded>) -> Self {
         Self {
             identifier: value.identifier,
             legs: value.legs.into_iter().map(Into::into).collect(),
@@ -182,7 +182,7 @@ impl From<OvernightIndexSwap<DualFwd>> for OvernightIndexSwap<f64> {
     }
 }
 
-impl From<OvernightIndexSwapTrade<f64>> for OvernightIndexSwapTrade<DualFwd> {
+impl From<OvernightIndexSwapTrade<f64>> for OvernightIndexSwapTrade<Recorded> {
     fn from(value: OvernightIndexSwapTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -193,8 +193,8 @@ impl From<OvernightIndexSwapTrade<f64>> for OvernightIndexSwapTrade<DualFwd> {
     }
 }
 
-impl From<OvernightIndexSwapTrade<DualFwd>> for OvernightIndexSwapTrade<f64> {
-    fn from(value: OvernightIndexSwapTrade<DualFwd>) -> Self {
+impl From<OvernightIndexSwapTrade<Recorded>> for OvernightIndexSwapTrade<f64> {
+    fn from(value: OvernightIndexSwapTrade<Recorded>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,
@@ -328,7 +328,7 @@ mod tests {
         let date = Date::new(2026, 1, 5);
         let expected_payment = ois.floating_leg().last_payment_date();
         let trade = OvernightIndexSwapTrade::new(ois, date, 1_000_000.0, Side::PayShort);
-        let dual_trade: OvernightIndexSwapTrade<DualFwd> = trade.into();
+        let dual_trade: OvernightIndexSwapTrade<Recorded> = trade.into();
         assert_eq!(dual_trade.legs().len(), 2);
         let trade: OvernightIndexSwapTrade<f64> = dual_trade.into();
         assert_eq!(trade.instrument().identifier(), "SOFR_OIS");

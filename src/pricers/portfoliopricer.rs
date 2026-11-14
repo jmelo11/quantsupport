@@ -29,7 +29,7 @@ use crate::{
 /// use quantsupport::prelude::*;
 ///
 /// let member_pricer = DiscountedCashflowPricer::<
-///     FixedRateDeposit<DualFwd>, FixedRateDepositTrade<DualFwd>,
+///     FixedRateDeposit<Recorded>, FixedRateDepositTrade<Recorded>,
 /// >::new();
 /// let portfolio_pricer = PortfolioPricer::new(member_pricer);
 /// // portfolio_pricer.evaluate(&portfolio, &[Request::Value], &context)?;

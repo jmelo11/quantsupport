@@ -28,8 +28,8 @@ pub fn accrual_periods() -> [(Date, Date); 4] {
 }
 
 /// Curve shared by both valuation routes.
-pub fn discount_curve() -> Result<DiscountTermStructure<DualFwd>> {
-    DiscountTermStructure::<DualFwd>::new(
+pub fn discount_curve() -> Result<DiscountTermStructure<Recorded>> {
+    DiscountTermStructure::<Recorded>::new(
         vec![
             reference_date(),
             Date::new(2025, 4, 1),
@@ -38,11 +38,11 @@ pub fn discount_curve() -> Result<DiscountTermStructure<DualFwd>> {
             maturity_date(),
         ],
         vec![
-            DualFwd::one(),
-            DualFwd::from(0.9900),
-            DualFwd::from(0.9795),
-            DualFwd::from(0.9685),
-            DualFwd::from(0.9570),
+            Recorded::one(),
+            Recorded::from(0.9900),
+            Recorded::from(0.9795),
+            Recorded::from(0.9685),
+            Recorded::from(0.9570),
         ],
         DayCounter::Actual360,
         Interpolator::LogLinear,
@@ -113,7 +113,7 @@ pub fn scripted_swap_events() -> std::result::Result<EventStream, QSError> {
 }
 
 #[must_use]
-pub fn pricing_context(curve: &DiscountTermStructure<DualFwd>) -> PricingContext {
+pub fn pricing_context(curve: &DiscountTermStructure<Recorded>) -> PricingContext {
     let mut elements = ConstructedElementStore::default();
     elements.discount_curves_mut().insert(
         MarketIndex::SOFR,

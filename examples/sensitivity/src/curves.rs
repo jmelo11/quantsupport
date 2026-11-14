@@ -72,7 +72,7 @@ pub fn build_curves(
 
     // FX spot: 1 USD = 935 CLP
     let mut fx_store = FxStore::new();
-    fx_store.add_fx_rate(Currency::USD, Currency::CLP, DualFwd::new(935.0));
+    fx_store.add_fx_rate(Currency::USD, Currency::CLP, Recorded::new(935.0));
 
     let bootstrapper = MultiCurveBootstrapper::new(curve_specs, policy).with_fx_store(fx_store);
     let curves = bootstrapper.bootstrap(quote_store, Level::Mid)?;
@@ -89,7 +89,7 @@ pub fn build_curves(
     }
 
     let mut pricing_fx_store = FxStore::new();
-    pricing_fx_store.add_fx_rate(Currency::USD, Currency::CLP, DualFwd::new(935.0));
+    pricing_fx_store.add_fx_rate(Currency::USD, Currency::CLP, Recorded::new(935.0));
 
     let context = PricingContext::new()
         .with_base_currency(Currency::USD)

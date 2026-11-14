@@ -1,7 +1,7 @@
 //! Contractual cashflows and issuer-call obstacles on an evolution time grid.
 use super::bondpricer::ResolvedCashflow;
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     core::pricerconfiguration::TimeGridConfiguration,
     instruments::{
         cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
@@ -30,7 +30,7 @@ pub struct BondEventGrid<T> {
 }
 
 /// Returns principal cancelled when an issuer call terminates the bond.
-fn call_principal(leg: &Leg<DualFwd>, call_date: Date) -> Result<f64> {
+fn call_principal(leg: &Leg<Recorded>, call_date: Date) -> Result<f64> {
     leg.cashflows()
         .iter()
         .filter_map(|cashflow| match cashflow {
@@ -50,7 +50,7 @@ fn call_principal(leg: &Leg<DualFwd>, call_date: Date) -> Result<f64> {
 /// Maps contractual cashflows and issuer calls to the nearest points of a
 /// uniform time grid shared by the two callable engines.
 pub fn bond_event_grid<T: Scalar>(
-    leg: &Leg<DualFwd>,
+    leg: &Leg<Recorded>,
     units: f64,
     call_schedule: &[CallScheduleEntry],
     cashflows: &[ResolvedCashflow<T>],
@@ -201,7 +201,7 @@ mod tests {
             TimeGridConfiguration::new(4, 4, DayCounter::Actual365),
         )?;
         assert_eq!(active.calls[0].call_price, Some(95.0));
-        let amortizing = MakeSteppedCouponBond::<DualFwd>::default()
+        let amortizing = MakeSteppedCouponBond::<Recorded>::default()
             .with_identifier("USD-AMORTIZING-WINDOW".into())
             .with_start_date(start)
             .with_maturity_date(maturity)

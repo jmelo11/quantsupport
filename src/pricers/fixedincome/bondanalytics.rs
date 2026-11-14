@@ -1,7 +1,7 @@
 //! Numerical clean/dirty quote conversion, yield solving and duration analytics.
 use super::bondpricer::ResolvedCashflow;
 use crate::{
-    ad::dual::DualFwd,
+    ad::compiled::Recorded,
     instruments::{
         cashflows::{
             cashflowtype::CashflowType,
@@ -17,7 +17,7 @@ use crate::{
 
 /// Calculates coupon accrual from the active coupon's accrual start through
 /// settlement.
-fn accrued_interest(leg: &Leg<DualFwd>, settlement_date: Date) -> Result<f64> {
+fn accrued_interest(leg: &Leg<Recorded>, settlement_date: Date) -> Result<f64> {
     let leg: Leg<f64> = leg.clone().into();
     for cashflow in leg.cashflows() {
         let amount = match cashflow {
@@ -52,7 +52,7 @@ fn accrued_interest(leg: &Leg<DualFwd>, settlement_date: Date) -> Result<f64> {
 /// units; spread anchors do not provide a target price.
 pub(super) fn quoted_dirty_price(
     anchor: BondPricingAnchor,
-    leg: &Leg<DualFwd>,
+    leg: &Leg<Recorded>,
     units: f64,
     settlement_date: Date,
     principal: f64,

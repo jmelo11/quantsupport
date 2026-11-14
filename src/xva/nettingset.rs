@@ -109,7 +109,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ad::{dual::DualFwd, scalar::Scalar},
+        ad::{compiled::Recorded, scalar::Scalar},
         core::{
             elements::curveelement::DiscountCurveElement,
             marketdatahandling::constructedelementstore::ConstructedElementStore,
@@ -151,14 +151,14 @@ mod tests {
     fn run(terms: CsaTerms) -> Result<ExposureResult> {
         let reference_date = Date::new(2025, 1, 1);
         let maturity = Date::new(2026, 1, 1);
-        let curve = DiscountTermStructure::<DualFwd>::new(
+        let curve = DiscountTermStructure::<Recorded>::new(
             vec![reference_date, maturity],
-            vec![DualFwd::one(), DualFwd::scalar(0.95)],
+            vec![Recorded::one(), Recorded::scalar(0.95)],
             DayCounter::Actual365,
             Interpolator::LogLinear,
             true,
         )?
-        .with_pillar_values(vec![DualFwd::scalar(0.95)])?
+        .with_pillar_values(vec![Recorded::scalar(0.95)])?
         .with_pillar_labels(vec!["SOFR.1Y".into()])?;
         let mut elements = ConstructedElementStore::default();
         elements.discount_curves_mut().insert(

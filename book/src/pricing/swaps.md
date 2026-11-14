@@ -83,7 +83,7 @@ and index-specific overnight conventions:
 use quantsupport::prelude::*;
 
 let rd = Date::new(2026, 1, 2);
-let ois = MakeOvernightIndexSwap::<DualFwd>::new(
+let ois = MakeOvernightIndexSwap::<Recorded>::new(
     MarketIndex::SOFR, rd, Period::new(5, TimeUnit::Years), 0.04,
 )
 .with_identifier("USD_SOFR_OIS_5Y".into())

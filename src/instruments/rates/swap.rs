@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     core::{
         instrument::Instrument,
         request::LegsProvider,
@@ -146,7 +146,7 @@ where
 }
 
 #[allow(clippy::expect_used)]
-impl From<Swap<f64>> for Swap<DualFwd> {
+impl From<Swap<f64>> for Swap<Recorded> {
     fn from(value: Swap<f64>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
@@ -160,8 +160,8 @@ impl From<Swap<f64>> for Swap<DualFwd> {
 }
 
 #[allow(clippy::expect_used)]
-impl From<Swap<DualFwd>> for Swap<f64> {
-    fn from(value: Swap<DualFwd>) -> Self {
+impl From<Swap<Recorded>> for Swap<f64> {
+    fn from(value: Swap<Recorded>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
             value.identifier,
@@ -173,7 +173,7 @@ impl From<Swap<DualFwd>> for Swap<f64> {
     }
 }
 
-impl From<SwapTrade<f64>> for SwapTrade<DualFwd> {
+impl From<SwapTrade<f64>> for SwapTrade<Recorded> {
     fn from(value: SwapTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -184,8 +184,8 @@ impl From<SwapTrade<f64>> for SwapTrade<DualFwd> {
     }
 }
 
-impl From<SwapTrade<DualFwd>> for SwapTrade<f64> {
-    fn from(value: SwapTrade<DualFwd>) -> Self {
+impl From<SwapTrade<Recorded>> for SwapTrade<f64> {
+    fn from(value: SwapTrade<Recorded>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

@@ -20,8 +20,8 @@ use pyo3::{
     types::{PyDict, PyType},
 };
 use quantsupport::prelude::{
-    Currency as QsCurrency, DualFwd, Loan as QsLoan, LoanRepaymentStructure, LoanTrade,
-    MakeInstrument, MakeLoan, PrepaymentModelConfiguration, QSError,
+    Currency as QsCurrency, Loan as QsLoan, LoanRepaymentStructure, LoanTrade, MakeInstrument,
+    MakeLoan, PrepaymentModelConfiguration, QSError, Recorded,
 };
 use std::collections::HashSet;
 
@@ -95,10 +95,10 @@ use std::collections::HashSet;
 #[derive(Clone)]
 pub struct Loan {
     /// Native contractual cashflows and prepayment/credit terms used in valuation.
-    pub inner: QsLoan<DualFwd>,
+    pub inner: QsLoan<Recorded>,
     principal: f64,
     payment_currency: QsCurrency,
-    builder: MakeLoan<DualFwd>,
+    builder: MakeLoan<Recorded>,
     construction_parameters: serde_json::Value,
 }
 
@@ -110,7 +110,7 @@ impl Loan {
     ///
     /// # Errors
     /// Propagates invalid overridden principal or contractual construction terms.
-    pub fn build_native_loan_trade(&self, position: &Trade) -> PyResult<LoanTrade<DualFwd>> {
+    pub fn build_native_loan_trade(&self, position: &Trade) -> PyResult<LoanTrade<Recorded>> {
         let loan = match position.notional() {
             Some(notional) if notional != self.inner.notional() => self
                 .builder

@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{compiled::Recorded, scalar::Scalar},
     core::{
         collateral::Discountable,
         instrument::{AssetClass, Instrument},
@@ -157,7 +157,7 @@ where
     }
 }
 
-impl From<FloatingRateNote<f64>> for FloatingRateNote<DualFwd> {
+impl From<FloatingRateNote<f64>> for FloatingRateNote<Recorded> {
     fn from(value: FloatingRateNote<f64>) -> Self {
         Self::new(
             value.identifier,
@@ -170,8 +170,8 @@ impl From<FloatingRateNote<f64>> for FloatingRateNote<DualFwd> {
     }
 }
 
-impl From<FloatingRateNote<DualFwd>> for FloatingRateNote<f64> {
-    fn from(value: FloatingRateNote<DualFwd>) -> Self {
+impl From<FloatingRateNote<Recorded>> for FloatingRateNote<f64> {
+    fn from(value: FloatingRateNote<Recorded>) -> Self {
         Self::new(
             value.identifier,
             value.units,
@@ -183,7 +183,7 @@ impl From<FloatingRateNote<DualFwd>> for FloatingRateNote<f64> {
     }
 }
 
-impl From<FloatingRateNoteTrade<f64>> for FloatingRateNoteTrade<DualFwd> {
+impl From<FloatingRateNoteTrade<f64>> for FloatingRateNoteTrade<Recorded> {
     fn from(value: FloatingRateNoteTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -194,8 +194,8 @@ impl From<FloatingRateNoteTrade<f64>> for FloatingRateNoteTrade<DualFwd> {
     }
 }
 
-impl From<FloatingRateNoteTrade<DualFwd>> for FloatingRateNoteTrade<f64> {
-    fn from(value: FloatingRateNoteTrade<DualFwd>) -> Self {
+impl From<FloatingRateNoteTrade<Recorded>> for FloatingRateNoteTrade<f64> {
+    fn from(value: FloatingRateNoteTrade<Recorded>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

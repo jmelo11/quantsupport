@@ -67,7 +67,7 @@ or another `MarketDataProvider`.
 This fragment uses an existing `market` and `pricer` to build and value a swap:
 
 ```rust,ignore
-let maker = MakeSwap::<DualFwd>::default()
+let maker = MakeSwap::<Recorded>::default()
     .with_identifier("spot-5y".into())
     .with_start_tenor(Period::from_str("0D")?)
     .with_tenor(Period::from_str("5Y")?)

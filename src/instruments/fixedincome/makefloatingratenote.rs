@@ -28,7 +28,7 @@ use std::marker::PhantomData;
 /// ```rust
 /// use quantsupport::prelude::*;
 ///
-/// let frn = MakeFloatingRateNote::<DualFwd>::default()
+/// let frn = MakeFloatingRateNote::<Recorded>::default()
 ///     .with_identifier("FRN-2Y".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2026, 1, 1))
