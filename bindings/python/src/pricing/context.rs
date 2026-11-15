@@ -4,7 +4,7 @@
 //! All market data and configurations are passed as typed objects
 //! ([`crate::market::stores`]); the base-curve definition lives in a dedicated
 //! [`SingleCurveCSADiscountPolicy`]. Entering the `with` block enables request-driven market construction;
-//! leaving it stops the tape and releases all constructed market data.
+//! leaving it stops the capture and releases all constructed market data.
 
 use crate::{
     common::conversion::{extract_level, extract_market_index, extract_requests, qs_err},
@@ -41,7 +41,7 @@ use crate::{
 use pyo3::{prelude::*, types::PyType};
 use quantsupport::{
     prelude::{
-        ADForward, BackwardFourierEvolutionBondPricer, BasisSwap as QsBasisSwap, BasisSwapTrade,
+        BackwardFourierEvolutionBondPricer, BasisSwap as QsBasisSwap, BasisSwapTrade,
         BlackEuropeanOptionPricer, BondPricer, CalibrationSource, CdsPricer,
         ClosedFormBlackCapPricer, ClosedFormBlackCapletPricer, ConstructedElementRequest,
         ConstructedElementStore, DayCounter, DiscountedCashflowPricer,
@@ -53,8 +53,8 @@ use quantsupport::{
         LgmMarketModel, LgmRateModel, LoanPricer, MarketData, MarketDataProvider,
         MarketDataRequest, ModelConfiguration, ParameterSource, PortfolioPricer, Pricer,
         PricerImplementation, PricingContext as QsPricingContext, QSError, QuoteSelector,
-        QuoteStore as QsQuoteStore, RateFuturesPricer, Recorded, Request as QsRequest,
-        RiskContext as QsRiskContext, Scalar, ScriptEngine, Swap as QsSwap, SwapTrade, Tape,
+        QuoteStore as QsQuoteStore, RateFuturesPricer, Recorded, Recording, Request as QsRequest,
+        RiskContext as QsRiskContext, Scalar, ScriptEngine, Swap as QsSwap, SwapTrade,
         TreeBasedBondPricer, XvaEngine,
     },
     utils::errors::Result as QsResult,
@@ -955,7 +955,7 @@ impl PricingContext {
             context.initialized = true;
         }
         if enter_context(&slf) {
-            Tape::<ADForward>::start_recording_fwd();
+            Recording::start();
         }
         Ok(slf)
     }
@@ -970,8 +970,8 @@ impl PricingContext {
         let (same_context_remains, another_context_remains) = exit_context(&slf)?;
         if !same_context_remains {
             if !another_context_remains {
-                Tape::<ADForward>::stop_recording_fwd();
-                Tape::<ADForward>::rewind_to_init_fwd();
+                Recording::stop();
+                Recording::clear();
             }
             let mut context = slf.try_borrow_mut()?;
             *context.inner.constructed_elements_mut() = ConstructedElementStore::default();
@@ -1300,11 +1300,10 @@ impl PricingContext {
         reqs: &[QsRequest],
         market: &impl MarketDataProvider,
     ) -> PyResult<QsEvaluationResults> {
-        // Native pricers start a fresh tape and attach their market pillars.
-        // Build contractual amounts/rates without tape nodes: recording them
-        // here would leave pointers into storage reused by that fresh tape,
+        // Native pricers start a fresh compiler capture for market inputs.
+        // Construct contractual amounts and rates as detached numeric values,
         // making fixed contract terms appear sensitive to unrelated quotes.
-        Tape::<ADForward>::stop_recording_fwd();
+        Recording::stop();
 
         let position = trade.extract::<PyRef<'_, Trade>>().map_err(|_| {
             pyo3::exceptions::PyTypeError::new_err(

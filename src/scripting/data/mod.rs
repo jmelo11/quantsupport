@@ -15,5 +15,5 @@ Wiley, 2018
 This attribution and license notice must be preserved at the top of this file.
 */
 
-/// Per-event simulation data and complete scenarios.
+/// Provides the per-event simulation data and complete scenarios.
 pub mod simulationdata;

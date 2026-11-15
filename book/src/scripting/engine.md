@@ -41,19 +41,23 @@ programs use the smoothed evaluator described in the language chapter.
 
 ## Pathwise AD and reporting
 
-Curve pillars and model inputs must be registered on the current tape before
-evaluation. For each path the engine rewinds to its mark, generates requested
-responses, evaluates the program and accumulates its contribution. It
-propagates the selected weighted result back to pre-mark dependencies before
-discarding path-local nodes. After the path loop, adjoints reach the registered
-leaves.
+Curve pillars and model inputs are registered in a compiler capture. The
+parallel API prepares supported model/script layouts as shared native path
+programs: paths supply indexed draws, and the compiled program calculates
+values, payments and first gradients. Compatible subsequent calls reuse code
+while rebinding current market coefficients and their published-risk map.
 
-This bounds temporary tape memory to one path rather than all paths at once.
-Parallel evaluation constructs a model and tape per worker through
-`ScriptModelSetup`, returning partial values, labeled sensitivities and
-cashflows. The total path count determines normalization. Reproducible path
-indices do not promise bitwise identical floating-point reductions across
-arbitrary thread layouts.
+Other layouts retain a setup prefix, build transient IR for one path and run
+native differentiation before discarding that IR. Their gradients already
+include setup dependencies and accumulate across the path range. This bounds
+temporary capture memory without an interpreted derivative propagation pass.
+`ScriptModelSetup` constructs inputs in the appropriate capture; live
+expression identities are not shared across independent worker captures.
+
+The total path count determines normalization. Reproducible path indices do
+not promise bitwise identical floating-point reductions across arbitrary
+thread layouts. Prepared and per-path-capture routes have different first-call
+and warm costs and are benchmarked separately from the stored-path equity pricer.
 
 `evaluate_with_cashflows` additionally collects executed payments. Each
 `ExpectedCashflow` distinguishes mean undiscounted amount in payment currency

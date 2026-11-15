@@ -1,5 +1,5 @@
 use crate::{
-    ad::{tape::Tape, Recorded},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -20,6 +20,7 @@ use crate::{
     },
     indices::marketindex::MarketIndex,
     instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
+    rates::interestrate::InterestRate,
     time::date::Date,
     utils::errors::{QSError, Result},
 };
@@ -28,13 +29,13 @@ use std::{collections::HashSet, marker::PhantomData};
 /// State for cashflow discounting, holding market data and intermediate values.
 struct DCFState<'a> {
     /// The computed DCF value.
-    pub value: Option<Recorded>,
+    value: Option<Recorded>,
     /// Market data response for discount curves.
-    pub md_response: Option<MarketData>,
+    md_response: Option<MarketData>,
     /// Resolved legs used by default cashflows handling.
-    pub legs: &'a [Leg<Recorded>],
+    legs: &'a [Leg<Recorded>],
     /// The evaluation date, used to determine if a fixing is in the past.
-    pub eval_date: Date,
+    eval_date: Date,
 }
 
 impl PricerState for DCFState<'_> {
@@ -103,6 +104,7 @@ impl<I, T> DiscountedCashflowPricer<I, T> {
 }
 
 impl LegsProvider<Recorded> for DCFState<'_> {
+    /// Returns the trade legs used by the existing cashflow valuation.
     fn legs(&self) -> &[Leg<Recorded>] {
         self.legs
     }
@@ -137,8 +139,8 @@ where
         };
 
         // Cached values retain their graph across requests, including prior adjoints.
-        Tape::reset_adjoints_fwd();
-        let () = price.backward_to_mark()?;
+        Recording::reset_derivatives();
+        let () = price.differentiate_accumulating()?;
 
         // Collect sensitivities from all unique discount curves used in valuation
         let mut all_ids = Vec::new();
@@ -156,7 +158,7 @@ where
                         .pillars()
                         .into_iter()
                         .flat_map(IntoIterator::into_iter)
-                        .map(|(label, value)| (label, value.adjoint().ok()))
+                        .map(|(label, value)| (label, value.derivative().ok()))
                         .unzip();
 
                     all_ids.extend(ids);
@@ -177,7 +179,7 @@ where
                         .pillars()
                         .into_iter()
                         .flat_map(IntoIterator::into_iter)
-                        .map(|(label, value)| (label, value.adjoint().ok()))
+                        .map(|(label, value)| (label, value.derivative().ok()))
                         .unzip();
 
                     all_ids.extend(ids);
@@ -199,7 +201,7 @@ where
                         .pillars()
                         .into_iter()
                         .flat_map(std::iter::IntoIterator::into_iter)
-                        .map(|(label, value)| (label, value.adjoint().ok()))
+                        .map(|(label, value)| (label, value.derivative().ok()))
                         .unzip();
 
                     all_ids.extend(ids);
@@ -440,14 +442,13 @@ where
                         .market_index()
                         .rate_index_details()?
                         .rate_definition();
-                    let growth: Recorded = (fwd_curve
+                    let growth: Recorded = fwd_curve
                         .discount_factor(coupon.accrual_start_date())?
-                        / fwd_curve.discount_factor(coupon.accrual_end_date())?)
-                    .into();
+                        / fwd_curve.discount_factor(coupon.accrual_end_date())?;
                     let time = rd
                         .day_counter()
                         .year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date());
-                    let fwd = crate::rates::interestrate::InterestRate::<Recorded>::implied_rate(
+                    let fwd = InterestRate::<Recorded>::implied_rate(
                         growth,
                         rd.day_counter(),
                         rd.compounding(),
@@ -497,13 +498,13 @@ where
             }
         }
 
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
+        Recording::start();
+        Recording::checkpoint();
 
         let mut pv = Recorded::new(0.0);
 
-        // Put pillars on tape for sensitivity calculation
-        state.put_pillars_on_tape()?;
+        // Put pillars on capture for sensitivity calculation
+        state.register_pillars()?;
         Self::resolve_coupons(trade, state, None)?;
 
         // Iterate through all legs
@@ -552,15 +553,15 @@ where
                     .get_discount_curve_element(&leg_discount_index)?
                     .curve()
                     .discount_factor(payment_date)?;
-                let cf_pv: Recorded = (amount * fx * df).into();
+                let cf_pv: Recorded = amount * fx * df;
 
-                pv = (pv + cf_pv * side).into();
+                pv += cf_pv * side;
             }
         }
 
         state.value = Some(pv);
 
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(state
             .value
             .ok_or_else(|| QSError::ValueNotSetErr("PV value".into()))?
@@ -715,7 +716,7 @@ where
             eval_date,
         };
 
-        // Only price-dependent requests need a PV and its differentiation tape.
+        // Only price-dependent requests need a PV and its differentiation capture.
         let needs_value = requests.iter().any(|r| {
             matches!(
                 r,
@@ -1522,7 +1523,7 @@ mod tests {
 
         let par_trade = SwapTrade::new(swap_at_par, start_date, notional, Side::LongReceive);
 
-        // Rebuild market data (tape state is consumed by previous eval).
+        // Rebuild market data (capture state is consumed by previous eval).
         let discount_curve2 = FlatForwardTermStructure::new(
             start_date,
             Recorded::from(flat_rate),
@@ -1782,7 +1783,7 @@ mod reporting_tests {
             .with_fx_store(fx)
     }
 
-    /// Builds a fixed EUR deposit with contract terms detached from any previous AD tape.
+    /// Builds a fixed EUR deposit with contract terms detached from any previous AD capture.
     fn trade() -> Result<FixedRateDepositTrade<Recorded>> {
         dated_trade(
             Date::new(2026, 2, 24),
@@ -1797,7 +1798,7 @@ mod reporting_tests {
         maturity: Date,
         side: Side,
     ) -> Result<FixedRateDepositTrade<Recorded>> {
-        Tape::<ADForward>::stop_recording_fwd();
+        Recording::stop();
         let deposit = MakeFixedRateDeposit::<Recorded>::default()
             .with_identifier("EUR-DEPOSIT".into())
             .with_start_date(start)

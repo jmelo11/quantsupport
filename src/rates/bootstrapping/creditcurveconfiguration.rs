@@ -1,6 +1,6 @@
 //! Credit curve (hazard-rate) configuration.
 //!
-//! A [`CreditCurveConfiguration`] describes how to bootstrap a survival
+//! A [`CreditCurveConfiguration`](crate::rates::bootstrapping::creditcurveconfiguration::CreditCurveConfiguration) describes how to bootstrap a survival
 //! curve for a single reference entity from its CDS par-spread quotes.
 //! The struct is serde-deserializable so it can be loaded straight from
 //! JSON configuration files:

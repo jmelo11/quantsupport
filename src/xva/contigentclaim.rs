@@ -1,12 +1,12 @@
 //! The atomic unit of exposure computation.
 //!
-//! A [`ContingentClaim`] represents a single contingent cashflow that can
-//! declare its market-data requirements via [`simulation_requests`](ContingentClaim::simulation_requests)
-//! and be valued on a simulated scenario via [`evaluate`](ContingentClaim::evaluate).
+//! A [`ContingentClaim`](crate::xva::contigentclaim::ContingentClaim) represents a single contingent cashflow that can
+//! declare its market-data requirements via [`simulation_requests`](crate::xva::contigentclaim::ContingentClaim::simulation_requests)
+//! and be valued on a simulated scenario via [`evaluate`](crate::xva::contigentclaim::ContingentClaim::evaluate).
 //!
 //! Trades are decomposed into one or more `ContingentClaim`s by the
-//! [`IntoContingentClaims`](super::makecontigentclaim::IntoContingentClaims) trait
-//! or the [`MakeContingentClaim`](super::makecontigentclaim::MakeContingentClaim) builder.
+//! [`IntoContingentClaims`](crate::xva::makecontigentclaim::IntoContingentClaims) trait
+//! or the [`MakeContingentClaim`](crate::xva::makecontigentclaim::MakeContingentClaim) builder.
 
 use crate::{
     ad::{scalar::Scalar, Recorded},
@@ -194,7 +194,8 @@ impl ContingentClaim {
         self.index.as_ref()
     }
 
-    /// Returns the flat-vector index assigned by the [`PreprocessorExecutor`](super::visitors::preprocessorexecutor::PreprocessorExecutor).
+    /// Returns the response-block index assigned by the [`PreprocessorExecutor`](super::visitors::preprocessorexecutor::PreprocessorExecutor).
+    /// Identical market-request blocks can be shared by several independent claims.
     #[must_use]
     pub const fn idx(&self) -> Option<usize> {
         self.idx

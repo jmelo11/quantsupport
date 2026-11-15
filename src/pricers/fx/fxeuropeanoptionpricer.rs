@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::{
-    ad::{tape::Tape, Recorded},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -99,9 +99,9 @@ impl HandleValue<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEuropeanOpt
         trade: &FxEuropeanOptionTrade,
         state: &mut FxEuropeanOptionState,
     ) -> Result<f64> {
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
-        state.put_pillars_on_tape()?;
+        Recording::start();
+        Recording::checkpoint();
+        state.register_pillars()?;
 
         let inst = trade.instrument();
         let base = inst.base_currency();
@@ -132,7 +132,7 @@ impl HandleValue<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEuropeanOpt
 
         let spot = state.get_exchange_rate(base, quote)?;
         // Garman-Kohlhagen forward: F = S * DF_base / DF_quote
-        let forward: Recorded = (spot * df_base / df_quote).into();
+        let forward: Recorded = spot * df_base / df_quote;
 
         let strike = inst.strike().resolve(forward.value());
         let vol = if tau <= 0.0 {
@@ -146,8 +146,8 @@ impl HandleValue<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEuropeanOpt
         let is_call = matches!(inst.option_type(), EuroOptionType::Call);
         let undiscounted = if tau <= 0.0 || vol.value().abs() < f64::EPSILON {
             let payoff: Recorded = match inst.option_type() {
-                EuroOptionType::Call => (forward - strike).into(),
-                EuroOptionType::Put => (Recorded::from(strike) - forward).into(),
+                EuroOptionType::Call => forward - strike,
+                EuroOptionType::Put => Recorded::from(strike) - forward,
             };
             payoff.max(Recorded::zero())
         } else {
@@ -156,20 +156,20 @@ impl HandleValue<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEuropeanOpt
 
         let notional = Recorded::new(trade.notional());
         let side = Recorded::new(trade.side().sign());
-        let npv: Recorded = (df_quote * undiscounted * notional * side).into();
+        let npv: Recorded = df_quote * undiscounted * notional * side;
         let source = inst.quote_currency();
         let npv = if let Some(target) = state
             .get_market_data_reponse()
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (npv * state.get_exchange_rate(source, target)?).into()
+            npv * state.get_exchange_rate(source, target)?
         } else {
             npv
         };
         state.value = Some(npv);
 
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(npv.value())
     }
 }
@@ -189,7 +189,7 @@ impl HandleSensitivities<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEur
                 .ok_or_else(|| QSError::UnexpectedErr("Missing value in FX option state".into()))?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
 
         let inst = trade.instrument();
         let policy = self.discount_policy.as_ref().ok_or_else(|| {
@@ -210,7 +210,7 @@ impl HandleSensitivities<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEur
             let element = state.get_discount_curve_element(&idx)?;
             for (label, value) in element.curve().pillars().into_iter().flatten() {
                 ids.push(label);
-                exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
+                exposures.push(value.derivative().map_or(0.0, |a| a.value()));
             }
         }
 
@@ -223,14 +223,14 @@ impl HandleSensitivities<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEur
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         // FX spot sensitivities
         if let Some(store) = state.get_fx_store() {
             for (label, value) in store.pillars().into_iter().flatten() {
                 ids.push(label);
-                exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
+                exposures.push(value.derivative().map_or(0.0, |a| a.value()));
             }
         }
 

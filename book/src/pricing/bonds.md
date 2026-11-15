@@ -24,7 +24,7 @@ configured. Principal is excluded, and the requested dates are clipped to each
 coupon period. Adjacent windows reconcile to the complete coupon.
 
 The request uses numeric coupon accrual without solving a spread, normalizing a
-clean or dirty quote, or recording a differentiation tape. A callable bond
+clean or dirty quote, or recording a compiler capture. A callable bond
 reports contractual interest assuming its scheduled coupons continue; this
 measure does not include future exercise-probability weighting. Accrual alone
 requires no tree or Fourier valuation model.
@@ -345,7 +345,7 @@ fit used by the tree.
 
 For a clean or dirty price anchor, the selected callable engine is evaluated
 inside a bracketed scalar root solve until model dirty value equals quoted
-dirty value. The converged OAS is then placed on the AD tape for final
+dirty value. The converged OAS is then placed on the AD capture for final
 valuation. `Request::Sensitivities` contains all discount/forward-curve pillar
 adjoints and one additional row:
 

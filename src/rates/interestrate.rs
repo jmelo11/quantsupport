@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::{constant::Const, expr::FloatExt, scalar::Scalar, Recorded},
+    ad::{scalar::Scalar, Recorded},
     time::{date::Date, daycounter::DayCounter, enums::Frequency},
     utils::errors::{QSError, Result},
 };
@@ -175,12 +175,14 @@ where
 }
 
 impl From<InterestRate<f64>> for InterestRate<Recorded> {
+    /// Converts the source data into this financial representation.
     fn from(value: InterestRate<f64>) -> Self {
         Self::from_rate_definition(Recorded::new(value.rate().value()), value.rate_definition())
     }
 }
 
 impl From<InterestRate<Recorded>> for InterestRate<f64> {
+    /// Converts the source data into this financial representation.
     fn from(value: InterestRate<Recorded>) -> Self {
         Self::from_rate_definition(value.rate().value(), value.rate_definition())
     }
@@ -319,7 +321,7 @@ impl InterestRate<Recorded> {
         }
         // NOTE: Unlike the f64 version we do NOT short-circuit when
         // compound ≈ 1.  Returning `Recorded::zero()` would sever the
-        // connection to the AD tape and produce a zero-row Jacobian,
+        // connection to the AD capture and produce a zero-row Jacobian,
         // which breaks Newton solvers that rely on AD derivatives
         // (e.g. multi-curve bootstrapping).  The normal formulas below
         // evaluate to ≈ 0 with the correct non-zero partial derivatives.
@@ -337,32 +339,32 @@ impl InterestRate<Recorded> {
         match comp {
             Compounding::Simple => {
                 let r = (compound - 1.0) / t;
-                Ok(Self::new(r.into(), comp, freq, result_dc))
+                Ok(Self::new(r, comp, freq, result_dc))
             }
             Compounding::Compounded => {
-                let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
-                Ok(Self::new(r.into(), comp, freq, result_dc))
+                let r = (compound.pow_expr(1.0_f64 / (t * f)) - 1.0) * f;
+                Ok(Self::new(r, comp, freq, result_dc))
             }
             Compounding::Continuous => {
                 let r = (compound).ln() / t;
-                Ok(Self::new(r.into(), comp, freq, result_dc))
+                Ok(Self::new(r, comp, freq, result_dc))
             }
             Compounding::SimpleThenCompounded => {
                 if t <= 1.0 / f {
                     let r = (compound - 1.0) / t;
-                    Ok(Self::new(r.into(), comp, freq, result_dc))
+                    Ok(Self::new(r, comp, freq, result_dc))
                 } else {
-                    let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
-                    Ok(Self::new(r.into(), comp, freq, result_dc))
+                    let r = (compound.pow_expr(1.0_f64 / (t * f)) - 1.0) * f;
+                    Ok(Self::new(r, comp, freq, result_dc))
                 }
             }
             Compounding::CompoundedThenSimple => {
                 if t > 1.0 / f {
                     let r = (compound - 1.0) / t;
-                    Ok(Self::new(r.into(), comp, freq, result_dc))
+                    Ok(Self::new(r, comp, freq, result_dc))
                 } else {
-                    let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
-                    Ok(Self::new(r.into(), comp, freq, result_dc))
+                    let r = (compound.pow_expr(1.0_f64 / (t * f)) - 1.0) * f;
+                    Ok(Self::new(r, comp, freq, result_dc))
                 }
             }
         }
@@ -383,21 +385,21 @@ impl InterestRate<Recorded> {
         let compounding = self.compounding();
         let f = f64::from(self.frequency() as i32);
         match compounding {
-            Compounding::Simple => (rate * year_fraction + Const::one()).into(),
-            Compounding::Compounded => (Const::one() + rate / f).powf(year_fraction * f).into(),
-            Compounding::Continuous => (rate * year_fraction).exp().into(),
+            Compounding::Simple => rate * year_fraction + 1.0_f64,
+            Compounding::Compounded => (1.0_f64 + rate / f).powf(year_fraction * f),
+            Compounding::Continuous => (rate * year_fraction).exp(),
             Compounding::SimpleThenCompounded => {
                 if year_fraction <= 1.0 / f {
-                    (rate * year_fraction + Const::one()).into()
+                    rate * year_fraction + 1.0_f64
                 } else {
-                    (Const::one() + rate / f).powf(year_fraction * f).into()
+                    (1.0_f64 + rate / f).powf(year_fraction * f)
                 }
             }
             Compounding::CompoundedThenSimple => {
                 if year_fraction > 1.0 / f {
-                    (rate * year_fraction + Const::one()).into()
+                    rate * year_fraction + 1.0_f64
                 } else {
-                    (Const::one() + rate / f).powf(year_fraction * f).into()
+                    (1.0_f64 + rate / f).powf(year_fraction * f)
                 }
             }
         }
@@ -406,7 +408,7 @@ impl InterestRate<Recorded> {
     /// Calculates the discount factor between two dates.
     #[must_use]
     pub fn discount_factor(&self, start: Date, end: Date) -> Recorded {
-        (Const::one() / self.compound_factor(start, end)).into()
+        1.0_f64 / self.compound_factor(start, end)
     }
 
     /// Returns the stored decimal AD rate unchanged.

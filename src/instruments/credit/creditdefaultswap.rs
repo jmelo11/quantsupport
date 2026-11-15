@@ -1,9 +1,9 @@
 //! Credit default swap (CDS) instrument.
 //!
-//! A [`CreditDefaultSwap`] exchanges a running premium (spread) paid on a
+//! A [`CreditDefaultSwap`](crate::instruments::credit::creditdefaultswap::CreditDefaultSwap) exchanges a running premium (spread) paid on a
 //! regular schedule against a protection payment of `(1 − recovery)` on
 //! default of the reference entity. Survival probabilities are sourced from
-//! the credit curve keyed by [`MarketIndex::Credit`], while cash flows are
+//! the credit curve keyed by [`MarketIndex::Credit`](crate::indices::marketindex::MarketIndex::Credit), while cash flows are
 //! discounted with the curve keyed by `discount_index` (or a CSA discount
 //! policy when one is supplied to the pricer).
 

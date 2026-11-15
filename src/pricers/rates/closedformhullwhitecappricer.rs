@@ -1,5 +1,5 @@
 use crate::{
-    ad::{expr::FloatExt, tape::Tape, Recorded},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -101,9 +101,9 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
             .reference_date();
         let dual_curve = disc_index != fwd_index;
 
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
-        state.put_pillars_on_tape()?;
+        Recording::start();
+        Recording::checkpoint();
+        state.register_pillars()?;
 
         let mut npv = Recorded::zero();
 
@@ -146,9 +146,9 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
 
             if c.fixing_date() <= evaluation_date {
                 let payoff: Recorded = match c.payoff_type() {
-                    CapletFloorletType::Caplet if fwd.value() > strike => (fwd - strike).into(),
+                    CapletFloorletType::Caplet if fwd.value() > strike => fwd - strike,
                     CapletFloorletType::Floorlet if strike > fwd.value() => {
-                        (Recorded::from(strike) - fwd).into()
+                        Recorded::from(strike) - fwd
                     }
                     _ => Recorded::zero(),
                 };
@@ -156,7 +156,7 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
                     .get_discount_curve_element(&disc_index)?
                     .curve()
                     .discount_factor(payment_date)?;
-                npv = (npv + factor * payoff * tau * trade.notional()).into();
+                npv += factor * payoff * tau * trade.notional();
                 continue;
             }
 
@@ -172,25 +172,23 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
                 .curve()
                 .discount_factor(payment_date)?;
 
-            let d1: Recorded = (((df_s / (Recorded::new(x) * df_t)).ln()
+            let d1: Recorded = ((df_s / (Recorded::new(x) * df_t)).ln()
                 + Recorded::new(0.5 * sigma_p * sigma_p))
-                / Recorded::new(sigma_p))
-            .into();
-            let d2: Recorded = (d1 - Recorded::new(sigma_p)).into();
+                / Recorded::new(sigma_p);
+            let d2: Recorded = d1 - Recorded::new(sigma_p);
 
             let caplet_value: Recorded = match c.payoff_type() {
                 CapletFloorletType::Caplet => {
-                    let neg_d2: Recorded = (Recorded::new(0.0) - d2).into();
-                    let neg_d1: Recorded = (Recorded::new(0.0) - d1).into();
-                    let put: Recorded = (Recorded::new(x) * df_t * norm_cdf(neg_d2)
-                        - df_s * norm_cdf(neg_d1))
-                    .into();
-                    (Recorded::new(tau.mul_add(strike, 1.0)) * put).into()
+                    let neg_d2: Recorded = Recorded::new(0.0) - d2;
+                    let neg_d1: Recorded = Recorded::new(0.0) - d1;
+                    let put: Recorded =
+                        Recorded::new(x) * df_t * norm_cdf(neg_d2) - df_s * norm_cdf(neg_d1);
+                    Recorded::new(tau.mul_add(strike, 1.0)) * put
                 }
                 CapletFloorletType::Floorlet => {
                     let call: Recorded =
-                        (df_s * norm_cdf(d1) - Recorded::new(x) * df_t * norm_cdf(d2)).into();
-                    (Recorded::new(tau.mul_add(strike, 1.0)) * call).into()
+                        df_s * norm_cdf(d1) - Recorded::new(x) * df_t * norm_cdf(d2);
+                    Recorded::new(tau.mul_add(strike, 1.0)) * call
                 }
             };
 
@@ -199,12 +197,12 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
                     .get_discount_curve_element(&disc_index)?
                     .curve()
                     .discount_factor(payment_date)?;
-                (caplet_value * df_disc_s / df_s).into()
+                caplet_value * df_disc_s / df_s
             } else {
                 caplet_value
             };
 
-            npv = (npv + adjusted * Recorded::new(trade.notional())).into();
+            npv += adjusted * Recorded::new(trade.notional());
         }
 
         let source = Discountable::currency(cap);
@@ -213,12 +211,12 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (npv * state.get_exchange_rate(source, target)?).into()
+            npv * state.get_exchange_rate(source, target)?
         } else {
             npv
         };
         state.value = Some(npv);
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(npv.value())
     }
 }
@@ -240,7 +238,7 @@ impl HandleSensitivities<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhi
             })?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
 
         let cap = trade.instrument();
         let fwd_index = cap.market_index();
@@ -261,7 +259,7 @@ impl HandleSensitivities<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhi
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         if &fwd_index != discount_index {
@@ -272,7 +270,7 @@ impl HandleSensitivities<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhi
                 .unwrap_or_default()
             {
                 ids.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
 

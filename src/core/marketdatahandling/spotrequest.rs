@@ -1,7 +1,7 @@
 use crate::{indices::marketindex::MarketIndex, time::date::Date};
 
 /// Request for a spot observation at a given date.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct SpotRequest {
     market_index: MarketIndex,
     date: Date,

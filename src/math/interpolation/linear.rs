@@ -87,14 +87,14 @@ impl StaticInterpolate<Recorded> for LinearInterpolator {
                         / (x_[index] - x_[index - 1])
             }
         };
-        Ok(y.into())
+        Ok(y)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::ad::tape::Tape;
     use crate::ad::Recorded;
+    use crate::ad::Recording;
 
     use super::LinearInterpolator;
     use super::StaticInterpolate;
@@ -112,19 +112,19 @@ mod tests {
     fn test_linear_interpolation_adreal() {
         let x = Recorded::from(0.5);
         let x_ = vec![Recorded::from(0.0), Recorded::from(1.0)];
-        let y_ = vec![Recorded::from(0.0), Recorded::from(1.0)];
+        let y_ = vec![Recorded::new(0.0), Recorded::new(1.0)];
         let y = LinearInterpolator::interpolate(x, &x_, &y_, true).unwrap();
         assert!((y.value() - 0.5).abs() < 1e-12);
     }
 
     #[test]
     fn test_sens_to_pillars() {
-        Tape::start_recording_fwd();
+        Recording::start();
         let x = Recorded::from(0.5);
         let x_ = vec![Recorded::from(0.0), Recorded::from(1.0)];
-        let y_ = vec![Recorded::from(0.0), Recorded::from(1.0)];
+        let y_ = vec![Recorded::new(0.0), Recorded::new(1.0)];
         let y = LinearInterpolator::interpolate(x, &x_, &y_, true).unwrap();
-        let _ = y.backward();
-        assert!(y_.first().unwrap().adjoint().unwrap() - 0.5 < 1e-12);
+        let _ = y.differentiate();
+        assert!(y_.first().unwrap().derivative().unwrap() - 0.5 < 1e-12);
     }
 }

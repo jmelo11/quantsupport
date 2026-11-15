@@ -1,38 +1,38 @@
-/// Basis swap (float-float) instruments.
+/// Provides the basis swap (float-float) instruments.
 pub mod basisswap;
-/// Interest rate cap/floor instruments.
+/// Provides the interest rate cap/floor instruments.
 pub mod capfloor;
-/// Interest rate caplet instruments.
+/// Provides the interest rate caplet instruments.
 pub mod capletfloorlet;
-/// Interest rate swaption instruments.
+/// Provides the interest rate swaption instruments.
 pub mod europeanswaption;
-/// Cross-currency swap instruments (fixed vs float).
+/// Provides the cross-currency swap instruments (fixed vs float).
 pub mod fixfloatcrosscurrencyswap;
-/// Cross-currency swap instruments (float vs float).
+/// Provides the cross-currency swap instruments (float vs float).
 pub mod floatfloatcrosscurrencyswap;
-/// Basis swap builder.
+/// Provides the basis swap builder.
 pub mod makebasisswap;
-/// Cap/floor builder.
+/// Provides the cap/floor builder.
 pub mod makecapfloor;
-/// Context-resolved single-period caplet/floorlet maker.
+/// Provides the context-resolved single-period caplet/floorlet maker.
 pub mod makecapletfloorlet;
-/// Swaption builder.
+/// Provides the swaption builder.
 pub mod makeeuropeanswaption;
-/// Cross-currency swap builder (fixed vs float).
+/// Provides the cross-currency swap builder (fixed vs float).
 pub mod makefixfloatcrosscurrencyswap;
-/// Cross-currency swap builder (float vs float).
+/// Provides the cross-currency swap builder (float vs float).
 pub mod makefloatfloatcrosscurrencyswap;
-/// Overnight indexed swap builder.
+/// Provides the overnight indexed swap builder.
 pub mod makeovernightindexswap;
-/// Rate futures builder.
+/// Provides the rate futures builder.
 pub mod makeratefutures;
-/// Interest rate swap builder.
+/// Provides the interest rate swap builder.
 pub mod makeswap;
-/// Overnight indexed swap conventions.
+/// Provides the overnight indexed swap conventions.
 pub mod oisconventions;
-/// Overnight index swap instruments.
+/// Provides the overnight index swap instruments.
 pub mod overnightindexswap;
-/// Interest rate futures instruments.
+/// Provides the interest rate futures instruments.
 pub mod ratefutures;
-/// Interest rate swap instruments.
+/// Provides the interest rate swap instruments.
 pub mod swap;

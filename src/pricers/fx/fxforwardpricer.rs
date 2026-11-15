@@ -1,5 +1,5 @@
 use crate::{
-    ad::{tape::Tape, Recorded},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -148,19 +148,17 @@ impl FxForwardState {
             .curve()
             .discount_factor(date)?;
         Ok(
-            (self.get_exchange_rate(instrument.base_currency(), instrument.quote_currency())?
-                * base
-                / quote)
-                .into(),
+            self.get_exchange_rate(instrument.base_currency(), instrument.quote_currency())? * base
+                / quote,
         )
     }
 }
 
 impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
     fn handle_value(&self, trade: &FxForwardTrade, state: &mut FxForwardState) -> Result<f64> {
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
-        state.put_pillars_on_tape()?;
+        Recording::start();
+        Recording::checkpoint();
+        state.register_pillars()?;
 
         let inst = trade.instrument();
         let base = inst.base_currency();
@@ -186,7 +184,7 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
         let factor = if source == quote {
             df_quote
         } else if source == base {
-            (df_base / forward).into()
+            df_base / forward
         } else {
             return Err(QSError::InvalidValueErr(
                 "NDF settlement currency must be the base or quote currency".into(),
@@ -196,10 +194,10 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
         // NPV = notional * (F_model - K) * DF_quote * side
         let notional = Recorded::new(trade.notional());
         let npv: Recorded = inst.forward_price().map_or_else(
-            || (notional * forward * factor).into(),
+            || notional * forward * factor,
             |k| {
                 let side = Recorded::new(trade.side().sign());
-                (notional * (forward - k) * factor * side).into()
+                notional * (forward - k) * factor * side
             },
         );
         let npv = if let Some(target) = state
@@ -207,13 +205,13 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (npv * state.get_exchange_rate(source, target)?).into()
+            npv * state.get_exchange_rate(source, target)?
         } else {
             npv
         };
         state.value = Some(npv);
 
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(npv.value())
     }
 }
@@ -262,7 +260,7 @@ impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
                 .ok_or_else(|| QSError::UnexpectedErr("Missing value in FX forward state".into()))?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
 
         let inst = trade.instrument();
         let policy = self.discount_policy.as_ref().ok_or_else(|| {
@@ -282,14 +280,14 @@ impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
             let element = state.get_discount_curve_element(&idx)?;
             for (label, value) in element.curve().pillars().into_iter().flatten() {
                 ids.push(label);
-                exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
+                exposures.push(value.derivative().map_or(0.0, |a| a.value()));
             }
         }
 
         if let Some(store) = state.get_fx_store() {
             for (label, value) in store.pillars().into_iter().flatten() {
                 ids.push(label);
-                exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
+                exposures.push(value.derivative().map_or(0.0, |a| a.value()));
             }
         }
 

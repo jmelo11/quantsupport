@@ -1,8 +1,8 @@
-//! Builder and conversion utilities for [`ContingentClaim`].
+//! Builder and conversion utilities for [`ContingentClaim`](crate::xva::contigentclaim::ContingentClaim).
 //!
-//! * [`MakeContingentClaim`] — step-by-step builder with validation.
-//! * [`IntoContingentClaims`] — trait for decomposing high-level
-//!   structures (e.g. [`Leg`]) into a flat list of claims.
+//! * [`MakeContingentClaim`](crate::xva::makecontigentclaim::MakeContingentClaim) — step-by-step builder with validation.
+//! * [`IntoContingentClaims`](crate::xva::makecontigentclaim::IntoContingentClaims) — trait for decomposing high-level
+//!   structures (e.g. [`Leg`](crate::instruments::cashflows::leg::Leg)) into a flat list of claims.
 
 use crate::{
     core::{collateral::Discountable, trade::Side},

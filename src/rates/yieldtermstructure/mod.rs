@@ -1,16 +1,17 @@
-/// Yield curve composed from multiple term structures.
+/// Provides the yield curve composed from multiple term structures.
 pub mod compositetermstructure;
-/// Discount-factor term structure.
+/// Provides the discount-factor term structure.
 pub mod discounttermstructure;
-/// Flat-forward term structure.
+/// Provides the flat-forward term structure.
 pub mod flatforwardtermstructure;
-/// Common interest-rate term-structure interface.
+/// Provides the common interest-rate term-structure interface.
 pub mod interestratestermstructure;
-/// Spreaded term structure.
+/// Provides the spreaded term structure.
 pub mod spreadtermstructure;
-/// Tenor-based zero-rate term structure.
+/// Provides the tenor-based zero-rate term structure.
 pub mod tenorbasedzeroratetermstructure;
-/// Zero-rate term structure.
+/// Provides the zero-rate term structure.
 pub mod zeroratetermstructure;
 
+/// Provides a numerical view of a recorded curve for calculations that do not record sensitivities.
 pub mod primalcurve;

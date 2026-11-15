@@ -17,8 +17,8 @@ use crate::{
 /// Paths are generated as `f64` and then wrapped in [`Recorded`], without
 /// retaining derivatives through model inputs, calibration, or path generation.
 /// The simulation exposes no pillars. Wrapping a value does not create
-/// spot/volatility risk; the constructor may create unrelated tape leaves
-/// when recording is active.
+/// spot/volatility risk. Path values stay detached even when a pricing capture
+/// is active during market construction.
 pub struct GeneratedMonteCarloSimulation {
     market_index: MarketIndex,
     dates: Vec<Date>,
@@ -37,7 +37,7 @@ impl GeneratedMonteCarloSimulation {
         let n_paths = i64::try_from(paths.len()).unwrap_or(i64::MAX);
         let paths = paths
             .into_iter()
-            .map(|path| path.into_iter().map(Recorded::new).collect())
+            .map(|path| path.into_iter().map(Recorded::detached).collect())
             .collect();
         Self {
             market_index,
@@ -50,6 +50,7 @@ impl GeneratedMonteCarloSimulation {
 }
 
 impl MonteCarloSimulation<Recorded> for GeneratedMonteCarloSimulation {
+    /// Returns a materialized path with its original numerical risk boundary.
     fn path(&self) -> &Vec<Vec<Recorded>> {
         &self.paths
     }
@@ -72,6 +73,7 @@ impl MonteCarloSimulation<Recorded> for GeneratedMonteCarloSimulation {
 }
 
 impl Pillars<Recorded> for GeneratedMonteCarloSimulation {
+    /// Returns the labelled inputs used to report market sensitivities.
     fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         None
     }
@@ -80,7 +82,8 @@ impl Pillars<Recorded> for GeneratedMonteCarloSimulation {
         None
     }
 
-    fn put_pillars_on_tape(&mut self) {}
+    /// Registers current labelled market pillars as independent compiler inputs.
+    fn register_pillars(&mut self) {}
 }
 
 impl ADMonteCarloSimulationElement for GeneratedMonteCarloSimulation {}

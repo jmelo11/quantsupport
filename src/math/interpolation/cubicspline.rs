@@ -265,7 +265,7 @@ fn compute_moments_dual(x: &[Recorded], y: &[Recorded]) -> Vec<Recorded> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ad::tape::Tape;
+    use crate::ad::Recording;
 
     #[test]
     fn test_cubic_spline_exact_at_knots() {
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_cubic_spline_ad_sensitivities() {
-        Tape::start_recording_fwd();
+        Recording::start();
         let x_ = vec![
             Recorded::from(0.0),
             Recorded::from(1.0),
@@ -336,11 +336,11 @@ mod tests {
         ];
         let x = Recorded::from(0.5);
         let y = CubicSplineInterpolator::interpolate(x, &x_, &y_, true).unwrap();
-        // Just check that backward doesn't panic and produces finite adjoints.
-        let _ = y.backward();
+        // Just check that differentiate doesn't panic and produces finite adjoints.
+        let _ = y.differentiate();
         for yi in &y_ {
-            if let Ok(adj) = yi.adjoint() {
-                assert!(adj.value().is_finite(), "adjoint is not finite");
+            if let Ok(adj) = yi.derivative() {
+                assert!(adj.value().is_finite(), "derivative is not finite");
             }
         }
     }

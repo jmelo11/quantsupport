@@ -1,5 +1,5 @@
 use crate::{
-    ad::{tape::Tape, Recorded},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -68,7 +68,7 @@ impl Default for EquityForwardPricer {
 struct RecordingGuard;
 impl Drop for RecordingGuard {
     fn drop(&mut self) {
-        Tape::stop_recording_fwd();
+        Recording::stop();
     }
 }
 
@@ -87,17 +87,17 @@ impl HandleValue<EquityForwardTrade, EquityForwardState> for EquityForwardPricer
             index.clone()
         };
 
-        Tape::start_recording_fwd();
+        Recording::start();
         let _recording_guard = RecordingGuard;
-        Tape::set_mark_fwd();
+        Recording::checkpoint();
 
         // Record spot separately to report delta alongside curve risk.
         let spot = state.get_fixing(&index, state.evaluation_date)?;
         let mut spot_ad = Recorded::new(spot);
-        spot_ad.put_on_tape();
+        spot_ad.register_input();
         state.spot = Some(spot_ad);
 
-        state.put_pillars_on_tape()?;
+        state.register_pillars()?;
 
         let df_forward = state
             .get_discount_curve_element(&index)?
@@ -113,16 +113,16 @@ impl HandleValue<EquityForwardTrade, EquityForwardState> for EquityForwardPricer
             Recorded::one()
         };
 
-        let fwd: Recorded = (spot_ad * df_q / df_forward).into();
+        let fwd: Recorded = spot_ad * df_q / df_forward;
         let value: Recorded =
-            (df_r * (fwd - forward.strike()) * trade.notional() * trade.side().sign()).into();
+            df_r * (fwd - forward.strike()) * trade.notional() * trade.side().sign();
         let source = Discountable::currency(forward);
         let value = if let Some(target) = state
             .get_market_data_reponse()
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (value * state.get_exchange_rate(source, target)?).into()
+            value * state.get_exchange_rate(source, target)?
         } else {
             value
         };
@@ -148,7 +148,7 @@ impl HandleSensitivities<EquityForwardTrade, EquityForwardState> for EquityForwa
             })?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
         let forward = trade.instrument();
         let index = forward.market_index();
         let policy_discount_index = if let Some(policy) = &self.discount_policy {
@@ -170,7 +170,7 @@ impl HandleSensitivities<EquityForwardTrade, EquityForwardState> for EquityForwa
                         "Equity forward spot was not recorded for sensitivities".into(),
                     )
                 })?
-                .adjoint()?
+                .derivative()?
                 .value(),
         );
 
@@ -182,7 +182,7 @@ impl HandleSensitivities<EquityForwardTrade, EquityForwardState> for EquityForwa
                 .unwrap_or_default()
             {
                 ids.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
 
@@ -193,13 +193,13 @@ impl HandleSensitivities<EquityForwardTrade, EquityForwardState> for EquityForwa
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         if let Ok(curve) = state.get_dividend_curve_element(&index) {
             for (label, pillar) in curve.curve().pillars().unwrap_or_default() {
                 ids.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
 
@@ -514,7 +514,7 @@ mod tests {
         assert!(pricer()
             .evaluate(&position, &[Request::Value], &missing)
             .is_err());
-        assert!(!Tape::<f64>::is_active());
+        assert!(!Recording::is_active());
         let unsupported = pricer().evaluate(
             &position,
             &[

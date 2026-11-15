@@ -1,5 +1,5 @@
 use crate::{
-    ad::{expr::FloatExt, scalar::Scalar, Recorded},
+    ad::{scalar::Scalar, Recorded},
     math::probability::{
         norm_pdf::FRAC_1_SQRT_2PI,
         normcdf::{norm_cdf, NormCDF},
@@ -210,7 +210,7 @@ impl BrownianMotion<Recorded> {
         if is_call {
             Ok(norm_cdf(d1))
         } else {
-            let neg_d1: Recorded = (-d1).into();
+            let neg_d1: Recorded = -d1;
             Ok(norm_cdf(neg_d1))
         }
     }
@@ -225,7 +225,7 @@ impl BrownianMotion<Recorded> {
     pub fn vega(fwd: Recorded, strike: f64, vol: Recorded, tau: f64) -> Result<Recorded> {
         let (d1, _) = d1_d2_ad(fwd, strike, vol, tau)?;
         let pdf_d1 = (-d1 * d1 * 0.5).exp() * FRAC_1_SQRT_2PI;
-        Ok((fwd * pdf_d1 * tau.sqrt()).into())
+        Ok(fwd * pdf_d1 * tau.sqrt())
     }
 
     /// AD-enabled legacy rho expression: `K * tau * N(d2)` for calls,
@@ -246,10 +246,10 @@ impl BrownianMotion<Recorded> {
         let (_, d2) = d1_d2_ad(fwd, strike, vol, tau)?;
         let st = strike * tau;
         if is_call {
-            Ok((norm_cdf(d2) * st).into())
+            Ok(norm_cdf(d2) * st)
         } else {
-            let neg_d2: Recorded = (-d2).into();
-            Ok((-(norm_cdf(neg_d2) * st)).into())
+            let neg_d2: Recorded = -d2;
+            Ok(-(norm_cdf(neg_d2) * st))
         }
     }
 
@@ -274,10 +274,10 @@ impl BrownianMotion<Recorded> {
         let pdf_d1 = (-d1 * d1 * 0.5).exp() * FRAC_1_SQRT_2PI;
         let term1 = -fwd * pdf_d1 * vol / (2.0 * tau.sqrt());
         if is_call {
-            Ok((term1 + norm_cdf(d2) * strike).into())
+            Ok(term1 + norm_cdf(d2) * strike)
         } else {
-            let neg_d2: Recorded = (-d2).into();
-            Ok((term1 - norm_cdf(neg_d2) * strike).into())
+            let neg_d2: Recorded = -d2;
+            Ok(term1 - norm_cdf(neg_d2) * strike)
         }
     }
 }

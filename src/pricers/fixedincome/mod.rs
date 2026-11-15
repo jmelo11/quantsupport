@@ -6,18 +6,21 @@
 //! the bond pricers share quote handling and numerical analytics. Each public
 //! pricer implements the standard pricing interface and its valuation engine.
 
-/// Fixed-rate bond pricing from clean-price, dirty-price, or spread anchors.
+/// Values fixed-rate bonds from clean-price, dirty-price or spread anchors.
 pub mod bondpricer;
 
-/// Loan valuation using contractual amortization and market curves.
+/// Provides the loan valuation using contractual amortization and market curves.
 pub mod loanpricer;
 
-/// Callable-bond pricing with a recombining short-rate tree.
+/// Provides the callable-bond pricing with a recombining short-rate tree.
 pub mod treebasedbondpricer;
 
-/// Callable-bond pricing with backward Fourier evolution.
+/// Provides the callable-bond pricing with backward Fourier evolution.
 pub mod backwardfourierevolutionbondpricer;
 
+/// Provides the yield, spread and duration calculations shared by the bond pricers.
 mod bondanalytics;
+/// Maps contractual cashflows and issuer-call decisions onto a bond-pricing time grid.
 mod bondevents;
+/// Prepares the model and exercise information shared by callable-bond pricing methods.
 mod callablebond;

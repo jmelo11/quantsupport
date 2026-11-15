@@ -1,4 +1,4 @@
-//! Builds Monte Carlo simulations from [`SimulationConfiguration`]s.
+//! Builds Monte Carlo simulations from [`SimulationConfiguration`](crate::models::modelconfiguration::SimulationConfiguration)s.
 //!
 //! For each configuration the builder:
 //! 1. constructs the simulation date grid (reference date → horizon),
@@ -6,7 +6,7 @@
 //!    (discount curves, volatility surfaces/cubes, fixings),
 //! 3. resolves or calibrates the model volatility,
 //! 4. generates the paths, and
-//! 5. wraps them in a [`MonteCarloSimulationElement`] keyed by market index.
+//! 5. wraps them in a [`MonteCarloSimulationElement`](crate::core::elements::montecarlosimulationelement::MonteCarloSimulationElement) keyed by market index.
 //!
 //! Curves and model paths are evaluated with `f64` using seeded pseudorandom
 //! normal draws. Stored AD wrappers do not retain path-generation sensitivities.

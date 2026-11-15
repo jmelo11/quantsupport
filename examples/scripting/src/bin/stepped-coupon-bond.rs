@@ -14,6 +14,7 @@ fn reference_date() -> Date {
     Date::new(2025, 1, 1)
 }
 
+/// Builds a labelled flat discount curve for the benchmark market.
 fn curve() -> FlatForwardTermStructure<Recorded> {
     FlatForwardTermStructure::new(
         reference_date(),
@@ -27,6 +28,7 @@ fn curve() -> FlatForwardTermStructure<Recorded> {
     .with_pillar_label("SOFR.flat".into())
 }
 
+/// Builds the ordinary trade used to compare scripted and native valuations.
 fn native_trade() -> Result<SteppedCouponBondTrade<Recorded>> {
     let instrument = MakeSteppedCouponBond::<Recorded>::default()
         .with_identifier("SCRIPT-CHECK-STEP-CALL".into())
@@ -146,8 +148,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .ok_or_else(|| QSError::ValueNotSetErr("native bond value".into()))?;
 
     let mut scripted_curve = curve();
-    Tape::start_recording_fwd();
-    scripted_curve.put_pillars_on_tape();
+    Recording::start();
+    scripted_curve.register_pillars();
     let rate_model = LgmRateModel::new(Recorded::scalar(0.05), Recorded::zero(), &scripted_curve);
     let mut model = LgmMarketModel::new(
         Currency::USD,
@@ -168,7 +170,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     .get("bond")
     .copied()
     .ok_or_else(|| QSError::ValueNotSetErr("scripted bond value".into()))?;
-    Tape::stop_recording_fwd();
+    Recording::stop();
 
     let difference = (native - scripted).abs();
     println!("Native tree PV:  {native:.10}");

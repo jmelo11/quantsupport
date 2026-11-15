@@ -43,11 +43,10 @@ jobs:
       run: cargo +stable clippy -p quantsupport --lib -- -D warnings
     - name: Run tests
       run: cargo +stable test -p quantsupport --verbose
-    - name: Test experimental Cranelift compiler
-      run: cargo +stable test -p quantsupport --features jit --lib --verbose
-    - name: Run Cranelift MC example
-      run: cargo +stable run --release -p quantsupport --features jit --example compiled_mc
-    - name: Benchmark compiled AD against existing tape
-      run: cargo +stable run --release -p quantsupport --features jit --example compiled_ad_benchmark
+    - name: Run example regression tests
+      run: >-
+        cargo +stable test --locked
+        -p valuation-loans -p valuation-caps -p sensitivity
+        --bin valuation-loans --bin valuation-caps --bin risk-reprojection
     - name: Verify crate packaging
       run: cargo +stable publish -p quantsupport --dry-run

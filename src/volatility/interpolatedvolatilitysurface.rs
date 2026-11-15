@@ -1,6 +1,6 @@
 use crate::core::marketdatahandling::constructedelementstore::SharedElement;
 use crate::{
-    ad::{forward::ADForward, scalar::Scalar, Recorded},
+    ad::{scalar::Scalar, Recorded},
     core::{elements::volatilitysurfaceelement::ADVolatilitySurfaceElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     math::interpolation::{
@@ -153,6 +153,7 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
 }
 
 impl Pillars<Recorded> for InterpolatedVolatilitySurface<Recorded> {
+    /// Returns the labelled inputs used to report market sensitivities.
     fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.labels.as_ref().map(|labels| {
             labels
@@ -167,10 +168,11 @@ impl Pillars<Recorded> for InterpolatedVolatilitySurface<Recorded> {
         self.labels.clone()
     }
 
-    fn put_pillars_on_tape(&mut self) {
+    /// Registers current labelled market pillars as independent compiler inputs.
+    fn register_pillars(&mut self) {
         for m in self.points.values_mut() {
             for value in m.values_mut() {
-                value.put_on_tape();
+                value.register_input();
             }
         }
     }
@@ -184,7 +186,7 @@ impl ADVolatilitySurfaceElement for InterpolatedVolatilitySurface<Recorded> {
             .values_mut()
             .flat_map(|values| values.values_mut())
         {
-            *value = Recorded::constant(ADForward::constant(value.value()));
+            *value = Recorded::constant(value.value());
         }
         Ok(Rc::new(RefCell::new(market)))
     }
@@ -195,7 +197,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::{
-        ad::{tape::Tape, Recorded},
+        ad::{Recorded, Recording},
         core::pillars::Pillars,
         indices::marketindex::MarketIndex,
         math::interpolation::extrapolation::ExtrapolationPolicy,
@@ -237,7 +239,7 @@ mod tests {
 
     #[test]
     fn interpolated_surface_returns_bilinear_value_for_adreal() {
-        Tape::start_recording_fwd();
+        Recording::start();
 
         let mut points = BTreeMap::new();
         points.insert(
@@ -339,8 +341,8 @@ mod tests {
     }
 
     #[test]
-    fn sparse_surface_preserves_quote_weights_after_tape_registration() {
-        Tape::start_recording_fwd();
+    fn sparse_surface_preserves_quote_weights_after_input_registration() {
+        Recording::start();
         let mut surface = InterpolatedVolatilitySurface::new(
             Date::new(2025, 1, 1),
             MarketIndex::SOFR,
@@ -370,7 +372,7 @@ mod tests {
             "1Y_high".into(),
         ])
         .with_extrapolation_policy(ExtrapolationPolicy::Flat);
-        surface.put_pillars_on_tape();
+        surface.register_pillars();
         for (expiry, key, expected_value, expected_weights) in [
             (
                 Period::new(9, TimeUnit::Months),
@@ -391,21 +393,23 @@ mod tests {
                 [0.0, 0.0, 0.0, 1.0],
             ),
         ] {
-            Tape::reset_adjoints_fwd();
+            Recording::reset_derivatives();
             let value = surface
                 .volatility_from_period(expiry, key)
                 .expect("sparse surface query");
             assert!((value.value() - expected_value).abs() < 1e-12);
-            value.backward().expect("surface backward sweep");
+            value.differentiate().expect("surface differentiate sweep");
             for ((_, pillar), weight) in surface
                 .pillars()
                 .expect("labelled pillars")
                 .iter()
                 .zip(expected_weights)
             {
-                assert!((pillar.adjoint().expect("quote adjoint").value() - weight).abs() < 1e-12);
+                assert!(
+                    (pillar.derivative().expect("quote derivative").value() - weight).abs() < 1e-12
+                );
             }
         }
-        Tape::stop_recording_fwd();
+        Recording::stop();
     }
 }

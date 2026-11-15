@@ -59,7 +59,7 @@ identity for cashflow reporting and claim conversion.
 ## Conditional payoffs and smoothing
 
 A hard digital payoff \\(\mathbf1_{\\{X>K\\}}\\) has zero pathwise derivative
-away from its boundary. Merely recording it on a tape does not produce a
+away from its boundary. Merely recording its arithmetic does not produce a
 useful Monte Carlo digital sensitivity. Scripting deliberately smooths
 market-dependent conditionals with a finite-width transition.
 

@@ -1,12 +1,12 @@
-/// Equity european option.
+/// Provides the European equity option.
 pub mod equityeuropeanoption;
-/// Equity forward instruments.
+/// Provides the equity forward instruments.
 pub mod equityforward;
-/// Futures instruments.
+/// Provides the futures instruments.
 pub mod futures;
-/// Equity european option builder.
+/// Provides the European equity option builder.
 pub mod makeequityeuropeanoption;
-/// Equity forward builder.
+/// Provides the equity forward builder.
 pub mod makeequityforward;
-/// Futures builder.
+/// Provides the futures builder.
 pub mod makefutures;

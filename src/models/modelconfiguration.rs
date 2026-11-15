@@ -1,7 +1,7 @@
 //! Serde-enabled model and simulation configurations.
 //!
-//! [`ModelConfiguration`] selects the stochastic dynamics and describes how
-//! the model obtains its parameters. [`SimulationConfiguration`] combines that
+//! [`ModelConfiguration`](crate::models::modelconfiguration::ModelConfiguration) selects the stochastic dynamics and describes how
+//! the model obtains its parameters. [`SimulationConfiguration`](crate::models::modelconfiguration::SimulationConfiguration) combines that
 //! model definition with the path count, random seed, horizon, and time-step
 //! frequency used by
 //! [`SimulationBuilder`](crate::simulations::simulationbuilder::SimulationBuilder)

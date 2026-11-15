@@ -1,5 +1,5 @@
 use crate::{
-    ad::{tape::Tape, Recorded},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -93,16 +93,16 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
             .day_counter()
             .year_fraction(evaluation_date, option.expiry_date());
 
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
+        Recording::start();
+        Recording::checkpoint();
 
-        // get and put the spot in the tape
+        // get and put the spot in the capture
         let spot = state.get_fixing(&index, evaluation_date)?;
         let mut spot_ad = Recorded::new(spot);
-        spot_ad.put_on_tape();
+        spot_ad.register_input();
         state.spot = Some(spot_ad);
 
-        state.put_pillars_on_tape()?;
+        state.register_pillars()?;
 
         let strike = option.strike();
         let vol = if tau <= 0.0 {
@@ -126,13 +126,13 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
             Recorded::one()
         };
 
-        let fwd: Recorded = (spot_ad * df_q / df_r).into();
+        let fwd: Recorded = spot_ad * df_q / df_r;
 
         let undiscounted = if tau <= 0.0 || vol.value().abs() < f64::EPSILON {
             let strike = strike.resolve(fwd.value());
             let payoff: Recorded = match option.option_type() {
-                EuroOptionType::Call => (fwd - strike).into(),
-                EuroOptionType::Put => (Recorded::from(strike) - fwd).into(),
+                EuroOptionType::Call => fwd - strike,
+                EuroOptionType::Put => Recorded::from(strike) - fwd,
             };
             payoff.max(Recorded::zero())
         } else {
@@ -145,19 +145,19 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
             )?
         };
 
-        let value: Recorded = (df_r * undiscounted * trade.notional()).into();
+        let value: Recorded = df_r * undiscounted * trade.notional();
         let source = Discountable::currency(option);
         let value = if let Some(target) = state
             .get_market_data_reponse()
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (value * state.get_exchange_rate(source, target)?).into()
+            value * state.get_exchange_rate(source, target)?
         } else {
             value
         };
         state.value = Some(value);
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(value.value())
     }
 }
@@ -182,7 +182,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
         };
 
         // the mark is not being set on the value during pricing
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
         let option = trade.instrument();
         let index = option.market_index();
         let policy_discount_index = if let Some(policy) = &self.discount_policy {
@@ -200,7 +200,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
             state
                 .spot
                 .ok_or_else(|| QSError::UnexpectedErr("Spot not recorded on state".into()))?
-                .adjoint()?
+                .derivative()?
                 .value(),
         );
 
@@ -211,7 +211,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         for (label, pillar) in state
@@ -221,13 +221,13 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         if let Ok(curve) = state.get_dividend_curve_element(index) {
             for (label, pillar) in curve.curve().pillars().unwrap_or_default() {
                 ids.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
 

@@ -1,8 +1,8 @@
 //! Radix-2 Cooley–Tukey Fast Fourier Transform (forward DFT).
 //!
-//! Operates **in-place** on slices of [`Complex<T>`] whose length
+//! Operates **in-place** on slices of [`Complex<T>`](num_complex::Complex) whose length
 //! is a power of two, with empty and singleton slices accepted as no-ops.
-//! The scalar `T` must implement [`Scalar`].
+//! The scalar `T` must implement [`Scalar`](crate::ad::scalar::Scalar).
 //!
 //! # Example
 //! ```
@@ -237,10 +237,10 @@ mod tests {
     // FFT with Recorded scalars.
     #[test]
     fn adreal_fft_derivative() {
-        use crate::ad::tape::Tape;
         use crate::ad::Recorded;
+        use crate::ad::Recording;
 
-        Tape::start_recording_fwd();
+        Recording::start();
         let n = 4;
         let x0 = Recorded::new(1.0);
         let c = Recorded::scalar(1.0);
@@ -254,6 +254,6 @@ mod tests {
         fft(&mut data).expect("fft");
         // X[0] = sum of all inputs = x0 + 1 + 1 + 1 = x0 + 3
         assert!(approx(data[0].re.value(), n as f64));
-        Tape::stop_recording_fwd();
+        Recording::stop();
     }
 }

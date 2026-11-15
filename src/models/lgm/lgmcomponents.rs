@@ -798,6 +798,22 @@ impl<'a, T: Scalar> LgmEquityModel<'a, T> {
     }
 }
 
+impl<T: Scalar> LgmFxModel<'_, T> {
+    /// Gaussian-state loadings in log FX drift.
+    #[must_use]
+    pub fn rate_state_loadings(&self, t: f64) -> (T, T) {
+        (self.domestic.H_dot(t), self.foreign.H_dot(t))
+    }
+}
+
+impl<T: Scalar> LgmEquityModel<'_, T> {
+    /// Domestic Gaussian-state loading in equity log drift.
+    #[must_use]
+    pub fn rate_state_loading(&self, t: f64) -> T {
+        self.domestic.H_dot(t)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, collections::BTreeMap, rc::Rc, str::FromStr};

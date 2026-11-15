@@ -1,6 +1,6 @@
 //! Read-only scalar view of an AD discount curve.
 use crate::{
-    ad::Recorded,
+    ad::{Recorded, RecordingScope},
     rates::{
         compounding::Compounding,
         yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
@@ -24,6 +24,7 @@ impl InterestRatesTermStructure<f64> for PrimalCurve<'_> {
         self.0.reference_date()
     }
     fn discount_factor(&self, date: Date) -> Result<f64> {
+        let _scope = RecordingScope::new();
         Ok(self.0.discount_factor(date)?.value())
     }
     fn forward_rate(
@@ -33,9 +34,11 @@ impl InterestRatesTermStructure<f64> for PrimalCurve<'_> {
         comp: Compounding,
         freq: Frequency,
     ) -> Result<f64> {
+        let _scope = RecordingScope::new();
         Ok(self.0.forward_rate(start, end, comp, freq)?.value())
     }
     fn nodes(&self) -> Option<Vec<(Date, f64)>> {
+        let _scope = RecordingScope::new();
         self.0.nodes().map(|nodes| {
             nodes
                 .into_iter()
@@ -47,9 +50,11 @@ impl InterestRatesTermStructure<f64> for PrimalCurve<'_> {
         self.0.day_counter()
     }
     fn discount_factor_from_time(&self, time: f64) -> Result<f64> {
+        let _scope = RecordingScope::new();
         Ok(self.0.discount_factor_from_time(time)?.value())
     }
     fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<f64> {
+        let _scope = RecordingScope::new();
         Ok(self.0.forward_rate_from_time(start, end)?.value())
     }
 }

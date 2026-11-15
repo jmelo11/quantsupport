@@ -1,5 +1,5 @@
 use crate::{
-    ad::{tape::Tape, Recorded},
+    ad::{Recorded, Recording},
     core::{
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
@@ -74,9 +74,9 @@ impl PricerState for RateFuturesState {
 
 impl HandleValue<RateFuturesTrade, RateFuturesState> for RateFuturesPricer {
     fn handle_value(&self, trade: &RateFuturesTrade, state: &mut RateFuturesState) -> Result<f64> {
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
-        state.put_pillars_on_tape()?;
+        Recording::start();
+        Recording::checkpoint();
+        state.register_pillars()?;
 
         let inst = trade.instrument();
         let rd = inst.rate_definition();
@@ -90,11 +90,11 @@ impl HandleValue<RateFuturesTrade, RateFuturesState> for RateFuturesPricer {
                 rd.compounding(),
                 rd.frequency(),
             )?;
-            (Recorded::new(100.0) - fwd * 100.0).into()
+            Recorded::new(100.0) - fwd * 100.0
         };
         state.value = Some(quote);
 
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(quote.value())
     }
 }
@@ -114,7 +114,7 @@ impl HandleSensitivities<RateFuturesTrade, RateFuturesState> for RateFuturesPric
                 .ok_or_else(|| QSError::UnexpectedErr("Missing value in futures state".into()))?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
 
         let element = state.get_discount_curve_element(&trade.instrument().market_index())?;
         let (ids, exposures): (Vec<_>, Vec<_>) = element
@@ -122,7 +122,7 @@ impl HandleSensitivities<RateFuturesTrade, RateFuturesState> for RateFuturesPric
             .pillars()
             .into_iter()
             .flat_map(std::iter::IntoIterator::into_iter)
-            .map(|(label, val)| (label, val.adjoint().ok()))
+            .map(|(label, val)| (label, val.derivative().ok()))
             .unzip();
         let exposures: Vec<f64> = exposures.into_iter().flatten().map(|v| v.value()).collect();
 
@@ -237,6 +237,7 @@ mod tests {
         }
     }
 
+    /// Builds the labelled flat curve used by the pricing fixture.
     fn flat_curve(reference_date: Date, rate: f64) -> FlatForwardTermStructure<Recorded> {
         FlatForwardTermStructure::new(
             reference_date,

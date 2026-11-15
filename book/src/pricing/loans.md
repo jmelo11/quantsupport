@@ -317,7 +317,12 @@ a trial rate would produce invalid amortization. It reports unbracketed
 solutions as errors. To reprice a preserving-mode solution through the builder,
 retain the original initial amortization rate while changing the coupon/spread.
 To reprice a rebuilding-mode solution, use the candidate all-in rate for
-amortization.
+amortization. In both modes, retain the original coupon's day count,
+compounding and frequency when inserting the solved rate. For example, the
+mortgage example uses an Actual/360 fixed coupon, whereas
+`CashflowType::fixed(rate)` creates an Actual/365 coupon. Using that convenience
+constructor to reprice this mortgage would change the contract and would no
+longer reproduce the par target.
 
 Runnable examples remain in their separate product directories:
 

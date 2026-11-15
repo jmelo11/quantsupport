@@ -20,8 +20,8 @@ generates Hull–White, LGM or lognormal Brownian paths using standard-normal
 draws from seeded `StdRng`. This route does not inherit the Sobol/antithetic
 construction of `LgmMarketModel`.
 
-`GeneratedMonteCarloSimulation` stores the resulting values in `Recorded`
-containers with generation inputs held fixed. It exposes no simulation
+`GeneratedMonteCarloSimulation` stores detached `Recorded` numbers, with
+path-generation inputs held fixed. It exposes no simulation
 pillars, so subsequent differentiation covers only the operations performed
 on the stored values. The
 [MC equity pricer](../pricing/options.md#materialized-monte-carlo-valuation)

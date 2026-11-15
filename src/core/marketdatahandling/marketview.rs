@@ -632,7 +632,7 @@ impl MarketDataProvider for MarketView<'_> {
 mod tests {
     use super::*;
     use crate::prelude::{
-        ADForward, CurveConfiguration, QuoteStore, Recorded, ScenarioType, Shock, Tape,
+        CurveConfiguration, QuoteStore, Recorded, Recording, ScenarioType, Shock,
     };
     use crate::{
         currencies::currency::Currency,
@@ -737,22 +737,22 @@ mod tests {
     }
 
     #[test]
-    fn unchanged_curve_copies_detach_tape_nodes_and_preserve_base_pillars() -> Result<()> {
+    fn unchanged_curve_copies_detach_recorded_inputs_and_preserve_base_pillars() -> Result<()> {
         let mut context = context()?;
         context.initialize()?;
-        Tape::<ADForward>::start_recording_fwd();
+        Recording::start();
         let mut element = context
             .constructed_elements()
             .discount_curve(&MarketIndex::ESTR)
             .ok_or_else(|| QSError::NotFoundErr("ESTR".into()))?
             .clone();
-        element.curve_mut().put_pillars_on_tape();
+        element.curve_mut().register_pillars();
         let base_nodes: Vec<_> = element
             .curve()
             .pillars()
             .unwrap_or_default()
             .iter()
-            .map(|(_, value)| value.node_ptr())
+            .map(|(_, value)| value.identity())
             .collect();
         assert!(base_nodes.iter().all(Option::is_some));
         let scenario = Scenario::new(vec![Shock::new(
@@ -772,14 +772,14 @@ mod tests {
             .pillars()
             .unwrap_or_default()
             .iter()
-            .all(|(_, value)| value.node_ptr().is_none()));
-        curve.curve_mut().put_pillars_on_tape();
+            .all(|(_, value)| value.identity().is_none()));
+        curve.curve_mut().register_pillars();
         let view_nodes: Vec<_> = curve
             .curve()
             .pillars()
             .unwrap_or_default()
             .iter()
-            .map(|(_, value)| value.node_ptr())
+            .map(|(_, value)| value.identity())
             .collect();
         assert!(view_nodes
             .iter()
@@ -791,19 +791,19 @@ mod tests {
                 .pillars()
                 .unwrap_or_default()
                 .iter()
-                .map(|(_, value)| value.node_ptr())
+                .map(|(_, value)| value.identity())
                 .collect::<Vec<_>>(),
             base_nodes
         );
         let factor: Recorded = curve.curve().discount_factor(Date::new(2027, 2, 24))?;
-        factor.backward()?;
+        factor.differentiate()?;
         assert!(element
             .curve()
             .pillars()
             .unwrap_or_default()
             .iter()
-            .all(|(_, value)| value.adjoint().is_ok_and(|value| value.value() == 0.0)));
-        Tape::<ADForward>::stop_recording_fwd();
+            .all(|(_, value)| value.derivative().is_ok_and(|value| value.value() == 0.0)));
+        Recording::stop();
         Ok(())
     }
 

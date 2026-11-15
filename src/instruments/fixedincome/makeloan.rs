@@ -129,7 +129,7 @@ impl<T: Scalar> MakeLoan<T> {
         self
     }
 
-    /// Selects forward or backward schedule generation and the location of a stub.
+    /// Selects forward or differentiate schedule generation and the location of a stub.
     #[must_use]
     pub const fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
         self.date_generation_rule = Some(rule);
@@ -1053,7 +1053,7 @@ fn contractual_cashflows<T: Scalar>(
 mod tests {
     use super::*;
     use crate::{
-        ad::{forward::ADForward, Recorded},
+        ad::{Recorded, Recording},
         core::{instrument::Instrument, makeinstrument::test_support::cashflows, trade::Trade},
         instruments::{
             cashflows::{cashflow::Cashflow, fixedratecoupon::FixedRateCoupon},
@@ -1400,20 +1400,23 @@ mod tests {
         Ok(())
     }
 
+    /// Checks custom prepayment preserves compiled derivatives.
     #[test]
-    fn custom_prepayment_preserves_forward_scalar_derivatives() -> Result<()> {
-        let loan = MakeLoan::<ADForward>::default()
+    fn custom_prepayment_preserves_compiled_derivatives() -> Result<()> {
+        Recording::start();
+        let coupon = Recorded::new(0.06);
+        let loan = MakeLoan::<Recorded>::default()
             .with_identifier("FORWARD-LOAN".into())
             .with_start_date(Date::new(2026, 1, 1))
             .with_maturity_date(Date::new(2028, 1, 1))
             .with_notional(100_000.0)
             .with_currency(Currency::EUR)
             .with_coupons(vec![CashflowType::fixed(0.06)])
-            .with_custom_prepayment_model(|state: &PrepaymentModelState<ADForward>| {
+            .with_custom_prepayment_model(|state: &PrepaymentModelState<Recorded>| {
                 Ok(
                     (state.contractual_coupon_rate() - state.refinancing_benchmark_rate())
-                        .max_val(ADForward::zero())
-                        * ADForward::scalar(state.interval_year_fraction()),
+                        .max_val(Recorded::zero())
+                        * Recorded::scalar(state.interval_year_fraction()),
                 )
             })
             .build()?;
@@ -1422,13 +1425,15 @@ mod tests {
                 Date::new(2026, 1, 1),
                 Date::new(2026, 4, 1),
                 0.25,
-                ADForward::scalar(100_000.0),
-                ADForward::var(0.06),
-                ADForward::scalar(0.04),
+                Recorded::scalar(100_000.0),
+                coupon,
+                Recorded::scalar(0.04),
             ),
         )?;
         assert!((probability.value() - 0.005).abs() < 1e-12);
-        assert!((probability.first_derivative() - 0.25).abs() < 1e-12);
+        probability.differentiate()?;
+        assert!((coupon.derivative()?.value() - 0.25).abs() < 1e-12);
+        Recording::stop();
         Ok(())
     }
 
@@ -1453,6 +1458,8 @@ mod tests {
             .instrument()
             .prepayment_model()
             .requires_refinancing_benchmark());
+        Recording::start();
+        let coupon = Recorded::new(0.06);
         let probability = converted
             .instrument()
             .prepayment_model()
@@ -1461,11 +1468,13 @@ mod tests {
                 Date::new(2026, 7, 1),
                 0.5,
                 Recorded::scalar(100_000.0),
-                Recorded::constant(ADForward::var(0.06)),
+                coupon,
                 Recorded::scalar(0.04),
             ))?;
         assert!((probability.value() - (1.0 - 0.9_f64.sqrt())).abs() < 1e-12);
-        assert!((probability.inner().first_derivative() - 2.0 / 0.9_f64.sqrt()).abs() < 1e-12);
+        probability.differentiate()?;
+        assert!((coupon.derivative()?.value() - 2.0 / 0.9_f64.sqrt()).abs() < 1e-12);
+        Recording::stop();
 
         let roundtrip = converted.into_scalar::<f64>(Arc::new(configuration));
         assert_eq!(roundtrip.trade_date(), trade_date);

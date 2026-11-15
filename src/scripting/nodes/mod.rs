@@ -15,9 +15,9 @@ Wiley, 2018
 This attribution and license notice must be preserved at the top of this file.
 */
 
-/// Dated script events and event streams.
+/// Provides the dated script events and event streams.
 pub mod event;
-/// Abstract syntax tree node definitions.
+/// Provides the abstract syntax tree node definitions.
 pub mod node;
-/// Visitor traits implemented by syntax-tree processors.
+/// Provides the visitor traits implemented by syntax-tree processors.
 pub mod traits;

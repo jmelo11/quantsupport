@@ -721,7 +721,7 @@ mod tests {
         let bump = 1.0e-4;
         let mut prices = Vec::new();
         for use_fourier in [false, true] {
-            Tape::rewind_to_init_fwd();
+            Recording::clear();
             let context = example_calibrated_context(use_fourier, None)?;
             let market = MarketData::new(HashMap::new(), context.constructed_elements().clone())
                 .with_calibration_quotes(context.quote_store().clone())
@@ -822,19 +822,19 @@ mod tests {
                 .instrument_keys()
                 .iter()
                 .any(|label| label == "TEST-BOND.OAS"));
-            let adjoint = risk
+            let derivative = risk
                 .instrument_keys()
                 .iter()
                 .zip(risk.exposure())
                 .find_map(|(label, value)| (label == quote).then_some(*value))
                 .ok_or_else(|| QSError::NotFoundErr("Calibrated caplet quote risk".into()))?;
             assert!(
-                adjoint.abs() > 1.0e-4,
+                derivative.abs() > 1.0e-4,
                 "vol quote sensitivity must not be discarded"
             );
             let mut bumped_prices = Vec::new();
             for amount in [bump, -bump] {
-                Tape::rewind_to_init_fwd();
+                Recording::clear();
                 let bumped = example_calibrated_context(use_fourier, Some((quote, amount)))?;
                 let bumped_provider = RecordingProvider {
                     context: &bumped,
@@ -847,10 +847,10 @@ mod tests {
                 );
             }
             let finite_difference = (bumped_prices[0] - bumped_prices[1]) / (2.0 * bump);
-            eprintln!("Calibrated HullWhite Fourier={use_fourier}: PV={price:.8}, caplet AD={adjoint:.8}, rebuilt-market bump={finite_difference:.8}");
+            eprintln!("Calibrated HullWhite Fourier={use_fourier}: PV={price:.8}, caplet AD={derivative:.8}, rebuilt-market bump={finite_difference:.8}");
             assert!(
-                (adjoint - finite_difference).abs() < 0.03 * finite_difference.abs().max(0.01),
-                "Fourier={use_fourier}: AD {adjoint} vs rebuilt surface bump {finite_difference}"
+                (derivative - finite_difference).abs() < 0.03 * finite_difference.abs().max(0.01),
+                "Fourier={use_fourier}: AD {derivative} vs rebuilt surface bump {finite_difference}"
             );
         }
         assert!(
@@ -865,7 +865,7 @@ mod tests {
     #[test]
     fn calibrated_cube_native_engines_report_swaption_risk() -> Result<()> {
         for use_fourier in [false, true] {
-            Tape::rewind_to_init_fwd();
+            Recording::clear();
             let evaluation = Date::new(2025, 1, 1);
             let (base, _) = provider_with_method(evaluation, 24, use_fourier);
             let mut quotes = QuoteStore::new(evaluation);
@@ -960,7 +960,7 @@ mod tests {
                         && exposure.abs() > 1.0e-4)
             );
         }
-        Tape::rewind_to_init_fwd();
+        Recording::clear();
         Ok(())
     }
 

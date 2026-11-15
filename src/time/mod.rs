@@ -3,23 +3,23 @@
 //! Dates, calendars, day-count conventions, schedules, periods,
 //! and IMM date helpers.
 
-/// Calendar module.
+/// Defines the calendar interface used to adjust dates and count business days.
 pub mod calendar;
-/// Calendars module.
+/// Provides the holiday calendars supported by date and schedule calculations.
 pub mod calendars;
-/// Date module.
+/// Represents calendar dates and implements their financial date arithmetic.
 pub mod date;
-/// UTC datetime module.
+/// Represents UTC timestamps used to identify market observations.
 pub mod datetime;
-/// Day counter module.
+/// Selects the day-count convention used to turn date intervals into year fractions.
 pub mod daycounter;
-/// Day counters module.
+/// Implements the supported day-count conventions and their accrual calculations.
 pub mod daycounters;
-/// Enums module.
+/// Defines the frequencies and date-adjustment conventions used by schedules.
 pub mod enums;
-/// IMM module.
+/// Calculates the IMM dates used by supported futures contracts.
 pub mod imm;
-/// Period module.
+/// Represents tenors and other financial time periods.
 pub mod period;
-/// Schedule module.
+/// Generates contractual date schedules under the selected calendar conventions.
 pub mod schedule;

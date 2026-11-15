@@ -80,7 +80,7 @@ The following fragment assumes prepared `context`, `configuration` and
 `netting_sets`:
 
 ```rust,ignore
-let engine = XvaEngine::new(&context, configuration)?;
+let mut engine = XvaEngine::new(&context, configuration)?;
 let result = engine.run(&mut netting_sets)?;
 for cube in &result.cubes {
     println!("{}: {:?}", cube.trade_id, cube.epe());
@@ -94,6 +94,51 @@ One run returns trade-level cubes, optional adjustments by netting set and
 optional aggregated labeled sensitivities. High-level construction supplies
 CVA and FVA factories. DVA exists through lower-level aggregators with
 explicit own-credit inputs, not an automatic third output of `run`.
+
+## Prepared execution and market refresh
+
+An `XvaEngine` retains the native path program prepared for a supported
+simulation. Its first `run` prepares that program automatically, even for a
+small path count. An application can instead call `prepare` explicitly to pay
+the capture and compilation cost before requesting results. Both forms use
+the same engine and the same `run` method.
+
+Preparation computes the deterministic curve and model terms, then captures
+the path, claim, collateral and adjustment arithmetic. It also calculates the
+map from numerical coefficients to the labelled market inputs used for risk.
+Each subsequent run supplies fresh random draws and evaluates new exposures,
+adjustments and first derivatives. A changed contract or collateral agreement
+can invalidate that prepared binding.
+
+This setup cost can dominate a small, one-off valuation. Separate first-call
+and repeated execution costs when deciding whether preparation is worthwhile;
+the benchmark report measures both.
+
+The following fragment assumes `engine`, `netting_sets` and a freshly initialized
+`new_context`:
+
+```rust,ignore
+engine.prepare(&mut netting_sets)?;
+let first = engine.run(&mut netting_sets)?;
+engine.update_market(&new_context)?;
+engine.prepare(&mut netting_sets)?;
+let updated = engine.run(&mut netting_sets)?;
+```
+
+Calling `update_market` refreshes the engine's market snapshots and calibration.
+The next preparation refreshes the coefficient values and their quote
+Jacobian. If the instructions and input layout are compatible, it can retain
+the existing machine code; a structural change requires compilation again.
+
+Scripted and path-dependent claims currently use a separate execution route
+within the same engine: each path captures its calculation and executes native
+gradients. Explicit preparation returns an error for an unsupported strategy,
+while ordinary `run` selects the appropriate route. Both routes report
+first-order risk. The [calibration coverage](../risk/aad.md#calibration-dependencies)
+explains the remaining derivative maps and the boundary on second-order XVA.
+
+[Measured XVA comparisons](../../../docs/benchmarks.md) include cold
+preparation, reuse, market updates, small-case overhead and numerical agreement.
 
 ## Numerical and modeling boundaries
 

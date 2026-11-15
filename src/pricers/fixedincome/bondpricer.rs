@@ -3,7 +3,7 @@ use super::bondanalytics::{
     bracketed_root, quoted_dirty_price, solve_yield, yield_price_and_derivative,
 };
 use crate::{
-    ad::{scalar::Scalar, tape::Tape, Recorded},
+    ad::{scalar::Scalar, Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -75,6 +75,7 @@ impl PricerState for BondState {
 }
 
 impl LegsProvider<Recorded> for BondState {
+    /// Returns the trade legs used by the existing cashflow valuation.
     fn legs(&self) -> &[Leg<Recorded>] {
         &self.legs
     }
@@ -402,20 +403,22 @@ fn build_ad_value<E: BondPricingEngine>(
     state: &mut BondState,
     model: &E::Model<f64>,
 ) -> Result<f64> {
-    Tape::start_recording_fwd();
-    Tape::set_mark_fwd();
+    Recording::start();
+    Recording::checkpoint();
     let result = (|| {
-        state.put_pillars_on_tape()?;
+        state.register_pillars()?;
         let market = state
             .market_data
             .as_mut()
             .ok_or_else(|| QSError::ValueNotSetErr("Bond market data".into()))?;
-        for cube in market
+        let mut cubes: Vec<_> = market
             .constructed_elements_mut()
             .volatility_cubes_mut()
-            .values_mut()
-        {
-            cube.cube_mut().put_pillars_on_tape();
+            .iter_mut()
+            .collect();
+        cubes.sort_by_cached_key(|(index, _)| index.to_string());
+        for (_, cube) in cubes {
+            cube.cube_mut().register_pillars();
         }
         let ad_model = engine.ad_model(model, market)?;
         let spread = Recorded::new(state.resolved_spread);
@@ -446,7 +449,7 @@ fn build_ad_value<E: BondPricingEngine>(
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (value * state.get_exchange_rate(source, target)?).into()
+            value * state.get_exchange_rate(source, target)?
         } else {
             value
         };
@@ -454,16 +457,16 @@ fn build_ad_value<E: BondPricingEngine>(
         state.spread_node = Some(spread);
         Ok(value.value())
     })();
-    Tape::stop_recording_fwd();
+    Recording::stop();
     result
 }
-/// Collects curve-pillar adjoints and the OAS or Z-spread adjoint in one
+/// Collects curve-pillar adjoints and the OAS or Z-spread derivative in one
 /// aggregated sensitivity table.
 fn sensitivities(state: &BondState) -> Result<SensitivityMap> {
     let value = state
         .value
         .ok_or_else(|| QSError::ValueNotSetErr("Bond PV".into()))?;
-    value.backward_to_mark()?;
+    value.differentiate_accumulating()?;
 
     let mut labels = Vec::new();
     let mut exposures = Vec::new();
@@ -475,26 +478,30 @@ fn sensitivities(state: &BondState) -> Result<SensitivityMap> {
     for element in elements.discount_curves().values() {
         for (label, pillar) in element.curve().pillars().into_iter().flatten() {
             labels.push(label);
-            exposures.push(pillar.adjoint().map_or(0.0, |adjoint| adjoint.value()));
+            exposures.push(
+                pillar
+                    .derivative()
+                    .map_or(0.0, |derivative| derivative.value()),
+            );
         }
     }
     for element in elements.volatility_surfaces().values() {
         for (label, pillar) in element.surface().pillars().into_iter().flatten() {
             labels.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
     }
     for element in elements.volatility_cubes().values() {
         for (label, pillar) in element.cube().pillars().into_iter().flatten() {
             labels.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
     }
     let spread = state
         .spread_node
         .ok_or_else(|| QSError::ValueNotSetErr("Bond spread risk factor".into()))?;
     labels.push(state.spread_label.clone());
-    exposures.push(spread.adjoint()?.value());
+    exposures.push(spread.derivative()?.value());
     for (label, exposure) in state.get_fx_sensitivities()? {
         labels.push(label);
         exposures.push(exposure);
@@ -1037,8 +1044,7 @@ mod tests {
     }
 
     #[test]
-    fn bond_accrual_reports_paid_coupon_interest_without_pv_or_tape() -> Result<()> {
-        use crate::ad::forward::TAPE_FWD;
+    fn bond_accrual_reports_paid_coupon_interest_without_pv_or_capture() -> Result<()> {
         let origin = Date::new(2025, 1, 1);
         let template = fixed_bond(origin, Date::new(2026, 1, 1), 0.06);
         let provider = TestProvider {
@@ -1047,8 +1053,8 @@ mod tests {
         };
         let start = Date::new(2025, 1, 15);
         let end = Date::new(2025, 2, 15);
-        Tape::stop_recording_fwd();
-        let before = TAPE_FWD.with(|tape| (tape.borrow().book.len(), tape.borrow().mark));
+        Recording::stop();
+        let before = (Recording::state().0, Recording::state().1);
         for side in [Side::LongReceive, Side::PayShort] {
             let trade = FixedRateBondTrade::new(
                 template.instrument().clone(),
@@ -1080,7 +1086,7 @@ mod tests {
                 .evaluate(&trade, &[Request::AccruedAmount(end, start)], &provider)
                 .is_err());
         }
-        let after = TAPE_FWD.with(|tape| (tape.borrow().book.len(), tape.borrow().mark));
+        let after = (Recording::state().0, Recording::state().1);
         assert_eq!(before, after);
         Ok(())
     }

@@ -1628,7 +1628,7 @@ pub fn close_workbook(workbook: u64) {
             .values()
             .all(|registry| registry.objects.is_empty())
         {
-            release_tapes();
+            release_recordings();
         }
     });
 }
@@ -1638,7 +1638,7 @@ pub fn clear_workbooks() {
     super::engine::bridge::reset();
     browser_changed();
     REGISTRIES.with(|registries| registries.borrow_mut().clear());
-    release_tapes();
+    release_recordings();
 }
 
 #[cfg(windows)]
@@ -1798,13 +1798,11 @@ mod definition_pass_tests {
     }
 }
 
-fn release_tapes() {
-    use quantsupport::ad::{
-        forward::ADForward,
-        tape::{Tape, TapeHolder},
-    };
-    f64::with_tape(|tape| *tape = Tape::new());
-    ADForward::with_tape(|tape| *tape = Tape::new());
+/// Releases compiler captures when the worksheet registry transaction finishes.
+fn release_recordings() {
+    use quantsupport::ad::Recording;
+    Recording::stop();
+    Recording::clear();
 }
 
 pub fn workbook_cells_in_rectangles(
@@ -1866,7 +1864,7 @@ pub fn release_workbook_cell_if_changed(
             .values()
             .all(|registry| registry.objects.is_empty())
         {
-            release_tapes();
+            release_recordings();
         }
     });
 }

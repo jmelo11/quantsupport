@@ -1,5 +1,6 @@
 //! Credit instruments (CDS and related products).
 
+/// Defines the premium and protection legs of a credit default swap.
 pub mod creditdefaultswap;
-/// Context-resolved credit-default-swap maker.
+/// Provides the context-resolved credit-default-swap maker.
 pub mod makecreditdefaultswap;

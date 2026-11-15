@@ -16,7 +16,7 @@ impl BilinearValue for f64 {
 
 impl BilinearValue for Recorded {
     fn lerp(a: Self, b: Self, t: f64) -> Self {
-        (a + (b - a) * t).into()
+        a + (b - a) * t
     }
 }
 

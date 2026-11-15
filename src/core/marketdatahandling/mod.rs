@@ -1,20 +1,20 @@
-/// Derived element request module.
+/// Describes the constructed market elements required by a consumer.
 pub mod constructedelementrequest;
-/// Derived element store module.
+/// Stores constructed curves, volatility data and simulation elements.
 pub mod constructedelementstore;
-/// Discount factor request module.
+/// Identifies the curve, date and currency needed for a discount factor.
 pub mod discountrequest;
-/// Fixing request module.
+/// Identifies a dated historical index observation.
 pub mod fixingrequest;
-/// Forward rate request module.
+/// Identifies the index and accrual interval needed for a forward rate.
 pub mod forwardraterequest;
-/// FX rate request module.
+/// Identifies the currency conversion required by a valuation.
 pub mod fxrequest;
-/// Market data provider module.
+/// Defines how consumers request and retrieve their market dependencies.
 pub mod marketdata;
-/// Request-driven views over borrowed base market inputs.
+/// Exposes requested market inputs through a borrowed provider view.
 pub mod marketview;
-/// Path-dependent request module.
+/// Describes observations that depend on a simulated path.
 pub mod pathdependentrequest;
-/// Spot rate request module.
+/// Identifies a dated spot-market observation.
 pub mod spotrequest;

@@ -75,6 +75,7 @@ impl<T: Scalar> FixedRateCoupon<T> {
 }
 
 impl Cashflow<f64> for FixedRateCoupon<f64> {
+    /// Calculates the contractual cashflow amount with its scalar dependencies.
     fn amount(&self) -> Result<f64> {
         let year_fraction = self
             .rate
@@ -89,6 +90,7 @@ impl Cashflow<f64> for FixedRateCoupon<f64> {
 }
 
 impl LinearCoupon<f64> for FixedRateCoupon<f64> {
+    /// Calculates the coupon accrual at the requested date.
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<f64> {
         let year_fraction = accrual_fraction(
             self.rate.day_counter(),
@@ -114,12 +116,13 @@ impl LinearCoupon<f64> for FixedRateCoupon<f64> {
 }
 
 impl Cashflow<Recorded> for FixedRateCoupon<Recorded> {
+    /// Calculates the contractual cashflow amount with its scalar dependencies.
     fn amount(&self) -> Result<Recorded> {
         let year_fraction = self
             .rate
             .day_counter()
             .year_fraction(self.accrual_start_date, self.accrual_end_date);
-        Ok((self.rate.rate() * Recorded::new(year_fraction * self.notional)).into())
+        Ok(self.rate.rate() * Recorded::new(year_fraction * self.notional))
     }
 
     fn payment_date(&self) -> Date {
@@ -128,6 +131,7 @@ impl Cashflow<Recorded> for FixedRateCoupon<Recorded> {
 }
 
 impl LinearCoupon<Recorded> for FixedRateCoupon<Recorded> {
+    /// Calculates the coupon accrual at the requested date.
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<Recorded> {
         let year_fraction = accrual_fraction(
             self.rate.day_counter(),
@@ -136,7 +140,7 @@ impl LinearCoupon<Recorded> for FixedRateCoupon<Recorded> {
             start_date,
             end_date,
         )?;
-        Ok((self.rate.rate() * Recorded::new(year_fraction * self.notional)).into())
+        Ok(self.rate.rate() * Recorded::new(year_fraction * self.notional))
     }
 
     fn accrual_start_date(&self) -> Date {
@@ -153,6 +157,7 @@ impl LinearCoupon<Recorded> for FixedRateCoupon<Recorded> {
 }
 
 impl From<FixedRateCoupon<f64>> for FixedRateCoupon<Recorded> {
+    /// Converts the source data into this financial representation.
     fn from(value: FixedRateCoupon<f64>) -> Self {
         Self::new(
             value.notional,
@@ -165,6 +170,7 @@ impl From<FixedRateCoupon<f64>> for FixedRateCoupon<Recorded> {
 }
 
 impl From<FixedRateCoupon<Recorded>> for FixedRateCoupon<f64> {
+    /// Converts the source data into this financial representation.
     fn from(value: FixedRateCoupon<Recorded>) -> Self {
         Self::new(
             value.notional,

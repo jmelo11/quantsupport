@@ -1,5 +1,5 @@
 use crate::{
-    ad::{expr::FloatExt, forward::ADForward, scalar::Scalar, Recorded},
+    ad::{scalar::Scalar, Recorded},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
@@ -26,7 +26,7 @@ use crate::{
 /// Spread interpolation permits extrapolation. Discount factors at nonpositive
 /// times are one.
 ///
-/// When built with `T = Recorded`, the spread values live on the AD tape and
+/// When built with `T = Recorded`, the spread values live on the AD capture and
 /// sensitivities to the spread can be extracted via the [`Pillars`] trait.
 #[derive(Clone)]
 pub struct SpreadTermStructure<T: Scalar> {
@@ -155,6 +155,7 @@ impl InterestRatesTermStructure<f64> for SpreadTermStructure<f64> {
         self.reference_date
     }
 
+    /// Returns the discount factor at a date under the curve conventions.
     fn discount_factor(&self, date: Date) -> Result<f64> {
         let t = self.day_counter.year_fraction(self.reference_date, date);
         self.discount_factor_from_time(t)
@@ -174,6 +175,7 @@ impl InterestRatesTermStructure<f64> for SpreadTermStructure<f64> {
         Ok(InterestRate::<f64>::implied_rate(comp_factor, self.day_counter, comp, freq, t)?.rate())
     }
 
+    /// Returns the curve nodes in their interpolation order.
     fn nodes(&self) -> Option<Vec<(Date, f64)>> {
         None
     }
@@ -182,6 +184,7 @@ impl InterestRatesTermStructure<f64> for SpreadTermStructure<f64> {
         Some(self.day_counter)
     }
 
+    /// Returns the discount factor for a day-count year fraction.
     fn discount_factor_from_time(&self, t: f64) -> Result<f64> {
         if t <= 0.0 {
             return Ok(1.0);
@@ -192,6 +195,7 @@ impl InterestRatesTermStructure<f64> for SpreadTermStructure<f64> {
         Ok((-spread * t).exp())
     }
 
+    /// Returns the forward rate between two day-count year fractions.
     fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<f64> {
         let dt = end - start;
         let (s, e, dt) = if dt.abs() < 1e-10 {
@@ -212,6 +216,7 @@ impl InterestRatesTermStructure<Recorded> for SpreadTermStructure<Recorded> {
         self.reference_date
     }
 
+    /// Returns the discount factor at a date under the curve conventions.
     fn discount_factor(&self, date: Date) -> Result<Recorded> {
         let t = self.day_counter.year_fraction(self.reference_date, date);
         self.discount_factor_from_time(t)
@@ -228,16 +233,13 @@ impl InterestRatesTermStructure<Recorded> for SpreadTermStructure<Recorded> {
         let df_end = self.discount_factor(end_date)?;
         let comp_factor = df_start / df_end;
         let t = self.day_counter.year_fraction(start_date, end_date);
-        Ok(InterestRate::<Recorded>::implied_rate(
-            comp_factor.into(),
-            self.day_counter,
-            comp,
-            freq,
-            t,
-        )?
-        .rate())
+        Ok(
+            InterestRate::<Recorded>::implied_rate(comp_factor, self.day_counter, comp, freq, t)?
+                .rate(),
+        )
     }
 
+    /// Returns the curve nodes in their interpolation order.
     fn nodes(&self) -> Option<Vec<(Date, Recorded)>> {
         None
     }
@@ -246,6 +248,7 @@ impl InterestRatesTermStructure<Recorded> for SpreadTermStructure<Recorded> {
         Some(self.day_counter)
     }
 
+    /// Returns the discount factor for a day-count year fraction.
     fn discount_factor_from_time(&self, t: f64) -> Result<Recorded> {
         if t <= 0.0 {
             return Ok(Recorded::one());
@@ -260,11 +263,10 @@ impl InterestRatesTermStructure<Recorded> for SpreadTermStructure<Recorded> {
         let spread = self
             .interpolator
             .interpolate(yf, &tmp_yfs, &self.spreads, true)?;
-        Ok((Recorded::new(0.0) - spread * Recorded::new(t))
-            .exp()
-            .into())
+        Ok((Recorded::new(0.0) - spread * Recorded::new(t)).exp())
     }
 
+    /// Returns the forward rate between two day-count year fractions.
     fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<Recorded> {
         let dt = end - start;
         let (s, e, dt) = if dt.abs() < 1e-10 {
@@ -276,11 +278,12 @@ impl InterestRatesTermStructure<Recorded> for SpreadTermStructure<Recorded> {
         let df_start = self.discount_factor_from_time(s)?;
         let df_end = self.discount_factor_from_time(e)?;
         let fwd = (df_start / df_end - Recorded::one()) / Recorded::new(dt);
-        Ok(fwd.into())
+        Ok(fwd)
     }
 }
 
 impl Pillars<Recorded> for SpreadTermStructure<Recorded> {
+    /// Returns the labelled inputs used to report market sensitivities.
     fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.pillar_labels
             .as_ref()
@@ -291,8 +294,9 @@ impl Pillars<Recorded> for SpreadTermStructure<Recorded> {
         self.pillar_labels.clone()
     }
 
-    fn put_pillars_on_tape(&mut self) {
-        self.spreads.iter_mut().for_each(Recorded::put_on_tape);
+    /// Registers current labelled market pillars as independent compiler inputs.
+    fn register_pillars(&mut self) {
+        self.spreads.iter_mut().for_each(Recorded::register_input);
     }
 }
 
@@ -300,7 +304,7 @@ impl ADCurveElement for SpreadTermStructure<Recorded> {
     fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
         let mut curve = self.clone();
         for value in &mut curve.spreads {
-            *value = Recorded::constant(ADForward::constant(value.value()));
+            *value = Recorded::constant(value.value());
         }
         Ok(Box::new(curve))
     }

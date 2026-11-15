@@ -1,21 +1,20 @@
-/// Cash Flows Module
+/// Defines dated payments, redemptions and the common cashflow interface.
 pub mod cashflow;
-/// Cash Flow Type Module
+/// Represents the supported coupon and payment variants.
 pub mod cashflowtype;
-/// Reusable coupon terms and cashflow construction.
-/// Coupon Module
+/// Constructs cashflows from reusable coupon terms.
 pub mod coupons;
-/// Fixed Rate Coupon Module
+/// Calculates fixed coupon payments from their rate and accrual conventions.
 pub mod fixedratecoupon;
-/// Floating Rate Coupon Module
+/// Calculates floating coupons from index observations and contractual spreads.
 pub mod floatingratecoupon;
-/// Leg Module
+/// Groups related cashflows into a contractual payment leg.
 pub mod leg;
-/// Make Leg Module
+/// Builds payment legs from schedules and coupon specifications.
 pub mod makeleg;
-/// Option-embedded cashflow (e.g. cap/floor payoffs).
+/// Calculates option payoffs embedded in dated cashflows.
 pub mod optionembeddedcashflow;
-/// Option Embedded Coupon Module
+/// Represents coupon terms with embedded optionality.
 pub mod optionembeddedcoupon;
-/// Payoff description module.
+/// Defines the arithmetic operations used to evaluate cashflow payoffs.
 pub mod payoffops;

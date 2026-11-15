@@ -1,19 +1,19 @@
 //! Time-dependent volatility adapters for market-data components.
 //!
 //! Components that directly consume volatility use the
-//! [`TimeDependentVolatility`] trait. This module connects that trait to flat
+//! [`TimeDependentVolatility`](crate::models::montecarloengine::TimeDependentVolatility) trait. This module connects that trait to flat
 //! values and constructed volatility markets:
 //!
-//! - [`ConstantVolatility`] — a flat volatility, useful for debugging and
+//! - [`ConstantVolatility`](crate::volatility::volatilitysource::ConstantVolatility) — a flat volatility, useful for debugging and
 //!   simple setups.
-//! - [`SurfaceTermVolatility`] — samples a constructed
-//!   [`VolatilitySurfaceElement`] at a fixed smile key as a function of time.
-//! - [`CubeTermVolatility`] — samples a constructed [`VolatilityCubeElement`]
+//! - [`SurfaceTermVolatility`](crate::volatility::volatilitysource::SurfaceTermVolatility) — samples a constructed
+//!   [`VolatilitySurfaceElement`](crate::core::elements::volatilitysurfaceelement::VolatilitySurfaceElement) at a fixed smile key as a function of time.
+//! - [`CubeTermVolatility`](crate::volatility::volatilitysource::CubeTermVolatility) — samples a constructed [`VolatilityCubeElement`](crate::core::elements::volatilitycubelement::VolatilityCubeElement)
 //!   at a fixed tenor and smile key as a function of time.
 //!
-//! The serde-enabled [`VolatilitySourceConfiguration`] selects the source from
+//! The serde-enabled [`VolatilitySourceConfiguration`](crate::volatility::volatilitysource::VolatilitySourceConfiguration) selects the source from
 //! JSON and is resolved against a
-//! [`ConstructedElementStore`]
+//! [`ConstructedElementStore`](crate::core::marketdatahandling::constructedelementstore::ConstructedElementStore)
 //! once surfaces and cubes have been built.
 
 use serde::{Deserialize, Serialize};

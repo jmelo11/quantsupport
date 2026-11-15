@@ -1,6 +1,6 @@
 use crate::core::marketdatahandling::constructedelementstore::SharedElement;
 use crate::{
-    ad::{forward::ADForward, scalar::Scalar, Recorded},
+    ad::{scalar::Scalar, Recorded},
     core::{elements::volatilitycubelement::ADVolatilityCubeElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     math::interpolation::{
@@ -162,6 +162,7 @@ impl<T: BilinearValue> VolatilityCube<T> for InterpolatedVolatilityCube<T> {
 }
 
 impl Pillars<Recorded> for InterpolatedVolatilityCube<Recorded> {
+    /// Returns the labelled inputs used to report market sensitivities.
     fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.labels.as_ref().map(|labels| {
             labels
@@ -180,11 +181,12 @@ impl Pillars<Recorded> for InterpolatedVolatilityCube<Recorded> {
         self.labels.clone()
     }
 
-    fn put_pillars_on_tape(&mut self) {
+    /// Registers current labelled market pillars as independent compiler inputs.
+    fn register_pillars(&mut self) {
         for t in self.points.values_mut() {
             for m in t.values_mut() {
                 for value in m.values_mut() {
-                    value.put_on_tape();
+                    value.register_input();
                 }
             }
         }
@@ -200,7 +202,7 @@ impl ADVolatilityCubeElement for InterpolatedVolatilityCube<Recorded> {
             .flat_map(|values| values.values_mut())
             .flat_map(|values| values.values_mut())
         {
-            *value = Recorded::constant(ADForward::constant(value.value()));
+            *value = Recorded::constant(value.value());
         }
         Ok(Rc::new(RefCell::new(market)))
     }
@@ -270,6 +272,7 @@ mod tests {
         assert!((vol - 0.245_035).abs() < 1e-10, "got {vol}");
     }
 
+    /// Checks cube interpolates interior recorded.
     #[test]
     fn cube_interpolates_interior_recorded() {
         let f64_cube = build_cube_f64();

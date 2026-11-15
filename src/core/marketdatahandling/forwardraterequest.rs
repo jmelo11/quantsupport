@@ -7,7 +7,7 @@ use crate::{
 use crate::{indices::marketindex::MarketIndex, time::date::Date};
 
 /// Request for a forward rate between two dates for a given market index.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ForwardRateRequest {
     market_index: MarketIndex,
     fixing_date: Date,

@@ -1,0 +1,65 @@
+{
+    "volatility_surfaces": [
+        {
+            "market_index": "SOFR",
+            "volatility_type": "Black",
+            "smile_type": "Strike",
+            "quotes": [
+                "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.035_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.045_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.055_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.035_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.055_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.035_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.045_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.055_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.035_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.045_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.055_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_4Y_Absolute_0.035_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_4Y_Absolute_0.045_Straddle_Black",
+                "CapletFloorlet_USD_SOFR_3M_4Y_Absolute_0.055_Straddle_Black"
+            ]
+        }
+    ],
+    "volatility_cubes": [
+        {
+            "market_index": "ICP",
+            "volatility_type": "Black",
+            "smile_type": "Strike",
+            "quotes": [
+                "Swaption_CLP_ICP_6M_1Y_Absolute_0.035_Black",
+                "Swaption_CLP_ICP_6M_1Y_Absolute_0.045_Black",
+                "Swaption_CLP_ICP_6M_1Y_Absolute_0.055_Black",
+                "Swaption_CLP_ICP_6M_2Y_Absolute_0.035_Black",
+                "Swaption_CLP_ICP_6M_2Y_Absolute_0.045_Black",
+                "Swaption_CLP_ICP_6M_2Y_Absolute_0.055_Black",
+                "Swaption_CLP_ICP_1Y_1Y_Absolute_0.035_Black",
+                "Swaption_CLP_ICP_1Y_1Y_Absolute_0.045_Black",
+                "Swaption_CLP_ICP_1Y_1Y_Absolute_0.055_Black",
+                "Swaption_CLP_ICP_1Y_2Y_Absolute_0.035_Black",
+                "Swaption_CLP_ICP_1Y_2Y_Absolute_0.045_Black",
+                "Swaption_CLP_ICP_1Y_2Y_Absolute_0.055_Black",
+                "Swaption_CLP_ICP_2Y_1Y_Absolute_0.035_Black",
+                "Swaption_CLP_ICP_2Y_1Y_Absolute_0.045_Black",
+                "Swaption_CLP_ICP_2Y_1Y_Absolute_0.055_Black",
+                "Swaption_CLP_ICP_2Y_2Y_Absolute_0.035_Black",
+                "Swaption_CLP_ICP_2Y_2Y_Absolute_0.045_Black",
+                "Swaption_CLP_ICP_2Y_2Y_Absolute_0.055_Black",
+                "Swaption_CLP_ICP_3Y_1Y_Absolute_0.035_Black",
+                "Swaption_CLP_ICP_3Y_1Y_Absolute_0.045_Black",
+                "Swaption_CLP_ICP_3Y_1Y_Absolute_0.055_Black",
+                "Swaption_CLP_ICP_3Y_2Y_Absolute_0.035_Black",
+                "Swaption_CLP_ICP_3Y_2Y_Absolute_0.045_Black",
+                "Swaption_CLP_ICP_3Y_2Y_Absolute_0.055_Black",
+                "Swaption_CLP_ICP_4Y_1Y_Absolute_0.035_Black",
+                "Swaption_CLP_ICP_4Y_1Y_Absolute_0.045_Black",
+                "Swaption_CLP_ICP_4Y_1Y_Absolute_0.055_Black",
+                "Swaption_CLP_ICP_4Y_2Y_Absolute_0.035_Black",
+                "Swaption_CLP_ICP_4Y_2Y_Absolute_0.045_Black",
+                "Swaption_CLP_ICP_4Y_2Y_Absolute_0.055_Black"
+            ]
+        }
+    ]
+}

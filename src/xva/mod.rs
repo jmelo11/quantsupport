@@ -24,12 +24,23 @@
 //! signed exposure. Returned NPV cubes precede variation margin, even when
 //! adjustment calculations use collateralized exposures.
 
+/// Binds the numerical exposure transforms and weights used by native adjustment programs.
+pub mod aggregationplan;
+/// Calculates valuation adjustments from path exposures and their credit or funding weights.
 pub mod aggregator;
+/// Defines how a contingent claim turns market observations into a payoff.
 pub mod claimevaluationstrategy;
+/// Represents a dated payment and the observations required to value it.
 pub mod contigentclaim;
+/// Defines collateral terms and applies variation-margin rules to path exposures.
 pub mod csa;
-/// High-level XVA engine and model setup.
+/// Prepares and runs the LGM exposure and valuation-adjustment workflow.
 pub mod engine;
+/// Executes a prepared native program with the current market binding.
+mod execution;
+/// Builds contingent claims or decomposes supported instruments into claim collections.
 pub mod makecontigentclaim;
+/// Groups client claims under a shared collateral agreement for exposure calculations.
 pub mod nettingset;
+/// Preprocesses claims, simulates market observations and evaluates exposure paths.
 pub mod visitors;

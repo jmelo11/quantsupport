@@ -15,15 +15,15 @@ Wiley, 2018
 This attribution and license notice must be preserved at the top of this file.
 */
 
-/// Static value-domain analysis for variables and conditions.
+/// Provides the static value-domain analysis for variables and conditions.
 pub mod domainprocessor;
-/// Exact single-scenario AST evaluator.
+/// Dispatches a trade and its requests to the registered pricing method.
 pub mod evaluator;
-/// Smoothed evaluator for scripts with conditional optionality.
+/// Provides the smoothed evaluator for scripts with conditional optionality.
 pub mod fuzzyevaluator;
-/// Transformation of ordinary conditions into differentiable form.
+/// Provides the transformation of ordinary conditions into differentiable form.
 pub mod ifconditiontransform;
-/// Conditional-block analysis and metadata preparation.
+/// Provides the conditional-block analysis and metadata preparation.
 pub mod ifprocessor;
-/// Variable and market-request indexing.
+/// Provides the variable and market-request indexing.
 pub mod varindexer;

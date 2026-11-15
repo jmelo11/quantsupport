@@ -25,7 +25,6 @@ use std::{
 };
 
 use crate::{
-    ad::expr::FloatExt,
     currencies::currency::Currency,
     scripting::{
         data::simulationdata::{SimulationData, SimulationPath},
@@ -38,7 +37,7 @@ use crate::{
 /// Payment recorded by an evaluator when cashflow capture is enabled:
 /// `(payment date, optional payment currency, undiscounted amount,
 /// discounted numeraire-deflated value)`.
-pub type CapturedCashflow = (Date, Option<Currency>, f64, f64);
+pub type CapturedCashflow = (Date, Option<Currency>, NumericType, NumericType);
 
 /// # Value
 /// Enum representing the possible values of a variable
@@ -63,7 +62,7 @@ impl Add for Value {
 
     fn add(self, other: Self) -> Self {
         match (self, other) {
-            (Value::Number(a), Value::Number(b)) => Value::Number((a + b).into()),
+            (Value::Number(a), Value::Number(b)) => Value::Number(a + b),
             (Value::String(a), Value::String(b)) => Value::String(a + &b),
             _ => Value::Null,
         }
@@ -85,7 +84,7 @@ impl Sub for Value {
 
     fn sub(self, other: Self) -> Self {
         match (self, other) {
-            (Value::Number(a), Value::Number(b)) => Value::Number((a - b).into()),
+            (Value::Number(a), Value::Number(b)) => Value::Number(a - b),
             _ => Value::Null,
         }
     }
@@ -104,7 +103,7 @@ impl Mul for Value {
 
     fn mul(self, other: Self) -> Self {
         match (self, other) {
-            (Value::Number(a), Value::Number(b)) => Value::Number((a * b).into()),
+            (Value::Number(a), Value::Number(b)) => Value::Number(a * b),
             _ => Value::Null,
         }
     }
@@ -115,7 +114,7 @@ impl Div for Value {
 
     fn div(self, other: Self) -> Self {
         match (self, other) {
-            (Value::Number(a), Value::Number(b)) => Value::Number((a / b).into()),
+            (Value::Number(a), Value::Number(b)) => Value::Number(a / b),
             _ => Value::Null,
         }
     }
@@ -376,9 +375,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
 
                 if self.captured_payment_id == data.id {
                     let mut captured = self.captured_payment_value.borrow_mut();
-                    *captured = Some(
-                        captured.map_or(current_value, |value| (value + current_value).into()),
-                    );
+                    *captured = Some(captured.map_or(current_value, |value| value + current_value));
                 }
 
                 let market_data = self.current_market_data()?.clone();
@@ -394,9 +391,9 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                         .spot_id
                         .ok_or(QSError::ValueNotSetErr("Pays FX not indexed".to_string()))?;
                     let fx = market_data.get_fx(fx_id)?;
-                    ((current_value * df * fx) / numeraire).into()
+                    (current_value * df * fx) / numeraire
                 } else {
-                    ((current_value * df) / numeraire).into()
+                    (current_value * df) / numeraire
                 };
 
                 if self.capture_cashflows {
@@ -404,8 +401,8 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                         self.captured_cashflows.borrow_mut().push((
                             date,
                             data.currency,
-                            current_value.value(),
-                            value.value(),
+                            current_value,
+                            value,
                         ));
                     }
                 }
@@ -428,7 +425,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
 
                 let right = self.digit_stack.borrow_mut().pop().unwrap();
                 let left = self.digit_stack.borrow_mut().pop().unwrap();
-                self.digit_stack.borrow_mut().push((left + right).into());
+                self.digit_stack.borrow_mut().push(left + right);
                 Ok(())
             }
             Node::Subtract(data) => {
@@ -438,7 +435,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
 
                 let right = self.digit_stack.borrow_mut().pop().unwrap();
                 let left = self.digit_stack.borrow_mut().pop().unwrap();
-                self.digit_stack.borrow_mut().push((left - right).into());
+                self.digit_stack.borrow_mut().push(left - right);
                 Ok(())
             }
             Node::Multiply(data) => {
@@ -448,7 +445,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
 
                 let right = self.digit_stack.borrow_mut().pop().unwrap();
                 let left = self.digit_stack.borrow_mut().pop().unwrap();
-                self.digit_stack.borrow_mut().push((left * right).into());
+                self.digit_stack.borrow_mut().push(left * right);
                 Ok(())
             }
             Node::Divide(data) => {
@@ -458,7 +455,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
 
                 let right = self.digit_stack.borrow_mut().pop().unwrap();
                 let left = self.digit_stack.borrow_mut().pop().unwrap();
-                self.digit_stack.borrow_mut().push((left / right).into());
+                self.digit_stack.borrow_mut().push(left / right);
                 Ok(())
             }
             Node::Assign(data) => {
@@ -630,7 +627,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                     .try_for_each(|child| self.const_visit(child))?;
 
                 let top = self.digit_stack.borrow_mut().pop().unwrap();
-                self.digit_stack.borrow_mut().push((-top).into());
+                self.digit_stack.borrow_mut().push(-top);
 
                 Ok(())
             }
@@ -691,7 +688,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                 let half = eps * 0.5;
                 let inner = (x + half).min(eps).max(NumericType::zero());
                 let res = b + ((a - b) / eps) * inner;
-                self.digit_stack.borrow_mut().push(res.into());
+                self.digit_stack.borrow_mut().push(res);
 
                 Ok(())
             }
@@ -772,7 +769,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                 if count == 0.0 {
                     return Err(QSError::EvaluationErr("mean of empty array".to_string()));
                 }
-                self.digit_stack.borrow_mut().push((sum / count).into());
+                self.digit_stack.borrow_mut().push(sum / count);
                 Ok(())
             }
             Node::Std(data) => {
@@ -800,7 +797,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                     var += diff * diff;
                 }
                 let std = (var / count).sqrt();
-                self.digit_stack.borrow_mut().push(std.into());
+                self.digit_stack.borrow_mut().push(std);
                 Ok(())
             }
             Node::Range(data) => {
@@ -987,7 +984,7 @@ impl<'a> Evaluator<'a> {
                     .entry(key.clone())
                     .or_insert(Value::Number(NumericType::new(0.0)));
                 if let (Value::Number(a), Value::Number(b)) = (entry, value) {
-                    *a = (*a + *b / n_scenarios).into();
+                    *a += *b / n_scenarios;
                 }
             });
         });
@@ -1026,7 +1023,7 @@ impl<'a> Evaluator<'a> {
                     .entry(key.clone())
                     .or_insert(Value::Number(NumericType::new(0.0)));
                 if let (Value::Number(a), Value::Number(b)) = (entry, value) {
-                    *a = (*a + *b / n_scenarios).into();
+                    *a += *b / n_scenarios;
                 }
             });
         });

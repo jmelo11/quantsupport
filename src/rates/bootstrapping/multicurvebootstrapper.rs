@@ -568,7 +568,7 @@ impl<'a> MultiCurveBootstrapper<'a> {
         sensitivities
     }
 
-    /// Records `DF = solved_value + Σ S_j (q_j - q_j_value)` on the AD tape.
+    /// Records `DF = solved_value + Σ S_j (q_j - q_j_value)` on the AD capture.
     ///
     /// Each quote delta has zero value, preserving the solved discount factors
     /// while propagating derivatives to both own and parent quotes.
@@ -583,7 +583,7 @@ impl<'a> MultiCurveBootstrapper<'a> {
             for (&sensitivity, &quote) in row.iter().zip(&sensitivities.quotes) {
                 if sensitivity.abs() > 1e-16 {
                     let delta = quote - Recorded::new(quote.value());
-                    df_ad = (df_ad + Recorded::new(sensitivity) * delta).into();
+                    df_ad += Recorded::new(sensitivity) * delta;
                 }
             }
             ad_dfs.push(df_ad);

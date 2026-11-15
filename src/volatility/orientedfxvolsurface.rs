@@ -1,6 +1,6 @@
 //! Oriented FX volatility surface adapter.
 //!
-//! Wraps a [`VolatilitySurfaceElement`] and transparently applies the standard
+//! Wraps a [`VolatilitySurfaceElement`](crate::core::elements::volatilitysurfaceelement::VolatilitySurfaceElement) and transparently applies the standard
 //! FX parity transform when the requested pair orientation differs from the
 //! stored (canonical) one.
 //!

@@ -227,7 +227,7 @@ There are two ways to represent a product:
   information such as notional, side, and trade date.
 - **Scripted products** describe bespoke payoffs as dated events that observe
   rates, discount factors, FX, or equity spots and emit payments. Scripts use
-  the same market models and automatic-differentiation tape as native products,
+  the same market models and compiled automatic differentiation as native products,
   so they produce NPV, expected cashflows, and quote-level sensitivities without
   requiring a new Rust instrument or pricer.
 
@@ -277,7 +277,7 @@ the measures requested and supported by that engine; an absent measure is not
 a zero value.
 
 Automatic differentiation runs through market construction and valuation.
-Market pillars become labelled leaves on the AAD tape, and calibrated curves
+Market pillars become labelled compiler inputs, and calibrated curves
 reconnect first-order risk through numerical calibration Jacobians. Reported
 derivatives apply to the inputs actually differentiated by each engine;
 stored numerical simulations hold path-generation inputs fixed and therefore

@@ -46,7 +46,7 @@ use crate::{
 /// A pricer's market-data request constructs only its required dependencies
 /// through a cached [`MarketView`]. [`Self::initialize`] instead validates the
 /// configuration and eagerly builds all configured objects. Neither operation
-/// makes this context the owner of an AD tape: recording is thread-local and
+/// makes this context the owner of an AD capture: recording is thread-local and
 /// managed by valuation engines.
 ///
 /// Input-setting methods invalidate constructed caches and the selected snapshot
@@ -774,7 +774,7 @@ impl PricingContext {
                     let _ = self.fx_store.get_fx_rate(fx_req.base(), quote_ccy)?;
                 }
             }
-            // Conversion to the context base is composed on the pricer's AD tape.
+            // Conversion to the context base is composed on the pricer's AD capture.
             if fx_requests
                 .iter()
                 .any(|request| request.is_pair() || request.base() != self.base_currency)

@@ -1,0 +1,71 @@
+{
+    "model_configs": [
+        {
+            "market_index": "SOFR",
+            "lambda": 0.05,
+            "parameter_source": {
+                "Calibrated": {
+                    "source": {
+                        "Surface": {
+                            "market_index": "SOFR"
+                        }
+                    },
+                    "calibration_basket": {
+                        "expiries": [
+                            "6M",
+                            "1Y",
+                            "2Y",
+                            "3Y",
+                            "4Y"
+                        ],
+                        "strike": "Atm"
+                    }
+                }
+            }
+        },
+        {
+            "market_index": "ICP",
+            "lambda": 0.05,
+            "parameter_source": {
+                "Calibrated": {
+                    "source": {
+                        "Cube": {
+                            "market_index": "ICP"
+                        }
+                    },
+                    "calibration_basket": {
+                        "expiries": [
+                            "6M",
+                            "1Y",
+                            "2Y",
+                            "3Y"
+                        ],
+                        "tenors": [
+                            "1Y"
+                        ],
+                        "strike": "Atm"
+                    }
+                }
+            }
+        },
+        {
+            "market_index": {
+                "Collateral": [
+                    "CLP",
+                    "USD"
+                ]
+            },
+            "driver": "ICP"
+        }
+    ],
+    "fx_configs": [
+        {
+            "foreign_currency": "CLP",
+            "fx_vol": 0.10,
+            "rho": 0.15
+        }
+    ],
+    "n_paths": 1000,
+    "seed": 42,
+    "frequency": "Monthly"
+}

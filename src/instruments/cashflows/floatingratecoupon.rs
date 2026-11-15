@@ -618,6 +618,7 @@ where
 
 #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
 impl Cashflow<f64> for FloatingRateCoupon<f64> {
+    /// Calculates the contractual cashflow amount with its scalar dependencies.
     fn amount(&self) -> Result<f64> {
         let fixing = self
             .fixing
@@ -637,6 +638,7 @@ impl Cashflow<f64> for FloatingRateCoupon<f64> {
 
 #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
 impl LinearCoupon<f64> for FloatingRateCoupon<f64> {
+    /// Calculates the coupon accrual at the requested date.
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<f64> {
         let year_fraction = accrual_fraction(
             self.day_counter,
@@ -676,6 +678,7 @@ impl LinearCoupon<f64> for FloatingRateCoupon<f64> {
 
 #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
 impl Cashflow<Recorded> for FloatingRateCoupon<Recorded> {
+    /// Calculates the contractual cashflow amount with its scalar dependencies.
     fn amount(&self) -> Result<Recorded> {
         let fixing = self
             .fixing
@@ -685,7 +688,7 @@ impl Cashflow<Recorded> for FloatingRateCoupon<Recorded> {
         let year_fraction = self
             .day_counter
             .year_fraction(self.start_date, self.end_date);
-        Ok(((fixing + self.spread) * Recorded::new(year_fraction * self.notional)).into())
+        Ok((fixing + self.spread) * Recorded::new(year_fraction * self.notional))
     }
 
     fn payment_date(&self) -> Date {
@@ -695,6 +698,7 @@ impl Cashflow<Recorded> for FloatingRateCoupon<Recorded> {
 
 #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
 impl LinearCoupon<Recorded> for FloatingRateCoupon<Recorded> {
+    /// Calculates the coupon accrual at the requested date.
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<Recorded> {
         let year_fraction = accrual_fraction(
             self.day_counter,
@@ -718,7 +722,7 @@ impl LinearCoupon<Recorded> for FloatingRateCoupon<Recorded> {
             .read()
             .unwrap()
             .ok_or_else(|| QSError::InvalidValueErr("Fixing not set".into()))?;
-        Ok(((fixing + self.spread) * Recorded::new(year_fraction * self.notional)).into())
+        Ok((fixing + self.spread) * Recorded::new(year_fraction * self.notional))
     }
 
     fn accrual_start_date(&self) -> Date {
@@ -735,6 +739,7 @@ impl LinearCoupon<Recorded> for FloatingRateCoupon<Recorded> {
 }
 
 impl From<FloatingRateCoupon<f64>> for FloatingRateCoupon<Recorded> {
+    /// Converts the source data into this financial representation.
     fn from(value: FloatingRateCoupon<f64>) -> Self {
         let fixing = value.fixing();
         let mut coupon = Self::new(
@@ -757,6 +762,7 @@ impl From<FloatingRateCoupon<f64>> for FloatingRateCoupon<Recorded> {
 
 #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
 impl From<FloatingRateCoupon<Recorded>> for FloatingRateCoupon<f64> {
+    /// Converts the source data into this financial representation.
     fn from(value: FloatingRateCoupon<Recorded>) -> Self {
         let fixing = value.fixing();
         let mut coupon = Self::new(

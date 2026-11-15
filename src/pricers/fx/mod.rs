@@ -1,4 +1,4 @@
-/// FX option pricer.
+/// Provides the FX option pricer.
 pub mod fxeuropeanoptionpricer;
-/// FX forward quote pricer.
+/// Provides the FX forward quote pricer.
 pub mod fxforwardpricer;

@@ -20,7 +20,6 @@ use crate::utils::errors::{QSError, Result};
 use std::cell::{Cell, RefCell};
 
 use crate::{
-    ad::expr::FloatExt,
     scripting::{
         data::simulationdata::{SimulationData, SimulationPath},
         nodes::{node::Node, node::SpotUnderlying, traits::NodeConstVisitor},
@@ -228,7 +227,7 @@ impl<'a> FuzzyEvaluator<'a> {
         } else if x > half {
             NumericType::one()
         } else {
-            ((x + half) / eps).into()
+            (x + half) / eps
         }
     }
 
@@ -239,7 +238,7 @@ impl<'a> FuzzyEvaluator<'a> {
         } else if x > rb {
             NumericType::one()
         } else {
-            ((x - lb) / (rb - lb)).into()
+            (x - lb) / (rb - lb)
         }
     }
 
@@ -249,7 +248,7 @@ impl<'a> FuzzyEvaluator<'a> {
         if x < -half || x > half {
             NumericType::zero()
         } else {
-            ((-x.abs() + half) / half).into()
+            (-x.abs() + half) / half
         }
     }
 
@@ -258,9 +257,9 @@ impl<'a> FuzzyEvaluator<'a> {
         if x < lb || x > rb {
             NumericType::zero()
         } else if x < 0.0 {
-            (NumericType::one() - x / lb).into()
+            NumericType::one() - x / lb
         } else {
-            (NumericType::one() - x / rb).into()
+            NumericType::one() - x / rb
         }
     }
 
@@ -286,7 +285,7 @@ impl<'a> FuzzyEvaluator<'a> {
                     })?;
                     let scale = left.value().abs().max(right.value().abs());
                     let eps = (scale * AUTO_SMOOTHING_RELATIVE_WIDTH).max(AUTO_SMOOTHING_MIN_WIDTH);
-                    return Ok(((left - right).into(), eps));
+                    return Ok(((left - right), eps));
                 }
             }
         }
@@ -392,11 +391,10 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 }
 
                 if self.captured_payment_id == data.id {
-                    let weighted_value = (*self.branch_weight.borrow() * current_value).into();
+                    let weighted_value = *self.branch_weight.borrow() * current_value;
                     let mut captured = self.captured_payment_value.borrow_mut();
-                    *captured = Some(
-                        captured.map_or(weighted_value, |value| (value + weighted_value).into()),
-                    );
+                    *captured =
+                        Some(captured.map_or(weighted_value, |value| value + weighted_value));
                 }
 
                 let market_data = self.current_market_data()?.clone();
@@ -410,20 +408,20 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                         .spot_id
                         .ok_or(QSError::ValueNotSetErr("Pays FX not indexed".into()))?;
                     let fx = market_data.get_fx(fx_id)?;
-                    ((current_value * df * fx) / numeraire).into()
+                    (current_value * df * fx) / numeraire
                 } else {
-                    ((current_value * df) / numeraire).into()
+                    (current_value * df) / numeraire
                 };
                 if self.capture_cashflows {
                     if let Some(date) = payment_date {
                         let weight = *self.branch_weight.borrow();
-                        let undiscounted: NumericType = (weight * current_value).into();
-                        let discounted: NumericType = (weight * value).into();
+                        let undiscounted: NumericType = weight * current_value;
+                        let discounted: NumericType = weight * value;
                         self.captured_cashflows.borrow_mut().push((
                             date,
                             data.currency,
-                            undiscounted.value(),
-                            discounted.value(),
+                            undiscounted,
+                            discounted,
                         ));
                     }
                 }
@@ -446,7 +444,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 }
                 let right = self.digit_stack.borrow_mut().pop().unwrap();
                 let left = self.digit_stack.borrow_mut().pop().unwrap();
-                self.digit_stack.borrow_mut().push((left + right).into());
+                self.digit_stack.borrow_mut().push(left + right);
                 Ok(())
             }
             Node::Subtract(data) => {
@@ -455,7 +453,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 }
                 let right = self.digit_stack.borrow_mut().pop().unwrap();
                 let left = self.digit_stack.borrow_mut().pop().unwrap();
-                self.digit_stack.borrow_mut().push((left - right).into());
+                self.digit_stack.borrow_mut().push(left - right);
                 Ok(())
             }
             Node::Multiply(data) => {
@@ -464,7 +462,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 }
                 let right = self.digit_stack.borrow_mut().pop().unwrap();
                 let left = self.digit_stack.borrow_mut().pop().unwrap();
-                self.digit_stack.borrow_mut().push((left * right).into());
+                self.digit_stack.borrow_mut().push(left * right);
                 Ok(())
             }
             Node::Divide(data) => {
@@ -473,7 +471,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 }
                 let right = self.digit_stack.borrow_mut().pop().unwrap();
                 let left = self.digit_stack.borrow_mut().pop().unwrap();
-                self.digit_stack.borrow_mut().push((left / right).into());
+                self.digit_stack.borrow_mut().push(left / right);
                 Ok(())
             }
             Node::Assign(data) => {
@@ -514,7 +512,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                     self.const_visit(child)?;
                 }
                 let value = self.digit_stack.borrow_mut().pop().unwrap();
-                self.digit_stack.borrow_mut().push((-value).into());
+                self.digit_stack.borrow_mut().push(-value);
                 Ok(())
             }
             Node::Min(data) | Node::Max(data) => {
@@ -565,7 +563,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 let weight = (value + half).min(eps).max(NumericType::zero());
                 self.digit_stack
                     .borrow_mut()
-                    .push((right + ((left - right) / eps) * weight).into());
+                    .push(right + ((left - right) / eps) * weight);
                 Ok(())
             }
             Node::Cvg(data) => {
@@ -639,7 +637,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                     sum += *number;
                 }
                 let result = if matches!(node, Node::Mean(_)) {
-                    (sum / count).into()
+                    sum / count
                 } else {
                     let mean = sum / count;
                     let mut variance = NumericType::zero();
@@ -647,7 +645,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                         let difference = number - mean;
                         variance += difference * difference;
                     }
-                    (variance / count).sqrt().into()
+                    (variance / count).sqrt()
                 };
                 self.digit_stack.borrow_mut().push(result);
                 Ok(())
@@ -772,7 +770,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 self.const_visit(&data.children[1])?;
                 let b2 = self.dt_stack.borrow_mut().pop().unwrap();
                 let b1 = self.dt_stack.borrow_mut().pop().unwrap();
-                let res: NumericType = (b1 * b2).into();
+                let res: NumericType = b1 * b2;
                 self.dt_stack.borrow_mut().push(res);
                 Ok(())
             }
@@ -781,14 +779,14 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 self.const_visit(&data.children[1])?;
                 let b2 = self.dt_stack.borrow_mut().pop().unwrap();
                 let b1 = self.dt_stack.borrow_mut().pop().unwrap();
-                let dt: NumericType = (b1 + b2 - (b1 * b2)).into();
+                let dt: NumericType = b1 + b2 - (b1 * b2);
                 self.dt_stack.borrow_mut().push(dt);
                 Ok(())
             }
             Node::Not(data) => {
                 self.const_visit(&data.children[0])?;
                 let b = self.dt_stack.borrow_mut().pop().unwrap();
-                let dt: NumericType = (NumericType::one() - b).into();
+                let dt: NumericType = NumericType::one() - b;
                 self.dt_stack.borrow_mut().push(dt);
                 Ok(())
             }
@@ -833,7 +831,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                     });
 
                     /* evaluate “then”-branch */
-                    *self.branch_weight.borrow_mut() = (parent_weight * dt).into();
+                    *self.branch_weight.borrow_mut() = parent_weight * dt;
                     for c in data.children.iter().skip(1).take(last_true) {
                         self.const_visit(c)?;
                     }
@@ -851,8 +849,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                     });
 
                     /* evaluate “else”-branch (if any) */
-                    *self.branch_weight.borrow_mut() =
-                        (parent_weight * (NumericType::one() - dt)).into();
+                    *self.branch_weight.borrow_mut() = parent_weight * (NumericType::one() - dt);
                     if let Some(start) = data.first_else {
                         for c in data.children.iter().skip(start) {
                             self.const_visit(c)?;
@@ -866,7 +863,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                             Value::Number(n) => n,
                             _ => panic!("expected numeric var"),
                         };
-                        let v = Value::Number((dt * v_true + (-dt + 1.0) * v_false).into());
+                        let v = Value::Number(dt * v_true + (-dt + 1.0) * v_false);
                         self.variables.borrow_mut()[idx] = v;
                     });
                     *self.branch_weight.borrow_mut() = parent_weight;
@@ -925,7 +922,7 @@ impl FuzzyEvaluator<'_> {
 mod tests {
     use super::*;
     use crate::{
-        ad::{scalar::Scalar, tape::Tape},
+        ad::Recording,
         scripting::{
             nodes::traits::NodeVisitor,
             parsing::{lexer::Lexer, parser::Parser},
@@ -1008,7 +1005,7 @@ mod tests {
 
     #[test]
     fn test_fuzzy_case() {
-        Tape::start_recording_fwd();
+        Recording::start();
 
         let script1 = "x = 0; y = 0; if x > 0 { y = 1; }".to_string();
         let tokens = Lexer::new(script1).tokenize().unwrap();
@@ -1026,25 +1023,30 @@ mod tests {
             FuzzyEvaluator::new(indexer.get_variables_size(), if_processor.max_nested_ifs())
                 .with_eps(1.0);
 
+        // x is an independent market input; the literal assignment is setup only.
+        if let Node::Base(data) = &mut script1_nodes {
+            data.children.remove(0);
+        }
+        fuzzy_evaluator.set_variable(0, Value::Number(NumericType::new(0.0)));
         fuzzy_evaluator.const_visit(&script1_nodes).unwrap();
 
         let eval_vars = fuzzy_evaluator.variables();
         let y = match eval_vars.get(1).unwrap() {
             Value::Number(n) => {
-                n.backward().unwrap();
+                n.differentiate().unwrap();
                 n.value()
             }
             _ => panic!("Expected y to be a number"),
         };
 
         let result = match eval_vars.get(0).unwrap() {
-            Value::Number(n) => n.adjoint().unwrap(),
+            Value::Number(n) => n.derivative().unwrap(),
             _ => panic!("Expected x to be a number"),
         };
 
         assert!((result - 1.0).abs() < 1e-12, "Results do not match");
         assert!((y - 0.5).abs() < 1e-12, "y should be 0.5");
 
-        Tape::stop_recording_fwd();
+        Recording::stop();
     }
 }

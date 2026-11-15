@@ -1,5 +1,5 @@
 use crate::{
-    ad::{expr::FloatExt, tape::Tape, Recorded},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -41,7 +41,7 @@ use std::collections::HashSet;
 /// per square-root year. Volatility can be supplied directly or resolved by
 /// the shared Hull-White calibration from a surface or cube.
 ///
-/// Curve inputs remain on the AD tape throughout the decomposition, including
+/// Curve inputs remain on the AD capture throughout the decomposition, including
 /// the implicit critical-rate solve, so [`Request::Sensitivities`] returns
 /// sensitivities to the requested curve and calibration volatility pillars.
 ///
@@ -143,10 +143,10 @@ impl ClosedFormHullWhiteSwaptionPricer {
 
         let h = 1.0 / 365.0;
         let option_df_plus = curve.discount_factor_from_time(option_time + h)?;
-        let forward_at_option: Recorded = (-(option_df_plus / option_df).ln() / h).into();
-        let variance_adjustment: Recorded = (state_variance * (0.5 * b * b)).into();
+        let forward_at_option: Recorded = -(option_df_plus / option_df).ln() / h;
+        let variance_adjustment: Recorded = state_variance * (0.5 * b * b);
         let log_a: Recorded =
-            ((bond_df / option_df).ln() + forward_at_option * b - variance_adjustment).into();
+            (bond_df / option_df).ln() + forward_at_option * b - variance_adjustment;
         Ok(log_a.exp())
     }
 
@@ -198,10 +198,10 @@ impl ClosedFormHullWhiteSwaptionPricer {
         let mut derivative = Recorded::zero();
 
         for term in terms {
-            let exponent: Recorded = (rate * -term.b).into();
-            let conditional_bond: Recorded = (term.affine_a * exponent.exp()).into();
-            objective = (objective + conditional_bond * term.coefficient).into();
-            derivative = (derivative - conditional_bond * (term.coefficient * term.b)).into();
+            let exponent: Recorded = rate * -term.b;
+            let conditional_bond: Recorded = term.affine_a * exponent.exp();
+            objective += conditional_bond * term.coefficient;
+            derivative -= conditional_bond * (term.coefficient * term.b);
         }
 
         if derivative.value().abs() < 1e-14 {
@@ -212,7 +212,7 @@ impl ClosedFormHullWhiteSwaptionPricer {
 
         // At the converged scalar root, one Newton correction supplies the
         // implicit derivative dr*/dq = -(df/dq) / (df/dr).
-        Ok((rate - objective / derivative).into())
+        Ok(rate - objective / derivative)
     }
 
     /// Prices the zero-coupon bond option used in payer or receiver swaption decomposition.
@@ -223,11 +223,11 @@ impl ClosedFormHullWhiteSwaptionPricer {
         option_df: Recorded,
         bond_df: Recorded,
     ) -> Recorded {
-        let strike_value: Recorded = (strike * option_df).into();
+        let strike_value: Recorded = strike * option_df;
         if bond_volatility.value() <= 1e-12 {
             let intrinsic: Recorded = match option_type {
-                SwaptionType::Payer => (strike_value - bond_df).into(),
-                SwaptionType::Receiver => (bond_df - strike_value).into(),
+                SwaptionType::Payer => strike_value - bond_df,
+                SwaptionType::Receiver => bond_df - strike_value,
             };
             return if intrinsic.value() > 0.0 {
                 intrinsic
@@ -236,19 +236,18 @@ impl ClosedFormHullWhiteSwaptionPricer {
             };
         }
 
-        let d1: Recorded = (((bond_df / strike_value).ln()
+        let d1: Recorded = ((bond_df / strike_value).ln()
             + bond_volatility * bond_volatility * 0.5)
-            / bond_volatility)
-            .into();
-        let d2: Recorded = (d1 - bond_volatility).into();
+            / bond_volatility;
+        let d2: Recorded = d1 - bond_volatility;
 
         match option_type {
             SwaptionType::Payer => {
-                let negative_d1: Recorded = (-d1).into();
-                let negative_d2: Recorded = (-d2).into();
-                (strike_value * norm_cdf(negative_d2) - bond_df * norm_cdf(negative_d1)).into()
+                let negative_d1: Recorded = -d1;
+                let negative_d2: Recorded = -d2;
+                strike_value * norm_cdf(negative_d2) - bond_df * norm_cdf(negative_d1)
             }
-            SwaptionType::Receiver => (bond_df * norm_cdf(d1) - strike_value * norm_cdf(d2)).into(),
+            SwaptionType::Receiver => bond_df * norm_cdf(d1) - strike_value * norm_cdf(d2),
         }
     }
 
@@ -351,11 +350,11 @@ impl ClosedFormHullWhiteSwaptionPricer {
 
         let mut value = Recorded::zero();
         for term in &terms {
-            let exponent: Recorded = (critical_rate * -term.b).into();
-            let bond_strike: Recorded = (term.affine_a * exponent.exp()).into();
+            let exponent: Recorded = critical_rate * -term.b;
+            let bond_strike: Recorded = term.affine_a * exponent.exp();
             let mut component = Self::bond_option(
                 swaption.underlying_type(),
-                (state_std_dev * term.b).into(),
+                state_std_dev * term.b,
                 bond_strike,
                 option_df,
                 term.forward_df,
@@ -363,12 +362,12 @@ impl ClosedFormHullWhiteSwaptionPricer {
 
             if let Some(curve) = &discount_curve {
                 let discount_df = curve.discount_factor(term.payment_date)?;
-                component = (component * discount_df / term.forward_df).into();
+                component = component * discount_df / term.forward_df;
             }
-            value = (value + component * term.coefficient).into();
+            value += component * term.coefficient;
         }
 
-        Ok((value * trade.notional() * trade.side().sign()).into())
+        Ok(value * trade.notional() * trade.side().sign())
     }
 }
 
@@ -406,10 +405,10 @@ impl HandleValue<EuropeanSwaptionTrade<Recorded>, HullWhiteSwaptionState>
             parameter_source: self.parameter_source.clone(),
         })?;
         parameters.resolve_calibration(market, &trade.instrument().market_index())?;
-        Tape::start_recording_fwd();
+        Recording::start();
         let value: Result<Recorded> = (|| {
-            Tape::set_mark_fwd();
-            state.put_pillars_on_tape()?;
+            Recording::checkpoint();
+            state.register_pillars()?;
             let market = state
                 .market_data
                 .as_mut()
@@ -419,7 +418,7 @@ impl HandleValue<EuropeanSwaptionTrade<Recorded>, HullWhiteSwaptionState>
                 .volatility_cubes_mut()
                 .values_mut()
             {
-                cube.cube_mut().put_pillars_on_tape();
+                cube.cube_mut().register_pillars();
             }
             let parameters = parameters.ad_parameters(market)?;
             let value = self.swaption_value(trade, state, &parameters)?;
@@ -429,12 +428,12 @@ impl HandleValue<EuropeanSwaptionTrade<Recorded>, HullWhiteSwaptionState>
                 .and_then(MarketData::base_currency)
                 .filter(|target| *target != source)
             {
-                Ok((value * state.get_exchange_rate(source, target)?).into())
+                Ok(value * state.get_exchange_rate(source, target)?)
             } else {
                 Ok(value)
             }
         })();
-        Tape::stop_recording_fwd();
+        Recording::stop();
 
         let value = value?;
         state.value = Some(value);
@@ -460,7 +459,7 @@ impl HandleSensitivities<EuropeanSwaptionTrade<Recorded>, HullWhiteSwaptionState
                 )
             })?
         };
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
 
         let mut identifiers = Vec::new();
         let mut exposures = Vec::new();
@@ -472,19 +471,19 @@ impl HandleSensitivities<EuropeanSwaptionTrade<Recorded>, HullWhiteSwaptionState
         for curve in elements.discount_curves().values() {
             for (label, pillar) in curve.curve().pillars().into_iter().flatten() {
                 identifiers.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
         for surface in elements.volatility_surfaces().values() {
             for (label, pillar) in surface.surface().pillars().into_iter().flatten() {
                 identifiers.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
         for cube in elements.volatility_cubes().values() {
             for (label, pillar) in cube.cube().pillars().into_iter().flatten() {
                 identifiers.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
 

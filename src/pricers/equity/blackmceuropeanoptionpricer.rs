@@ -4,7 +4,7 @@
 //! [`SimulationBuilder`](crate::simulations::simulationbuilder::SimulationBuilder)).
 
 use crate::{
-    ad::{tape::Tape, Recorded},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -91,10 +91,10 @@ impl HandleValue<EquityEuropeanOptionTrade, MonteCarloState> for BlackMCEuropean
             index.clone()
         };
 
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
+        Recording::start();
+        Recording::checkpoint();
 
-        state.put_pillars_on_tape()?;
+        state.register_pillars()?;
 
         let simulation_element = state.get_simulation_element(&index)?.clone();
         let simulation = simulation_element.simulation().borrow();
@@ -114,53 +114,52 @@ impl HandleValue<EquityEuropeanOptionTrade, MonteCarloState> for BlackMCEuropean
                 "Simulation contains no paths".into(),
             ));
         }
-        let terminal_spots: Vec<Recorded> = paths
+        // Materialized paths deliberately have no model-input derivatives.
+        // Reduce their payoffs numerically; only discounting/FX enter the AD program.
+        let terminal_spots: Vec<f64> = paths
             .iter()
             .map(|path| {
-                path.get(date_idx).copied().ok_or_else(|| {
+                path.get(date_idx).map(Recorded::value).ok_or_else(|| {
                     QSError::InvalidValueErr("Simulation path shorter than date grid".into())
                 })
             })
             .collect::<Result<_>>()?;
-
-        // Resolve the strike using the mean terminal level as forward proxy.
         #[allow(clippy::cast_precision_loss)]
         let n = terminal_spots.len() as f64;
-        let mean_terminal: f64 = terminal_spots.iter().map(Recorded::value).sum::<f64>() / n;
+        let mean_terminal = terminal_spots.iter().sum::<f64>() / n;
         let strike = option.strike().resolve(mean_terminal);
-        let strike_ad = Recorded::new(strike);
         let is_call = matches!(option.option_type(), EuroOptionType::Call);
-
-        let mut payoff_sum = Recorded::zero();
-        for terminal in terminal_spots {
-            let intrinsic: Recorded = if is_call {
-                (terminal - strike_ad).into()
-            } else {
-                (strike_ad - terminal).into()
-            };
-            let payoff = intrinsic.max(Recorded::zero());
-            payoff_sum = (payoff_sum + payoff).into();
-        }
-        let mean_payoff: Recorded = (payoff_sum / Recorded::new(n)).into();
+        let mean_payoff = terminal_spots
+            .into_iter()
+            .map(|terminal| {
+                let intrinsic = if is_call {
+                    terminal - strike
+                } else {
+                    strike - terminal
+                };
+                intrinsic.max(0.0)
+            })
+            .sum::<f64>()
+            / n;
 
         let df = state
             .get_discount_curve_element(&discount_index)?
             .curve()
             .discount_factor(expiry)?;
 
-        let value: Recorded = (df * mean_payoff * trade.notional()).into();
+        let value: Recorded = df * mean_payoff * trade.notional();
         let source = Discountable::currency(option);
         let value = if let Some(target) = state
             .get_market_data_reponse()
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (value * state.get_exchange_rate(source, target)?).into()
+            value * state.get_exchange_rate(source, target)?
         } else {
             value
         };
         state.value = Some(value);
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(value.value())
     }
 }
@@ -184,7 +183,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, MonteCarloState>
             })?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
         let option = trade.instrument();
         let index = option.market_index();
         let policy_discount_index = if let Some(policy) = &self.discount_policy {
@@ -204,7 +203,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, MonteCarloState>
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         for (label, exposure) in state.get_fx_sensitivities()? {

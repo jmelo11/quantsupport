@@ -48,7 +48,7 @@ impl FxRateRecord {
 }
 
 /// Stores FX spot rates as [`Recorded`] values so that sensitivities to exchange
-/// rates are captured automatically by the AD tape.
+/// rates are captured automatically by the AD capture.
 ///
 /// Rates are stored as directed pairs `(base, quote) → rate` meaning
 /// *1 unit of base = rate units of quote*.  Triangulation via BFS is
@@ -68,6 +68,7 @@ impl Pillars<Recorded> for FxStore {
         )
     }
 
+    /// Returns the labelled inputs used to report market sensitivities.
     fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         Some(
             self.exchange_rate_map
@@ -77,9 +78,12 @@ impl Pillars<Recorded> for FxStore {
         )
     }
 
-    fn put_pillars_on_tape(&mut self) {
-        for rate in self.exchange_rate_map.values_mut() {
-            rate.put_on_tape();
+    /// Registers current labelled market pillars as independent compiler inputs.
+    fn register_pillars(&mut self) {
+        let mut ordered: Vec<_> = self.exchange_rate_map.iter_mut().collect();
+        ordered.sort_by_cached_key(|((base, quote), _)| format!("{base}/{quote}"));
+        for (_, rate) in ordered {
+            rate.register_input();
         }
     }
 }
@@ -136,7 +140,7 @@ impl FxStore {
     /// direct rate is stored.
     ///
     /// Returns [`Recorded`] so that the dependence on intermediate rates is
-    /// tracked on the AD tape.
+    /// tracked on the AD capture.
     ///
     /// # Errors
     /// Returns an error if no path between the two currencies can be found.
@@ -159,14 +163,14 @@ impl FxStore {
         while let Some((current, accumulated)) = queue.pop_front() {
             for (&(src, dst), &map_rate) in &self.exchange_rate_map {
                 if src == current && !visited.contains(&dst) {
-                    let composed: Recorded = (accumulated * map_rate).into();
+                    let composed: Recorded = accumulated * map_rate;
                     if dst == quote {
                         return Ok(composed);
                     }
                     visited.insert(dst);
                     queue.push_back((dst, composed));
                 } else if dst == current && !visited.contains(&src) {
-                    let composed: Recorded = (accumulated / map_rate).into();
+                    let composed: Recorded = accumulated / map_rate;
                     if src == quote {
                         return Ok(composed);
                     }

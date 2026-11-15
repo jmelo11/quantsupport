@@ -820,8 +820,7 @@ mod tests {
             10_002,
             "no EvaluationResults object is retained"
         );
-        use quantsupport::ad::{forward::ADForward, tape::TapeHolder};
-        let nodes = ADForward::with_tape(|tape| tape.book.len());
+        let nodes = Recording::operation_count();
         registry.begin_cell(cell(0, 2));
         let repeated = evaluate_values(
             &registry,
@@ -833,7 +832,7 @@ mod tests {
         registry.finish_cell(true);
         assert_eq!(values, repeated);
         assert_eq!(
-            ADForward::with_tape(|tape| tape.book.len()),
+            Recording::operation_count(),
             nodes,
             "the AD tape does not accumulate per position"
         );

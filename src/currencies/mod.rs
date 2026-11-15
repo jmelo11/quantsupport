@@ -4,7 +4,7 @@
 //! detail traits, and an [`FxStore`](crate::quotes::fxstore::FxStore)
 //! for FX spot rates.
 
-/// Currency enumeration types.
+/// Provides the currency enumeration types.
 pub mod currency;
-/// Trait definitions for currency operations.
+/// Provides the trait definitions for currency operations.
 pub mod currencydetails;

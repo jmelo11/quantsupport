@@ -2,7 +2,7 @@
 //!
 //! Prices a [`CreditDefaultSwap`](crate::instruments::credit::creditdefaultswap::CreditDefaultSwap) off a bootstrapped survival curve
 //! ([`MarketIndex::Credit`](crate::indices::marketindex::MarketIndex::Credit)) and a discount curve. When a
-//! [`DiscountPolicy`] is set, discounting uses the CSA collateral curve of
+//! [`DiscountPolicy`](crate::core::collateral::DiscountPolicy) is set, discounting uses the CSA collateral curve of
 //! the counterparty instead of the instrument's own `discount_index`.
 //!
 //! Leg conventions (per unit notional, protection buyer):
@@ -14,7 +14,7 @@
 //! [`Side::LongReceive`](crate::core::trade::Side) trade is a protection buyer.
 
 use crate::{
-    ad::{scalar::Scalar, tape::Tape, Recorded},
+    ad::{scalar::Scalar, Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -118,15 +118,15 @@ impl CdsPricer {
             let delta = cds.day_counter().year_fraction(d0, d1);
             let df: Recorded = discount.discount_factor(d1)?;
             let s1: Recorded = credit.discount_factor(d1)?;
-            let default_prob: Recorded = (s_prev - s1).into();
+            let default_prob: Recorded = s_prev - s1;
             let period_annuity: Recorded =
-                (df * (s1 + default_prob * Recorded::scalar(0.5)) * Recorded::scalar(delta)).into();
-            annuity = (annuity + period_annuity).into();
-            protection = (protection + df * default_prob).into();
+                df * (s1 + default_prob * Recorded::scalar(0.5)) * Recorded::scalar(delta);
+            annuity += period_annuity;
+            protection += df * default_prob;
             s_prev = s1;
         }
         let lgd = Recorded::scalar(1.0 - cds.recovery());
-        Ok((annuity, (protection * lgd).into()))
+        Ok((annuity, (protection * lgd)))
     }
 }
 
@@ -134,28 +134,27 @@ impl HandleValue<CdsTrade, CdsState> for CdsPricer {
     fn handle_value(&self, trade: &CdsTrade, state: &mut CdsState) -> Result<f64> {
         let cds = trade.instrument();
 
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
-        state.put_pillars_on_tape()?;
+        Recording::start();
+        Recording::checkpoint();
+        state.register_pillars()?;
 
         let (annuity, protection) = self.legs(trade, state)?;
-        let premium: Recorded = (annuity * Recorded::scalar(cds.spread())).into();
+        let premium: Recorded = annuity * Recorded::scalar(cds.spread());
         let sign = trade.side().sign();
-        let value: Recorded =
-            ((protection - premium) * Recorded::scalar(sign * trade.notional())).into();
+        let value: Recorded = (protection - premium) * Recorded::scalar(sign * trade.notional());
         let source = Discountable::currency(cds);
         let value = if let Some(target) = state
             .get_market_data_reponse()
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (value * state.get_exchange_rate(source, target)?).into()
+            value * state.get_exchange_rate(source, target)?
         } else {
             value
         };
         state.value = Some(value);
 
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(value.value())
     }
 }
@@ -172,12 +171,12 @@ impl HandleFairRate<CdsTrade, CdsState> for CdsPricer {
                 "Fair-rate target must be zero for this product".into(),
             ));
         }
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
-        state.put_pillars_on_tape()?;
+        Recording::start();
+        Recording::checkpoint();
+        state.register_pillars()?;
         let (annuity, protection) = self.legs(trade, state)?;
-        Tape::stop_recording_fwd();
-        // Restarting the tape invalidates any previously cached value node.
+        Recording::stop();
+        // Restarting the capture invalidates any previously cached value node.
         state.value = None;
         if annuity.value().abs() < 1e-16 {
             return Err(QSError::InvalidValueErr(
@@ -205,7 +204,7 @@ impl HandleSensitivities<CdsTrade, CdsState> for CdsPricer {
             })?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
 
         let cds = trade.instrument();
         let discount_index = self.resolve_discount_index(trade)?;
@@ -221,7 +220,7 @@ impl HandleSensitivities<CdsTrade, CdsState> for CdsPricer {
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         // Credit curve sensitivities (to the CDS quotes via IFT).
@@ -232,7 +231,7 @@ impl HandleSensitivities<CdsTrade, CdsState> for CdsPricer {
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         for (label, exposure) in state.get_fx_sensitivities()? {

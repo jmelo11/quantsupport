@@ -19,12 +19,12 @@
             },
             "day_counter": "Actual365",
             "quotes": [
-                "FixedRateBond_USD_CORP_1Y_Semiannual_0.0480_AnchorPrice",
-                "FixedRateBond_USD_CORP_2Y_Semiannual_0.0490_AnchorPrice",
-                "FixedRateBond_USD_CORP_3Y_Semiannual_0.0500_AnchorPrice",
-                "FixedRateBond_USD_CORP_5Y_Semiannual_0.0510_AnchorPrice",
-                "FixedRateBond_USD_CORP_7Y_Semiannual_0.0520_AnchorPrice",
-                "FixedRateBond_USD_CORP_10Y_Semiannual_0.0530_AnchorPrice"
+                "FixedRateBond_USD_OTHER:CORP_1Y_Semiannual_0.0480_AnchorPrice",
+                "FixedRateBond_USD_OTHER:CORP_2Y_Semiannual_0.0490_AnchorPrice",
+                "FixedRateBond_USD_OTHER:CORP_3Y_Semiannual_0.0500_AnchorPrice",
+                "FixedRateBond_USD_OTHER:CORP_5Y_Semiannual_0.0510_AnchorPrice",
+                "FixedRateBond_USD_OTHER:CORP_7Y_Semiannual_0.0520_AnchorPrice",
+                "FixedRateBond_USD_OTHER:CORP_10Y_Semiannual_0.0530_AnchorPrice"
             ]
         },
         {

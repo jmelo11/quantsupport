@@ -241,8 +241,7 @@ impl CallScope {
         if let Some(previous) = self.previous.take() {
             // Some native engines leave recording active on an error path.
             // No worksheet constructor may accidentally record persistent inputs.
-            quantsupport::prelude::Tape::stop_recording_fwd();
-            quantsupport::prelude::Tape::stop_recording();
+            quantsupport::prelude::Recording::stop();
             registry::with_registry_mut(|registry| registry.finish_cell(success));
             #[cfg(windows)]
             super::engine::bridge::schedule_commit();

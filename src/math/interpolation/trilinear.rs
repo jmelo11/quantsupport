@@ -62,8 +62,8 @@ impl TrilinearInterpolator {
 mod tests {
     use super::ExtrapolationPolicy;
     use super::{TrilinearInterpolator, TrilinearPoint};
-    use crate::ad::tape::Tape;
     use crate::ad::Recorded;
+    use crate::ad::Recording;
 
     fn cube_points_f64() -> Vec<TrilinearPoint<f64>> {
         // 2×2×2 cube: x in {0,1}, y in {0,1}, z in {0,1}
@@ -131,6 +131,7 @@ mod tests {
         );
     }
 
+    /// Checks trilinear center recorded.
     #[test]
     fn trilinear_center_recorded() {
         let points: Vec<TrilinearPoint<Recorded>> = cube_points_f64()
@@ -264,14 +265,14 @@ mod tests {
 
     #[test]
     fn trilinear_flat_extrapolation_preserves_boundary_sensitivities() {
-        Tape::start_recording_fwd();
+        Recording::start();
         let points: Vec<_> = cube_points_f64()
             .into_iter()
             .map(|point| TrilinearPoint {
                 x: point.x,
                 y: point.y,
                 z: point.z,
-                value: Recorded::from(point.value),
+                value: Recorded::new(point.value),
             })
             .collect();
         let value = TrilinearInterpolator::interpolate_with_extrapolation(
@@ -283,7 +284,7 @@ mod tests {
         )
         .expect("flat boundary interpolation");
         assert!((value.value() - 4.5).abs() < 1e-12);
-        value.backward().expect("backward sweep");
+        value.differentiate().expect("differentiate sweep");
         for point in points {
             let expected = if point.x == 1.0 && point.z == 0.0 {
                 0.5
@@ -291,10 +292,11 @@ mod tests {
                 0.0
             };
             assert!(
-                (point.value.adjoint().expect("pillar adjoint").value() - expected).abs() < 1e-12
+                (point.value.derivative().expect("pillar derivative").value() - expected).abs()
+                    < 1e-12
             );
         }
-        Tape::stop_recording_fwd();
+        Recording::stop();
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Inverse Fast Fourier Transform (with 1/N normalisation).
 //!
-//! Operates **in-place** on slices of [`Complex<T>`] whose length
+//! Operates **in-place** on slices of [`Complex<T>`](num_complex::Complex) whose length
 //! is a power of two; empty and singleton slices are accepted as no-ops.
 //!
 //! # Example

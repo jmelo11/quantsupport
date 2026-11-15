@@ -1,8 +1,8 @@
 //! Netting set — a group of claims under a single netting agreement.
 //!
-//! A [`NettingSet`] holds a collection of [`ContingentClaim`]s that are
+//! A [`NettingSet`](crate::xva::nettingset::NettingSet) holds a collection of [`ContingentClaim`](crate::xva::contigentclaim::ContingentClaim)s that are
 //! subject to the same ISDA master agreement (or equivalent bilateral
-//! netting arrangement) and carries its own [`DiscountPolicy`] reflecting
+//! netting arrangement) and carries its own [`DiscountPolicy`](crate::core::collateral::DiscountPolicy) reflecting
 //! the CSA collateral terms.
 
 use crate::{

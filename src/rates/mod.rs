@@ -3,13 +3,11 @@
 //! Compounding conventions, interest-rate arithmetic, yield term
 //! structures, and multi-curve bootstrapping algorithms.
 
-/// Bootstrapping algorithms for interest rate curves.
-// pub mod bootstrapping;
-/// tmp
+/// Calibrates discount and forwarding curves to quoted market instruments.
 pub mod bootstrapping;
-/// Compounding types for interest rate calculations.
+/// Defines how quoted interest rates accumulate over an accrual interval.
 pub mod compounding;
-/// Interest rate calculations and operations.
+/// Interprets rates under their day-count, compounding and frequency conventions.
 pub mod interestrate;
-/// Yield term structure and related calculations.
+/// Represents discount and forwarding curves under a common query interface.
 pub mod yieldtermstructure;

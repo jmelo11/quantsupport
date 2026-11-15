@@ -64,15 +64,15 @@ pub enum QSError {
     /// A generic node error.
     #[error("Node error: {0}")]
     NodeError(String),
-    /// A generic tape error.
-    #[error("Tape error: {0}")]
-    TapeError(String),
+    /// A generic capture error.
+    #[error("Compiler capture error: {0}")]
+    CaptureError(String),
     /// A generic AD number error.
     #[error("AD Real error: {0}")]
     RecordedError(String),
-    /// Attempted to access a node that is not recorded on the tape.
-    #[error("Node not indexed in tape")]
-    NodeNotIndexedInTapeErr,
+    /// Attempted to access a node that is not recorded on the capture.
+    #[error("Observation is not registered in the compiler capture")]
+    ObservationNotInCaptureErr,
     /// An unexpected error.
     #[error("Unexpected error: {0}")]
     UnexpectedErr(String),
@@ -128,9 +128,9 @@ impl QSError {
             Self::NotImplementedErr(_) => ("not_implemented", "NotImplementedErr"),
             Self::InterpolationErr(_) => ("interpolation", "InterpolationErr"),
             Self::NodeError(_) => ("node", "NodeError"),
-            Self::TapeError(_) => ("tape", "TapeError"),
+            Self::CaptureError(_) => ("capture", "CaptureError"),
             Self::RecordedError(_) => ("dual_forward", "RecordedError"),
-            Self::NodeNotIndexedInTapeErr => ("node_not_indexed", "NodeNotIndexedInTapeErr"),
+            Self::ObservationNotInCaptureErr => ("node_not_indexed", "ObservationNotInCaptureErr"),
             Self::UnexpectedErr(_) => ("unexpected", "UnexpectedErr"),
             Self::QuoteParsingErr(_) => ("quote_parsing", "QuoteParsingErr"),
             Self::UnresolvedProductErr(_) => ("unresolved_product", "UnresolvedProductErr"),

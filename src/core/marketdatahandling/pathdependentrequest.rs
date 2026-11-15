@@ -1,7 +1,7 @@
 use crate::{indices::marketindex::MarketIndex, time::date::Date};
 
 /// Request for path-dependent observations over a series of dates.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PathDependentRequest {
     observation_dates: Vec<Date>,
     market_index: MarketIndex,

@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::{
-    ad::{expr::FloatExt, Recorded},
+    ad::Recorded,
     math::interpolation::interpolator::StaticInterpolate,
     utils::errors::{QSError, Result},
 };
@@ -89,7 +89,7 @@ impl StaticInterpolate<Recorded> for LogLinearInterpolator {
                         .pow_expr((x - x_[index - 1]) / (x_[index] - x_[index - 1]))
             }
         };
-        Ok(y.into())
+        Ok(y)
     }
 }
 

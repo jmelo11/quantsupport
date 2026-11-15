@@ -125,7 +125,7 @@ mod tests {
         registry::{CellId, QsObject},
     };
     use super::*;
-    use quantsupport::{ad::tape::TapeHolder, prelude::*};
+    use quantsupport::prelude::*;
     use std::{cell::RefCell, rc::Rc};
 
     fn setup() -> (Registry, String, String, String) {
@@ -213,7 +213,7 @@ mod tests {
                 registry.pricing_context(&context).unwrap(),
             )
             .unwrap();
-        let nodes = ADForward::with_tape(|tape| tape.book.len());
+        let nodes = Recording::operation_count();
         let members = 2000;
         let portfolio = create(&registry, "TEST-PORTFOLIO".into(), vec![trade; members]).unwrap();
         let handle = registry
@@ -239,7 +239,7 @@ mod tests {
             "member results must not accumulate in the registry"
         );
         assert!(
-            ADForward::with_tape(|tape| tape.book.len()) <= nodes,
+            Recording::operation_count() <= nodes,
             "AD graph must remain bounded by one trade"
         );
         assert!((result.price().unwrap() - single.price().unwrap() * members as f64).abs() < 1e-7);

@@ -1,4 +1,10 @@
-use crate::ad::{dual::DualFwd, expr::FloatExt, scalar::Scalar};
+//! The standard normal cumulative distribution for numerical and recorded scalars.
+//!
+//! Plain values use Hart's rational approximation and a continued fraction in
+//! the tails. Recorded values capture a normal-CDF instruction, whose compiled
+//! derivatives use the analytic Gaussian density and its derivative.
+
+use crate::ad::scalar::Scalar;
 
 /// `sqrt(2 * pi)`.
 const SQRT_2PI: f64 = 2.506_628_274_631_000_5;
@@ -7,16 +13,15 @@ const SQRT_2PI: f64 = 2.506_628_274_631_000_5;
 /// tail branch: `5 * sqrt(2)`.
 const HART_THRESHOLD: f64 = 7.071_067_811_865_475;
 
-/// Generic `norm_cdf` implementation - works for any type supporting the needed operations.
-/// This is the single entry point used everywhere.
+/// Evaluates the standard normal cumulative probability using the scalar's implementation.
 #[must_use]
 pub fn norm_cdf<T: NormCDF>(x: T) -> T {
     x.norm_cdf()
 }
 
-/// Standard normal CDF via the Hart double-precision algorithm.
+/// Supplies the standard normal cumulative distribution for a scalar type.
 ///
-/// Reference: G. West, "Better approximations to cumulative normal
+/// The `f64` implementation follows G. West, "Better approximations to cumulative normal
 /// functions", Wilmott 2005. Absolute error ~1e-17 everywhere; relative
 /// error in the deep tails (|x| > 5) is ~1e-9.
 pub trait NormCDF: Scalar + Clone {
@@ -25,8 +30,9 @@ pub trait NormCDF: Scalar + Clone {
     fn norm_cdf(self) -> Self;
 }
 
-/// Implementation for f64
+/// Evaluates the Hart approximation using double-precision arithmetic.
 impl NormCDF for f64 {
+    /// Calculates the cumulative probability with a separate approximation for deep tails.
     fn norm_cdf(self) -> Self {
         let z = self.abs();
         let cum = if z > 37.0 {
@@ -67,57 +73,10 @@ impl NormCDF for f64 {
     }
 }
 
-/// Implementation for [`DualFwd`]
-impl NormCDF for DualFwd {
-    fn norm_cdf(self) -> Self {
-        let one: Self = 1.0.into();
-        let z: Self = self.abs();
-        let zv = z.value();
-        if zv > 37.0 {
-            // Beyond the double-precision tail the CDF (and its derivative)
-            // underflow to zero.
-            return if self.value() > 0.0 {
-                1.0.into()
-            } else {
-                0.0.into()
-            };
-        }
-        let e: Self = ((-(z * z)) * 0.5).exp().into();
-        let cum: Self = if zv < HART_THRESHOLD {
-            let num: Self = (z * 3.526_249_659_989_11e-2 + 0.700_383_064_443_688).into();
-            let num: Self = (num * z + 6.373_962_203_531_65).into();
-            let num: Self = (num * z + 33.912_866_078_383).into();
-            let num: Self = (num * z + 112.079_291_497_871).into();
-            let num: Self = (num * z + 221.213_596_169_931).into();
-            let num: Self = (num * z + 220.206_867_912_376).into();
-            let den: Self = (z * 8.838_834_764_831_84e-2 + 1.755_667_163_182_64).into();
-            let den: Self = (den * z + 16.064_177_579_207).into();
-            let den: Self = (den * z + 86.780_732_202_946_1).into();
-            let den: Self = (den * z + 296.564_248_779_674).into();
-            let den: Self = (den * z + 637.333_633_378_831).into();
-            let den: Self = (den * z + 793.826_512_519_948).into();
-            let den: Self = (den * z + 440.413_735_824_752).into();
-            (e * num / den).into()
-        } else {
-            let b: Self = (z + 0.65).into();
-            let b: Self = (z + (one * 4.0) / b).into();
-            let b: Self = (z + (one * 3.0) / b).into();
-            let b: Self = (z + (one * 2.0) / b).into();
-            let b: Self = (z + one / b).into();
-            (e / (b * SQRT_2PI)).into()
-        };
-        if self.value() > 0.0 {
-            (one - cum).into()
-        } else {
-            cum
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use crate::ad::Recorded;
     /// Reference values computed via `erfc(-x/sqrt(2))/2` (correctly rounded).
     const REFERENCES: [(f64, f64); 7] = [
         (0.0, 0.5),
@@ -159,14 +118,14 @@ mod tests {
     }
 
     #[test]
-    fn dual_fwd_value_matches_f64() {
+    fn recorded_value_matches_f64() {
         for x in [-10.0, -5.0, -1.0, 0.0, 0.5, 2.0, 8.0, 20.0] {
-            let dual: DualFwd = DualFwd::from(x).norm_cdf();
+            let recorded: Recorded = Recorded::from(x).norm_cdf();
             let plain = x.norm_cdf();
             assert!(
-                (dual.value() - plain).abs() <= plain.abs().mul_add(1e-14, 1e-300),
-                "DualFwd norm_cdf({x}) = {} but f64 gives {plain}",
-                dual.value()
+                (recorded.value() - plain).abs() <= plain.abs().mul_add(1e-14, 1e-300),
+                "Recorded norm_cdf({x}) = {} but f64 gives {plain}",
+                recorded.value()
             );
         }
     }

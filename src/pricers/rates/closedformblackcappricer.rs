@@ -1,5 +1,5 @@
 use crate::{
-    ad::{tape::Tape, Recorded},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -115,9 +115,9 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
             .curve()
             .reference_date();
 
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
-        state.put_pillars_on_tape()?;
+        Recording::start();
+        Recording::checkpoint();
+        state.register_pillars()?;
         let mut npv = Recorded::zero();
         for c in caplets {
             let fixing_date = c.fixing_date();
@@ -181,8 +181,8 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
 
             let undiscounted = if tau <= 0.0 || vol.value().abs() < f64::EPSILON {
                 let payoff: Recorded = match c.payoff_type() {
-                    CapletFloorletType::Caplet => (fwd - effective_strike).into(),
-                    CapletFloorletType::Floorlet => (Recorded::from(effective_strike) - fwd).into(),
+                    CapletFloorletType::Caplet => fwd - effective_strike,
+                    CapletFloorletType::Floorlet => Recorded::from(effective_strike) - fwd,
                 };
                 payoff.max(Recorded::zero())
             } else {
@@ -193,7 +193,7 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
             };
 
             let value = df_pay * undiscounted * yf * trade.notional();
-            npv = (npv + value).into();
+            npv += value;
         }
         let source = Discountable::currency(cap);
         let npv = if let Some(target) = state
@@ -201,7 +201,7 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (npv * state.get_exchange_rate(source, target)?).into()
+            npv * state.get_exchange_rate(source, target)?
         } else {
             npv
         };
@@ -227,7 +227,7 @@ impl HandleSensitivities<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPri
             })?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
 
         let cap = trade.instrument();
         let index = cap.market_index();
@@ -249,7 +249,7 @@ impl HandleSensitivities<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPri
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         // Forward curve sensitivities
@@ -262,7 +262,7 @@ impl HandleSensitivities<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPri
                 .unwrap_or_default()
             {
                 ids.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
 
@@ -274,7 +274,7 @@ impl HandleSensitivities<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPri
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         for (label, exposure) in state.get_fx_sensitivities()? {
@@ -733,7 +733,7 @@ mod tests {
         let closed_form_vega = notional * alpha * df_pay * fwd * phi_d1 * tau.sqrt();
 
         // AD vega = sum over all vol-pillar adjoints
-        // (bilinear weights sum to 1, so the aggregated adjoint equals total vega)
+        // (bilinear weights sum to 1, so the aggregated derivative equals total vega)
         let ad_vega_total: f64 = ["vol_t0_lo", "vol_t0_hi", "vol_t1_lo", "vol_t1_hi"]
             .iter()
             .filter_map(|&k| {

@@ -192,6 +192,7 @@ impl NonLinearCoupon<f64> for OptionEmbeddedCoupon<f64> {
         self.accrual_start_date
     }
 
+    /// Calculates the coupon accrual at the requested date.
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<f64> {
         let year_fraction = accrual_fraction(
             self.day_counter()?,
@@ -234,6 +235,7 @@ impl NonLinearCoupon<Recorded> for OptionEmbeddedCoupon<Recorded> {
         self.accrual_start_date
     }
 
+    /// Calculates the coupon accrual at the requested date.
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<Recorded> {
         let year_fraction = accrual_fraction(
             self.day_counter()?,
@@ -250,8 +252,8 @@ impl NonLinearCoupon<Recorded> for OptionEmbeddedCoupon<Recorded> {
             .ok_or_else(|| QSError::NotFoundErr("Fixing not set".into()))?;
 
         let resuling_rate = self.payoff.eval(fixing)?;
-        let coupon_rate: Recorded = (self.spread + resuling_rate).into();
-        Ok((coupon_rate * Recorded::new(year_fraction * self.notional)).into())
+        let coupon_rate: Recorded = self.spread + resuling_rate;
+        Ok(coupon_rate * Recorded::new(year_fraction * self.notional))
     }
 
     fn notional(&self) -> f64 {
@@ -268,6 +270,7 @@ impl NonLinearCoupon<Recorded> for OptionEmbeddedCoupon<Recorded> {
 }
 
 impl From<OptionEmbeddedCoupon<f64>> for OptionEmbeddedCoupon<Recorded> {
+    /// Converts the source data into this financial representation.
     fn from(value: OptionEmbeddedCoupon<f64>) -> Self {
         Self {
             notional: value.notional,
@@ -285,6 +288,7 @@ impl From<OptionEmbeddedCoupon<f64>> for OptionEmbeddedCoupon<Recorded> {
 }
 
 impl From<OptionEmbeddedCoupon<Recorded>> for OptionEmbeddedCoupon<f64> {
+    /// Converts the source data into this financial representation.
     fn from(value: OptionEmbeddedCoupon<Recorded>) -> Self {
         Self {
             notional: value.notional,
