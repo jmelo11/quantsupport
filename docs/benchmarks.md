@@ -303,3 +303,54 @@ two scripted-product tests, strict library/benchmark Clippy and rustdoc, and
 workspace/all-target compilation. Existing pricing entrypoints retain their
 signatures. A claim index identifies a response block and can now be shared;
 it is not a unique trade identifier. No market numbers are cached across runs.
+
+## Running the XVA pricing benchmark
+
+The `xva_pricing` Criterion target calls the production `XvaEngine::run` on a
+five-year USD interest-rate swap and USD/CLP cross-currency swap. Their 58 claims
+share one netting set. Rate models are calibrated to the benchmark's caplet
+surface and swaption cube; credit and funding curves supply CVA and FVA weights.
+The monthly grid, seed 42, trades and market observations stay fixed across path
+counts. Each call returns the complete netting-set exposure cube, both
+adjustments and their published first sensitivities.
+
+Run the benchmark on stable Rust:
+
+```sh
+RAYON_NUM_THREADS=10 cargo +stable bench --locked -p benchmarks --bench xva_pricing -- --noplot
+```
+
+The `xva_pricing` group measures repeated complete runs at 16, 1,000 and 10,000
+paths, with and without variation margin. Market construction, calibration,
+explicit preparation and an initial run occur before sampling. The timed call
+still generates every path, exposure, adjustment and sensitivity, and includes
+result allocation and destruction. It does not return a cached valuation.
+
+The `xva_market_refresh` group alternates the initial CLP/USD spot by +1% and
+-1% at 1,000 and 10,000 paths. Its timed operation includes market
+initialization, `update_market`, preparation of the new numerical binding and a
+complete `run`. A check before sampling confirms that an FX update retains the
+native path program. The fixture's inline test compares every refreshed cube
+entry, adjustment and risk label with a newly constructed engine, checks that
+prices actually change, and covers both collateral modes.
+
+Each case uses ten flat samples, a one-second warm-up and a three-second target
+measurement period. These are prepared-execution measurements. Creating new
+engines inside the same process would still reuse compiler caches, so this
+target does not label those calls as cold compilation.
+
+Use the standalone driver in a new process to measure the complete first call:
+
+```sh
+cargo +stable build --release --locked -p benchmarks --bin xva_benchmark
+RAYON_NUM_THREADS=10 target/release/xva_benchmark \
+  --benchmark 1000 5 target/xva-first-call.json true
+```
+
+The JSON separates market/engine setup, the first `run` including its automatic
+preparation, and repeated-run times. It also retains the complete numerical
+outputs. With a custom `CARGO_TARGET_DIR`, use the binary in that directory.
+The existing `tools/benchmarks/prepared_xva.py` compares this driver with the old
+AD branch and checks all prices, risk labels and path entries before reporting
+a speedup. Neither the CVA example nor the library's pricing API is changed by
+this benchmark target.

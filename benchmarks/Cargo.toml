@@ -26,3 +26,7 @@ harness = false
 [[bench]]
 name = "ad_core"
 harness = false
+
+[[bench]]
+name = "xva_pricing"
+harness = false
