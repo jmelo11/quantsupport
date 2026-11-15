@@ -51,6 +51,10 @@
 - [Netting and collateral](xva/netting-csa.md)
 - [Credit, funding and XVA risk](xva/cva-dva-fva.md)
 
+# Library implementation
+
+- [Inside automatic differentiation and the JIT](implementation/ad-jit.md)
+
 # Supporting material
 
 - [Serializable configuration](reference/configuration.md)

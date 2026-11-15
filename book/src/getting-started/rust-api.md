@@ -29,6 +29,8 @@ compiled first derivatives of that calculation. The application continues to
 call the same pricing method; it does not manage captures or intermediate
 derivatives. The [AD workflow](../risk/aad.md) explains those stages and the
 optional kernel interface for second derivatives.
+The [implementation chapter](../implementation/ad-jit.md) follows the recorded
+operations through reverse differentiation and Cranelift native compilation.
 
 Constructed curves commonly use `Rc<RefCell<dyn ADCurveElement>>` so that a
 workflow can share market objects and register their inputs when needed. A

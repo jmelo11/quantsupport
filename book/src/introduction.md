@@ -32,3 +32,10 @@ valuation and risk. Formulas return handles to native objects, allowing a
 workbook to express the dependencies between inputs and results.
 [Working in Excel](excel/workbook.md) explains this workflow and its
 recalculation rules. The add-in requires 64-bit Windows desktop Excel.
+
+## Library implementation
+
+[Inside automatic differentiation and the JIT](implementation/ad-jit.md)
+explains how scalar formulas become operation graphs, how reverse derivatives
+are generated, and how Cranelift compiles reusable numerical programs. It also
+covers capture ownership, branching, calibration maps and parallel execution.

@@ -6,6 +6,10 @@ sensitivity identifies the deposit, swap, volatility quote or other observation
 that affects the price. When a curve or model is calibrated, the reported risk
 also depends on the map from its market quotes to its calibrated parameters.
 
+For the recording data structures, reverse chain rule, Cranelift code generation
+and native-code reuse, read
+[Inside automatic differentiation and the JIT](../implementation/ad-jit.md).
+
 A sensitivity is expressed in the units of its input. For example, if a rate
 quote \\(q\\) is an annual decimal rate, its reported sensitivity is
 \\(\partial V/\partial q\\). A first-order estimate of the effect of a one-basis-point
