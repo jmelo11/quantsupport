@@ -533,11 +533,13 @@ mod tests {
         let surfaces: Vec<VolatilitySurfaceConfiguration> =
             serde_json::from_value(surface_json["volatility_surfaces"].clone())
                 .map_err(|error| QSError::InvalidValueErr(error.to_string()))?;
-        let time_grid = TimeGridConfiguration::new(48, 4096, DayCounter::Actual365);
+        // Quote-risk propagation is checked against a rebuilt-market bump on
+        // the same grid. High-resolution convergence is covered separately.
+        let time_grid = TimeGridConfiguration::new(12, 4096, DayCounter::Actual365);
         let pricer = if use_fourier {
             PricerImplementation::BackwardFourierEvolution {
                 time_grid,
-                fourier_grid: FourierGridConfiguration::new(512, 10.0),
+                fourier_grid: FourierGridConfiguration::new(64, 10.0),
             }
         } else {
             PricerImplementation::TreeBased { time_grid }

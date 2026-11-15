@@ -238,15 +238,33 @@ struct SharedProgram {
     graph: Graph,
     outputs: Vec<usize>,
     active: usize,
-    kernel: Arc<NativeKernel>,
+    kernel: Arc<Mutex<Option<Arc<NativeKernel>>>>,
 }
-static SHARED: OnceLock<Mutex<HashMap<u64, Vec<SharedProgram>>>> = OnceLock::new();
+type SharedCache = Mutex<HashMap<u64, Vec<SharedProgram>>>;
+static SHARED: OnceLock<SharedCache> = OnceLock::new();
 
 /// Reuses an exactly matching native block within the shared bounded code cache.
 fn shared_native(
     graph: &Graph,
     outputs: &[usize],
     active: usize,
+) -> Result<Arc<NativeKernel>, CompileError> {
+    shared_native_in(
+        SHARED.get_or_init(|| Mutex::new(HashMap::new())),
+        graph,
+        outputs,
+        active,
+        || jit::compile_outputs(graph, outputs, active),
+    )
+}
+
+/// Serializes compilation only for the same block, leaving unrelated cache entries available.
+fn shared_native_in(
+    cache: &SharedCache,
+    graph: &Graph,
+    outputs: &[usize],
+    active: usize,
+    compile: impl FnOnce() -> Result<NativeKernel, CompileError>,
 ) -> Result<Arc<NativeKernel>, CompileError> {
     let mut hasher = DefaultHasher::new();
     active.hash(&mut hasher);
@@ -262,44 +280,131 @@ fn shared_native(
         }
     }
     let hash = hasher.finish();
-    let mut shared = SHARED
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    if let Some(program) = shared.get(&hash).and_then(|programs| {
-        programs.iter().find(|program| {
-            program.active == active
-                && program.outputs == outputs
-                && program.graph.output() == graph.output()
-                && program.graph.input_count() == graph.input_count()
-                && program.graph.operation_count() == graph.operation_count()
-                && program
-                    .graph
-                    .operations()
-                    .iter()
-                    .zip(graph.operations())
-                    .all(|(a, b)| a.same_instruction(b))
-        })
-    }) {
-        return Ok(Arc::clone(&program.kernel));
+    let slot = {
+        let mut shared = cache.lock().unwrap_or_else(PoisonError::into_inner);
+        let cached = shared
+            .get(&hash)
+            .and_then(|programs| {
+                programs.iter().find(|program| {
+                    program.active == active
+                        && program.outputs == outputs
+                        && program.graph.output() == graph.output()
+                        && program.graph.input_count() == graph.input_count()
+                        && program.graph.operation_count() == graph.operation_count()
+                        && program
+                            .graph
+                            .operations()
+                            .iter()
+                            .zip(graph.operations())
+                            .all(|(a, b)| a.same_instruction(b))
+                })
+            })
+            .map(|program| Arc::clone(&program.kernel));
+        let slot = cached.unwrap_or_else(|| {
+            if shared.len() >= 256 {
+                shared.clear();
+            }
+            let slot = Arc::new(Mutex::new(None));
+            shared.entry(hash).or_default().push(SharedProgram {
+                graph: graph.clone(),
+                outputs: outputs.to_vec(),
+                active,
+                kernel: Arc::clone(&slot),
+            });
+            slot
+        });
+        drop(shared);
+        slot
+    };
+    // The global map is unlocked before any compiler work. A per-entry lock
+    // still prevents duplicate compilation of the same resident block.
+    let mut kernel = slot.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(kernel) = kernel.as_ref() {
+        return Ok(Arc::clone(kernel));
     }
-    let kernel = Arc::new(jit::compile_outputs(graph, outputs, active)?);
-    if shared.len() >= 256 {
-        shared.clear();
-    }
-    shared.entry(hash).or_default().push(SharedProgram {
-        graph: graph.clone(),
-        outputs: outputs.to_vec(),
-        active,
-        kernel: Arc::clone(&kernel),
-    });
-    drop(shared);
-    Ok(kernel)
+    let compiled = Arc::new(compile()?);
+    *kernel = Some(Arc::clone(&compiled));
+    drop(kernel);
+    Ok(compiled)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Checks compiler work can access other entries and a resident block compiles once.
+    #[test]
+    fn block_compilation_releases_cache_lock_and_reuses_code() -> Result<(), CompileError> {
+        let cache = Mutex::new(HashMap::new());
+        let graph = Graph::trace(&[2.0], |x| x[0] * x[0])?;
+        let first = shared_native_in(&cache, &graph, &[], 1, || {
+            assert!(
+                cache.try_lock().is_ok(),
+                "compiler must not hold the cache map lock"
+            );
+            jit::compile_outputs(&graph, &[], 1)
+        })?;
+        let second = shared_native_in(&cache, &graph, &[], 1, || {
+            panic!("resident native block must be reused")
+        })?;
+        assert!(Arc::ptr_eq(&first, &second));
+        let mut gradient = [0.0];
+        second.values_and_grad(&[3.0], &mut [], &mut gradient)?;
+        assert_eq!(gradient, [6.0]);
+        Ok(())
+    }
+
+    /// Checks concurrent requests for the same block share one compilation.
+    #[test]
+    fn concurrent_block_requests_compile_once() -> Result<(), CompileError> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let cache = Mutex::new(HashMap::new());
+        let graph = Graph::trace(&[2.0], |x| x[0] * x[0])?;
+        let compilations = AtomicUsize::new(0);
+        let kernels = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..4)
+                .map(|_| {
+                    scope.spawn(|| {
+                        shared_native_in(&cache, &graph, &[], 1, || {
+                            compilations.fetch_add(1, Ordering::Relaxed);
+                            jit::compile_outputs(&graph, &[], 1)
+                        })
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle
+                        .join()
+                        .unwrap_or_else(|_| panic!("native compiler worker panicked"))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })?;
+        assert_eq!(compilations.load(Ordering::Relaxed), 1);
+        assert!(kernels
+            .iter()
+            .all(|kernel| Arc::ptr_eq(&kernels[0], kernel)));
+        Ok(())
+    }
+
+    /// Checks a failed compilation leaves the entry available for a retry.
+    #[test]
+    fn failed_block_compilation_can_be_retried() -> Result<(), CompileError> {
+        let cache = Mutex::new(HashMap::new());
+        let graph = Graph::trace(&[2.0], |x| x[0] * x[0])?;
+        assert!(shared_native_in(&cache, &graph, &[], 1, || {
+            Err(CompileError::Jit("injected compilation failure".into()))
+        })
+        .is_err());
+        let kernel = shared_native_in(&cache, &graph, &[], 1, || {
+            jit::compile_outputs(&graph, &[], 1)
+        })?;
+        let mut gradient = [0.0];
+        kernel.values_and_grad(&[4.0], &mut [], &mut gradient)?;
+        assert_eq!(gradient, [8.0]);
+        Ok(())
+    }
     /// Checks partitioned gradient composes shared boundaries and inactive draws.
     #[test]
     fn partitioned_gradient_composes_shared_boundaries_and_inactive_draws(

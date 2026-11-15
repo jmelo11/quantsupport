@@ -42,7 +42,11 @@ jobs:
     - name: Run Clippy
       run: cargo +stable clippy -p quantsupport --lib -- -D warnings
     - name: Run tests
-      run: cargo +stable test -p quantsupport --verbose
+      timeout-minutes: 20
+      env:
+        RUST_TEST_THREADS: '2'
+        RAYON_NUM_THREADS: '2'
+      run: cargo +stable test --locked -p quantsupport --verbose
     - name: Run example regression tests
       run: >-
         cargo +stable test --locked

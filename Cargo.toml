@@ -63,6 +63,12 @@ serde_json = "1.0.149"
 [features]
 default = []
 plot = ["plotters"]
+
+# Tests exercise native compilation as well as pricing. Optimizing the JIT
+# compiler keeps those tests practical while retaining test debug assertions.
+[profile.test]
+opt-level = 2
+
 [lints.rust]
 missing_docs = "forbid"
 unreachable_patterns = "forbid"
