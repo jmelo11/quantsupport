@@ -7,8 +7,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut curve = discount_curve()?;
 
     // Price the ordinary library swap with the standard cashflow pricer.
-    let native_trade: SwapTrade<DualFwd> = native_swap()?.into();
-    let native_results = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new()
+    let native_trade: SwapTrade<Recorded> = native_swap()?.into();
+    let native_results = DiscountedCashflowPricer::<Swap<Recorded>, SwapTrade<Recorded>>::new()
         .evaluate(
             &native_trade,
             &[Request::Value, Request::Sensitivities],
@@ -26,7 +26,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // a Monte Carlo convergence test.
     Tape::start_recording_fwd();
     curve.put_pillars_on_tape();
-    let rate_model = LgmRateModel::new(DualFwd::scalar(0.03), DualFwd::zero(), &curve);
+    let rate_model = LgmRateModel::new(Recorded::scalar(0.03), Recorded::zero(), &curve);
     let mut model = LgmMarketModel::new(
         Currency::USD,
         MarketIndex::SOFR,

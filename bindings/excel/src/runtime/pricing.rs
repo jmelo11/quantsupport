@@ -161,26 +161,29 @@ impl PricerObject {
                 register!(pricer);
             }
             "discountedcashflowpricer" => {
-                register!(DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new());
                 register!(DiscountedCashflowPricer::<
-                    BasisSwap<DualFwd>,
-                    BasisSwapTrade<DualFwd>,
+                    Swap<Recorded>,
+                    SwapTrade<Recorded>,
                 >::new());
                 register!(DiscountedCashflowPricer::<
-                    FloatFloatCrossCurrencySwap<DualFwd>,
-                    FloatFloatCrossCurrencySwapTrade<DualFwd>,
+                    BasisSwap<Recorded>,
+                    BasisSwapTrade<Recorded>,
                 >::new());
                 register!(DiscountedCashflowPricer::<
-                    FixFloatCrossCurrencySwap<DualFwd>,
-                    FixFloatCrossCurrencySwapTrade<DualFwd>,
+                    FloatFloatCrossCurrencySwap<Recorded>,
+                    FloatFloatCrossCurrencySwapTrade<Recorded>,
                 >::new());
                 register!(DiscountedCashflowPricer::<
-                    FloatingRateNote<DualFwd>,
-                    FloatingRateNoteTrade<DualFwd>,
+                    FixFloatCrossCurrencySwap<Recorded>,
+                    FixFloatCrossCurrencySwapTrade<Recorded>,
                 >::new());
                 register!(DiscountedCashflowPricer::<
-                    FixedRateDeposit<DualFwd>,
-                    FixedRateDepositTrade<DualFwd>,
+                    FloatingRateNote<Recorded>,
+                    FloatingRateNoteTrade<Recorded>,
+                >::new());
+                register!(DiscountedCashflowPricer::<
+                    FixedRateDeposit<Recorded>,
+                    FixedRateDepositTrade<Recorded>,
                 >::new());
             }
             "bondpricer" => register!(BondPricer::new()),
@@ -349,7 +352,7 @@ mod tests {
         ] {
             let curve = FlatForwardTermStructure::new(
                 date,
-                DualFwd::from(rate),
+                Recorded::from(rate),
                 RateDefinition::new(
                     DayCounter::Actual360,
                     Compounding::Continuous,
@@ -383,7 +386,7 @@ mod tests {
         let context = context();
         let date = Date::new(2026, 2, 24);
         let make = |fixed, spread| {
-            MakeSwap::<DualFwd>::default()
+            MakeSwap::<Recorded>::default()
                 .with_identifier("swap".into())
                 .with_start_date(date)
                 .with_maturity_date(Date::new(2031, 2, 24))
@@ -492,7 +495,7 @@ mod tests {
         let context = context();
         let date = Date::new(2026, 2, 24);
         let end = Date::new(2026, 5, 24);
-        let swap = MakeSwap::<DualFwd>::default()
+        let swap = MakeSwap::<Recorded>::default()
             .with_identifier("ois".into())
             .with_start_date(date)
             .with_maturity_date(end)
@@ -508,7 +511,7 @@ mod tests {
             .unwrap();
         let mut coupon = FloatingRateCoupon::new(
             100_000.0,
-            DualFwd::from(0.01),
+            Recorded::from(0.01),
             MarketIndex::ESTR,
             date,
             end,
@@ -568,7 +571,7 @@ mod tests {
     fn ordinary_curve_policy_changes_loan_funding_without_changing_contract() {
         let context = context();
         let date = Date::new(2026, 2, 24);
-        let loan = MakeLoan::<DualFwd>::default()
+        let loan = MakeLoan::<Recorded>::default()
             .with_identifier("loan".into())
             .with_start_date(date)
             .with_maturity_date(Date::new(2031, 2, 24))
@@ -592,7 +595,8 @@ mod tests {
             .trade(date, Side::LongReceive, &PositionTerms::default())
             .unwrap();
         let risk_free = PricerObject::new("LoanPricer", Some(&policy("ESTR")), &vec![]).unwrap();
-        let funded = PricerObject::new("LoanPricer", Some(&policy("OTHER:FUNDING")), &vec![]).unwrap();
+        let funded =
+            PricerObject::new("LoanPricer", Some(&policy("OTHER:FUNDING")), &vec![]).unwrap();
         let first = risk_free
             .evaluate(
                 &trade,
@@ -653,7 +657,7 @@ mod tests {
     fn bond_anchor_is_a_position_term_and_policy_is_a_pricer_term() {
         let context = context();
         let date = Date::new(2026, 2, 24);
-        let bond = MakeFixedRateBond::<DualFwd>::default()
+        let bond = MakeFixedRateBond::<Recorded>::default()
             .with_identifier("bond".into())
             .with_start_date(date)
             .with_maturity_date(Date::new(2031, 2, 24))
@@ -767,7 +771,7 @@ mod tests {
         let date = Date::new(2026, 2, 24);
         let instrument = InstrumentObject {
             native: NativeInstrument::FixedRateDeposit(
-                MakeFixedRateDeposit::<DualFwd>::default()
+                MakeFixedRateDeposit::<Recorded>::default()
                     .with_identifier("portfolio deposit".into())
                     .with_start_date(date)
                     .with_maturity_date(Date::new(2027, 2, 24))

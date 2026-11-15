@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, tape::Tape},
+    ad::{tape::Tape, Recorded},
     core::{
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
@@ -58,7 +58,7 @@ impl RateFuturesPricer {
 
 #[derive(Default)]
 struct RateFuturesState {
-    value: Option<DualFwd>,
+    value: Option<Recorded>,
     market_data: Option<MarketData>,
 }
 
@@ -80,7 +80,7 @@ impl HandleValue<RateFuturesTrade, RateFuturesState> for RateFuturesPricer {
 
         let inst = trade.instrument();
         let rd = inst.rate_definition();
-        let quote: DualFwd = {
+        let quote: Recorded = {
             let curve = state
                 .get_discount_curve_element(&inst.market_index())?
                 .curve();
@@ -90,7 +90,7 @@ impl HandleValue<RateFuturesTrade, RateFuturesState> for RateFuturesPricer {
                 rd.compounding(),
                 rd.frequency(),
             )?;
-            (DualFwd::new(100.0) - fwd * 100.0).into()
+            (Recorded::new(100.0) - fwd * 100.0).into()
         };
         state.value = Some(quote);
 
@@ -192,7 +192,7 @@ impl Pricer for RateFuturesPricer {
 mod tests {
     use super::RateFuturesPricer;
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::{
             elements::curveelement::DiscountCurveElement,
             evaluationresults::EvaluationResults,
@@ -237,10 +237,10 @@ mod tests {
         }
     }
 
-    fn flat_curve(reference_date: Date, rate: f64) -> FlatForwardTermStructure<DualFwd> {
+    fn flat_curve(reference_date: Date, rate: f64) -> FlatForwardTermStructure<Recorded> {
         FlatForwardTermStructure::new(
             reference_date,
-            DualFwd::from(rate),
+            Recorded::from(rate),
             RateDefinition::default(),
         )
         .with_pillar_label("rate".to_string())

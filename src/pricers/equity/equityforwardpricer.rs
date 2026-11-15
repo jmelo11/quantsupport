@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, tape::Tape},
+    ad::{tape::Tape, Recorded},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -23,8 +23,8 @@ use crate::{
 #[derive(Default)]
 struct EquityForwardState {
     evaluation_date: crate::time::date::Date,
-    value: Option<DualFwd>,
-    spot: Option<DualFwd>,
+    value: Option<Recorded>,
+    spot: Option<Recorded>,
     market_data: Option<MarketData>,
 }
 
@@ -93,7 +93,7 @@ impl HandleValue<EquityForwardTrade, EquityForwardState> for EquityForwardPricer
 
         // Record spot separately to report delta alongside curve risk.
         let spot = state.get_fixing(&index, state.evaluation_date)?;
-        let mut spot_ad = DualFwd::new(spot);
+        let mut spot_ad = Recorded::new(spot);
         spot_ad.put_on_tape();
         state.spot = Some(spot_ad);
 
@@ -110,11 +110,11 @@ impl HandleValue<EquityForwardTrade, EquityForwardState> for EquityForwardPricer
         let df_q = if let Ok(curve) = state.get_dividend_curve_element(&index) {
             curve.curve().discount_factor(forward.delivery_date())?
         } else {
-            DualFwd::one()
+            Recorded::one()
         };
 
-        let fwd: DualFwd = (spot_ad * df_q / df_forward).into();
-        let value: DualFwd =
+        let fwd: Recorded = (spot_ad * df_q / df_forward).into();
+        let value: Recorded =
             (df_r * (fwd - forward.strike()) * trade.notional() * trade.side().sign()).into();
         let source = Discountable::currency(forward);
         let value = if let Some(target) = state
@@ -295,7 +295,7 @@ impl Pricer for EquityForwardPricer {
                     let dividend = state
                         .get_dividend_curve_element(&forward.market_index())
                         .map_or_else(
-                            |_| Ok(DualFwd::one()),
+                            |_| Ok(Recorded::one()),
                             |e| e.curve().discount_factor(expiry),
                         )?;
                     let forward_df = state
@@ -390,7 +390,7 @@ mod tests {
         );
         let curve = |rate, label: &str| {
             Rc::new(RefCell::new(
-                FlatForwardTermStructure::new(date, DualFwd::from(rate), definition)
+                FlatForwardTermStructure::new(date, Recorded::from(rate), definition)
                     .with_pillar_label(label.into()),
             ))
         };

@@ -1,5 +1,5 @@
 use crate::{
-    ad::{compiled::Recorded, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::marketdatahandling::marketdata::MarketData,
     rates::interestrate::InterestRate,
     utils::errors::{QSError, Result},

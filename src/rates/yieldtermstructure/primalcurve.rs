@@ -1,6 +1,6 @@
 //! Read-only scalar view of an AD discount curve.
 use crate::{
-    ad::dual::DualFwd,
+    ad::Recorded,
     rates::{
         compounding::Compounding,
         yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
@@ -9,12 +9,12 @@ use crate::{
     utils::errors::Result,
 };
 /// A scalar view that reads values from an AD curve without recording sensitivities.
-pub struct PrimalCurve<'a>(&'a dyn InterestRatesTermStructure<DualFwd>);
+pub struct PrimalCurve<'a>(&'a dyn InterestRatesTermStructure<Recorded>);
 
 impl<'a> PrimalCurve<'a> {
     /// Wraps an AD curve with a read-only scalar view.
     #[must_use]
-    pub const fn new(curve: &'a dyn InterestRatesTermStructure<DualFwd>) -> Self {
+    pub const fn new(curve: &'a dyn InterestRatesTermStructure<Recorded>) -> Self {
         Self(curve)
     }
 }

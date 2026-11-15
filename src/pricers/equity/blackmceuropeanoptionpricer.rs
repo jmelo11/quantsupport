@@ -4,7 +4,7 @@
 //! [`SimulationBuilder`](crate::simulations::simulationbuilder::SimulationBuilder)).
 
 use crate::{
-    ad::{dual::DualFwd, tape::Tape},
+    ad::{tape::Tape, Recorded},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -26,7 +26,7 @@ use crate::{
 /// State struct for storing intermediate values during Monte Carlo pricing of an equity option.
 #[derive(Default)]
 struct MonteCarloState {
-    value: Option<DualFwd>,
+    value: Option<Recorded>,
     market_data: Option<MarketData>,
 }
 
@@ -52,7 +52,7 @@ impl PricerState for MonteCarloState {
 ///
 /// Sensitivities report discount-curve pillars and any spot FX conversion risk.
 /// Materialized paths do not retain derivatives through spot, model volatility, or calibration;
-/// storing them as `DualFwd` does not provide those risks.
+/// storing them as `Recorded` does not provide those risks.
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
 /// for payment discounting instead of the instrument's `market_index` curve.
@@ -114,7 +114,7 @@ impl HandleValue<EquityEuropeanOptionTrade, MonteCarloState> for BlackMCEuropean
                 "Simulation contains no paths".into(),
             ));
         }
-        let terminal_spots: Vec<DualFwd> = paths
+        let terminal_spots: Vec<Recorded> = paths
             .iter()
             .map(|path| {
                 path.get(date_idx).copied().ok_or_else(|| {
@@ -126,29 +126,29 @@ impl HandleValue<EquityEuropeanOptionTrade, MonteCarloState> for BlackMCEuropean
         // Resolve the strike using the mean terminal level as forward proxy.
         #[allow(clippy::cast_precision_loss)]
         let n = terminal_spots.len() as f64;
-        let mean_terminal: f64 = terminal_spots.iter().map(DualFwd::value).sum::<f64>() / n;
+        let mean_terminal: f64 = terminal_spots.iter().map(Recorded::value).sum::<f64>() / n;
         let strike = option.strike().resolve(mean_terminal);
-        let strike_ad = DualFwd::new(strike);
+        let strike_ad = Recorded::new(strike);
         let is_call = matches!(option.option_type(), EuroOptionType::Call);
 
-        let mut payoff_sum = DualFwd::zero();
+        let mut payoff_sum = Recorded::zero();
         for terminal in terminal_spots {
-            let intrinsic: DualFwd = if is_call {
+            let intrinsic: Recorded = if is_call {
                 (terminal - strike_ad).into()
             } else {
                 (strike_ad - terminal).into()
             };
-            let payoff = intrinsic.max(DualFwd::zero());
+            let payoff = intrinsic.max(Recorded::zero());
             payoff_sum = (payoff_sum + payoff).into();
         }
-        let mean_payoff: DualFwd = (payoff_sum / DualFwd::new(n)).into();
+        let mean_payoff: Recorded = (payoff_sum / Recorded::new(n)).into();
 
         let df = state
             .get_discount_curve_element(&discount_index)?
             .curve()
             .discount_factor(expiry)?;
 
-        let value: DualFwd = (df * mean_payoff * trade.notional()).into();
+        let value: Recorded = (df * mean_payoff * trade.notional()).into();
         let source = Discountable::currency(option);
         let value = if let Some(target) = state
             .get_market_data_reponse()
@@ -365,17 +365,17 @@ mod tests {
             expiry,
             reference_date + Period::new(5, TimeUnit::Years),
         ];
-        let dfs: Vec<DualFwd> = dates
+        let dfs: Vec<Recorded> = dates
             .iter()
-            .map(|d| DualFwd::new((-rate * dc.year_fraction(reference_date, *d)).exp()))
+            .map(|d| Recorded::new((-rate * dc.year_fraction(reference_date, *d)).exp()))
             .collect();
         let curve =
-            DiscountTermStructure::<DualFwd>::new(dates, dfs, dc, Interpolator::LogLinear, true)?
+            DiscountTermStructure::<Recorded>::new(dates, dfs, dc, Interpolator::LogLinear, true)?
                 .with_pillar_labels(vec![
-                "df_0d".to_string(),
-                "df_1y".to_string(),
-                "df_5y".to_string(),
-            ])?;
+                    "df_0d".to_string(),
+                    "df_1y".to_string(),
+                    "df_5y".to_string(),
+                ])?;
         let mut store = ConstructedElementStore::default();
         store.discount_curves_mut().insert(
             index.clone(),

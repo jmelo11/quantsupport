@@ -43,4 +43,4 @@ pub mod runtime;
 pub mod visitors;
 
 /// Numeric representation used while evaluating scripts.
-pub type NumericType = crate::ad::dual::DualFwd;
+pub type NumericType = crate::ad::Recorded;

@@ -136,7 +136,7 @@ The following Rust fragment illustrates the contract and position terms.
 Its context and market configuration are supplied separately.
 
 ```rust,ignore
-let bond = MakeSteppedCouponBond::<DualFwd>::default()
+let bond = MakeSteppedCouponBond::<Recorded>::default()
     .with_identifier("USD-STEP-CALL-2031".into())
     .with_start_date(Date::new(2025, 1, 1))
     .with_maturity_date(Date::new(2031, 1, 1))

@@ -3,7 +3,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    ad::compiled::Recorded,
+    ad::Recorded,
     calibration::impliedquote::ImpliedQuotePricer,
     core::{
         elements::curveelement::{ADCurveElement, DiscountCurveElement},

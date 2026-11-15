@@ -370,7 +370,7 @@ impl Worker {
                 use quantsupport::prelude::Tape;
                 Tape::stop_recording();
                 Tape::stop_recording_fwd();
-                // Retained contexts contain detached DualFwd inputs, never reverse tape nodes.
+                // Retained contexts contain detached Recorded inputs, never reverse tape nodes.
                 Tape::rewind_to_init();
                 Tape::<quantsupport::prelude::ADForward>::rewind_to_init_for();
             }

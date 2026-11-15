@@ -1,6 +1,6 @@
 use crate::core::marketdatahandling::constructedelementstore::SharedElement;
 use crate::{
-    ad::{dual::DualFwd, forward::ADForward, scalar::Scalar},
+    ad::{forward::ADForward, scalar::Scalar, Recorded},
     core::{elements::volatilitysurfaceelement::ADVolatilitySurfaceElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     math::interpolation::{
@@ -30,7 +30,7 @@ type SurfaceMap<T> = BTreeMap<Period, BTreeMap<F64Key, T>>;
 /// or log-moneyness.
 ///
 /// ## Generics
-/// - `T`: Numeric type for the volatility values (e.g., `f64`, `DualFwd`).
+/// - `T`: Numeric type for the volatility values (e.g., `f64`, `Recorded`).
 #[derive(Clone)]
 pub struct InterpolatedVolatilitySurface<T: Scalar> {
     reference_date: Date,
@@ -152,8 +152,8 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
     }
 }
 
-impl Pillars<DualFwd> for InterpolatedVolatilitySurface<DualFwd> {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl Pillars<Recorded> for InterpolatedVolatilitySurface<Recorded> {
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.labels.as_ref().map(|labels| {
             labels
                 .iter()
@@ -176,7 +176,7 @@ impl Pillars<DualFwd> for InterpolatedVolatilitySurface<DualFwd> {
     }
 }
 
-impl ADVolatilitySurfaceElement for InterpolatedVolatilitySurface<DualFwd> {
+impl ADVolatilitySurfaceElement for InterpolatedVolatilitySurface<Recorded> {
     fn clone_surface(&self) -> Result<SharedElement<dyn ADVolatilitySurfaceElement>> {
         let mut market = self.clone();
         for value in market
@@ -184,7 +184,7 @@ impl ADVolatilitySurfaceElement for InterpolatedVolatilitySurface<DualFwd> {
             .values_mut()
             .flat_map(|values| values.values_mut())
         {
-            *value = DualFwd::constant(ADForward::constant(value.value()));
+            *value = Recorded::constant(ADForward::constant(value.value()));
         }
         Ok(Rc::new(RefCell::new(market)))
     }
@@ -195,7 +195,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::{
-        ad::{dual::DualFwd, tape::Tape},
+        ad::{tape::Tape, Recorded},
         core::pillars::Pillars,
         indices::marketindex::MarketIndex,
         math::interpolation::extrapolation::ExtrapolationPolicy,
@@ -243,15 +243,15 @@ mod tests {
         points.insert(
             Period::new(6, TimeUnit::Months),
             BTreeMap::from([
-                (F64Key::new(90.0), DualFwd::from(0.20)),
-                (F64Key::new(110.0), DualFwd::from(0.30)),
+                (F64Key::new(90.0), Recorded::from(0.20)),
+                (F64Key::new(110.0), Recorded::from(0.30)),
             ]),
         );
         points.insert(
             Period::new(12, TimeUnit::Months),
             BTreeMap::from([
-                (F64Key::new(90.0), DualFwd::from(0.22)),
-                (F64Key::new(110.0), DualFwd::from(0.34)),
+                (F64Key::new(90.0), Recorded::from(0.22)),
+                (F64Key::new(110.0), Recorded::from(0.34)),
             ]),
         );
 
@@ -348,15 +348,15 @@ mod tests {
                 (
                     Period::new(6, TimeUnit::Months),
                     BTreeMap::from([
-                        (F64Key::new(90.0), DualFwd::from(0.20)),
-                        (F64Key::new(110.0), DualFwd::from(0.30)),
+                        (F64Key::new(90.0), Recorded::from(0.20)),
+                        (F64Key::new(110.0), Recorded::from(0.30)),
                     ]),
                 ),
                 (
                     Period::new(12, TimeUnit::Months),
                     BTreeMap::from([
-                        (F64Key::new(95.0), DualFwd::from(0.22)),
-                        (F64Key::new(115.0), DualFwd::from(0.34)),
+                        (F64Key::new(95.0), Recorded::from(0.22)),
+                        (F64Key::new(115.0), Recorded::from(0.34)),
                     ]),
                 ),
             ]),

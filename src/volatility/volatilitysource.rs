@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 use crate::{
-    ad::{compiled::Recorded, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         elements::{
             volatilitycubelement::VolatilityCubeElement,
@@ -423,7 +423,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ad::compiled::Recorded,
+        ad::Recorded,
         time::date::Date,
         volatility::{
             interpolatedvolatilitycube::InterpolatedVolatilityCube,

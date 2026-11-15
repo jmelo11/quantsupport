@@ -241,16 +241,16 @@ mod tests {
     }
 
     #[test]
-    fn variation_margin_preserves_dualfwd_derivatives() -> Result<()> {
-        use crate::ad::{dual::DualFwd, tape::Tape};
+    fn variation_margin_preserves_recorded_derivatives() -> Result<()> {
+        use crate::ad::{tape::Tape, Recorded};
 
         Tape::rewind_to_init_fwd();
         Tape::start_recording_fwd();
-        let first = DualFwd::new(100.0);
-        let second = DualFwd::new(103.0);
+        let first = Recorded::new(100.0);
+        let second = Recorded::new(103.0);
         let mut account = VariationMarginAccount::new(10.0, 20.0, 5.0)?;
-        let capped = account.exposure_after_call(first, DualFwd::one());
-        let retained = account.exposure_after_call(second, DualFwd::one());
+        let capped = account.exposure_after_call(first, Recorded::one());
+        let retained = account.exposure_after_call(second, Recorded::one());
         assert_eq!(capped.value(), 10.0);
         assert_eq!(retained.value(), 13.0);
         retained.backward()?;
@@ -263,17 +263,17 @@ mod tests {
 
     #[test]
     fn variation_margin_accrual_sensitivity_matches_bump() -> Result<()> {
-        use crate::ad::{dual::DualFwd, tape::Tape};
+        use crate::ad::{tape::Tape, Recorded};
 
         Tape::rewind_to_init_fwd();
         Tape::start_recording_fwd();
-        let first = DualFwd::new(100.0);
-        let second = DualFwd::new(103.0);
-        let discount = DualFwd::new(0.99);
+        let first = Recorded::new(100.0);
+        let second = Recorded::new(103.0);
+        let discount = Recorded::new(0.99);
         let mut account = VariationMarginAccount::new(10.0, 20.0, 5.0)?;
-        let capped = account.exposure_after_call(first, DualFwd::one());
+        let capped = account.exposure_after_call(first, Recorded::one());
         assert_eq!(capped.value(), 10.0);
-        let residual = account.exposure_after_call(second, DualFwd::one().div_val(discount));
+        let residual = account.exposure_after_call(second, Recorded::one().div_val(discount));
         residual.backward()?;
         assert!((first.adjoint()?.value() + 1.0 / 0.99).abs() < 1e-12);
         assert_eq!(second.adjoint()?.value(), 1.0);

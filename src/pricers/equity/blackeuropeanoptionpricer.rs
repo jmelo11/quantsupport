@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, tape::Tape},
+    ad::{tape::Tape, Recorded},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -23,8 +23,8 @@ use crate::{
 /// State struct for storing intermediate values during the pricing of an equity option, including the option value, spot price, and market data response.
 #[derive(Default)]
 struct EquityOptionState {
-    value: Option<DualFwd>,
-    spot: Option<DualFwd>,
+    value: Option<Recorded>,
+    spot: Option<Recorded>,
     market_data: Option<MarketData>,
 }
 
@@ -98,7 +98,7 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
 
         // get and put the spot in the tape
         let spot = state.get_fixing(&index, evaluation_date)?;
-        let mut spot_ad = DualFwd::new(spot);
+        let mut spot_ad = Recorded::new(spot);
         spot_ad.put_on_tape();
         state.spot = Some(spot_ad);
 
@@ -106,7 +106,7 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
 
         let strike = option.strike();
         let vol = if tau <= 0.0 {
-            DualFwd::zero()
+            Recorded::zero()
         } else {
             state
                 .get_volatility_surface_element(&index)?
@@ -123,20 +123,20 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
         let df_q = if let Ok(curve) = state.get_dividend_curve_element(&index) {
             curve.curve().discount_factor(option.expiry_date())?
         } else {
-            DualFwd::one()
+            Recorded::one()
         };
 
-        let fwd: DualFwd = (spot_ad * df_q / df_r).into();
+        let fwd: Recorded = (spot_ad * df_q / df_r).into();
 
         let undiscounted = if tau <= 0.0 || vol.value().abs() < f64::EPSILON {
             let strike = strike.resolve(fwd.value());
-            let payoff: DualFwd = match option.option_type() {
+            let payoff: Recorded = match option.option_type() {
                 EuroOptionType::Call => (fwd - strike).into(),
-                EuroOptionType::Put => (DualFwd::from(strike) - fwd).into(),
+                EuroOptionType::Put => (Recorded::from(strike) - fwd).into(),
             };
-            payoff.max(DualFwd::zero())
+            payoff.max(Recorded::zero())
         } else {
-            BrownianMotion::<DualFwd>::closed_form_price(
+            BrownianMotion::<Recorded>::closed_form_price(
                 fwd,
                 strike.resolve(fwd.value()),
                 vol,
@@ -145,7 +145,7 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
             )?
         };
 
-        let value: DualFwd = (df_r * undiscounted * trade.notional()).into();
+        let value: Recorded = (df_r * undiscounted * trade.notional()).into();
         let source = Discountable::currency(option);
         let value = if let Some(target) = state
             .get_market_data_reponse()
@@ -347,7 +347,7 @@ mod tests {
     };
 
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::{
             elements::{
                 curveelement::{DiscountCurveElement, DividendCurveElement},
@@ -365,7 +365,7 @@ mod tests {
         instruments::equity::equityeuropeanoption::{
             EquityEuropeanOption, EquityEuropeanOptionTrade, EuroOptionType,
         },
-        math::probability::norm_cdf::norm_cdf,
+        math::probability::normcdf::norm_cdf,
         pricers::equity::blackeuropeanoptionpricer::BlackEuropeanOptionPricer,
         rates::{
             interestrate::RateDefinition,
@@ -402,22 +402,22 @@ mod tests {
         dividend_rate: f64,
     ) -> Result<(
         MarketData,
-        FlatForwardTermStructure<DualFwd>,
-        FlatForwardTermStructure<DualFwd>,
-        Rc<RefCell<InterpolatedVolatilitySurface<DualFwd>>>,
+        FlatForwardTermStructure<Recorded>,
+        FlatForwardTermStructure<Recorded>,
+        Rc<RefCell<InterpolatedVolatilitySurface<Recorded>>>,
     )> {
         let six_month_days = expiry_date - trade_date;
 
         let discount_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(risk_free_rate),
+            Recorded::from(risk_free_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("discount_rate".to_string());
 
         let dividend_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(dividend_rate),
+            Recorded::from(dividend_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("dividend_rate".to_string());
@@ -426,25 +426,25 @@ mod tests {
         surface_points.insert(
             Period::new(six_month_days as i32, TimeUnit::Days),
             BTreeMap::from([
-                (F64Key::new(70.0), DualFwd::from(0.28)),
-                (F64Key::new(80.0), DualFwd::from(0.24)),
-                (F64Key::new(90.0), DualFwd::from(0.22)),
-                (F64Key::new(100.0), DualFwd::from(0.23)),
-                (F64Key::new(110.0), DualFwd::from(0.24)),
-                (F64Key::new(120.0), DualFwd::from(0.26)),
-                (F64Key::new(130.0), DualFwd::from(0.28)),
+                (F64Key::new(70.0), Recorded::from(0.28)),
+                (F64Key::new(80.0), Recorded::from(0.24)),
+                (F64Key::new(90.0), Recorded::from(0.22)),
+                (F64Key::new(100.0), Recorded::from(0.23)),
+                (F64Key::new(110.0), Recorded::from(0.24)),
+                (F64Key::new(120.0), Recorded::from(0.26)),
+                (F64Key::new(130.0), Recorded::from(0.28)),
             ]),
         );
         surface_points.insert(
             Period::new(six_month_days as i32 + 365, TimeUnit::Days),
             BTreeMap::from([
-                (F64Key::new(70.0), DualFwd::from(0.30)),
-                (F64Key::new(80.0), DualFwd::from(0.26)),
-                (F64Key::new(90.0), DualFwd::from(0.25)),
-                (F64Key::new(100.0), DualFwd::from(0.25)),
-                (F64Key::new(110.0), DualFwd::from(0.27)),
-                (F64Key::new(120.0), DualFwd::from(0.29)),
-                (F64Key::new(130.0), DualFwd::from(0.30)),
+                (F64Key::new(70.0), Recorded::from(0.30)),
+                (F64Key::new(80.0), Recorded::from(0.26)),
+                (F64Key::new(90.0), Recorded::from(0.25)),
+                (F64Key::new(100.0), Recorded::from(0.25)),
+                (F64Key::new(110.0), Recorded::from(0.27)),
+                (F64Key::new(120.0), Recorded::from(0.29)),
+                (F64Key::new(130.0), Recorded::from(0.30)),
             ]),
         );
         let labels = vec![

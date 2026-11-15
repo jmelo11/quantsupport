@@ -1,7 +1,7 @@
 //! Contractual cashflows and issuer-call obstacles on an evolution time grid.
 use super::bondpricer::ResolvedCashflow;
 use crate::{
-    ad::{compiled::Recorded, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::pricerconfiguration::TimeGridConfiguration,
     instruments::{
         cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},

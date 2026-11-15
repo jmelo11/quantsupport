@@ -44,7 +44,7 @@ use quantsupport::{
         ADForward, BackwardFourierEvolutionBondPricer, BasisSwap as QsBasisSwap, BasisSwapTrade,
         BlackEuropeanOptionPricer, BondPricer, CalibrationSource, CdsPricer,
         ClosedFormBlackCapPricer, ClosedFormBlackCapletPricer, ConstructedElementRequest,
-        ConstructedElementStore, DayCounter, DiscountedCashflowPricer, DualFwd,
+        ConstructedElementStore, DayCounter, DiscountedCashflowPricer,
         EvaluationResults as QsEvaluationResults, FixFloatCrossCurrencySwap as QsFixFloatXccy,
         FixFloatCrossCurrencySwapTrade, FixedIncomeDiscountPolicy,
         FixedRateDeposit as QsFixedRateDeposit, FixedRateDepositTrade, FloatFloatCrossCurrencySwap,
@@ -53,7 +53,7 @@ use quantsupport::{
         LgmMarketModel, LgmRateModel, LoanPricer, MarketData, MarketDataProvider,
         MarketDataRequest, ModelConfiguration, ParameterSource, PortfolioPricer, Pricer,
         PricerImplementation, PricingContext as QsPricingContext, QSError, QuoteSelector,
-        QuoteStore as QsQuoteStore, RateFuturesPricer, Request as QsRequest,
+        QuoteStore as QsQuoteStore, RateFuturesPricer, Recorded, Request as QsRequest,
         RiskContext as QsRiskContext, Scalar, ScriptEngine, Swap as QsSwap, SwapTrade, Tape,
         TreeBasedBondPricer, XvaEngine,
     },
@@ -1150,10 +1150,10 @@ impl PricingContext {
             let schedule = resolved
                 .sigma_schedule()
                 .iter()
-                .map(|(time, sigma)| (*time, DualFwd::scalar(*sigma)))
+                .map(|(time, sigma)| (*time, Recorded::scalar(*sigma)))
                 .collect();
             let rate_model =
-                LgmRateModel::new_piecewise(DualFwd::scalar(*lambda), schedule, &**curve)
+                LgmRateModel::new_piecewise(Recorded::scalar(*lambda), schedule, &**curve)
                     .map_err(qs_err)?;
             market_model.add_curve_model(index.clone(), rate_model);
         }
@@ -1327,7 +1327,8 @@ impl PricingContext {
 
         if let Ok(swap) = instrument.extract::<Swap>() {
             let t = swap.build_trade_dual(&position)?;
-            let mut pricer = DiscountedCashflowPricer::<QsSwap<DualFwd>, SwapTrade<DualFwd>>::new();
+            let mut pricer =
+                DiscountedCashflowPricer::<QsSwap<Recorded>, SwapTrade<Recorded>>::new();
             pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
             let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
             return Ok(result);
@@ -1335,8 +1336,8 @@ impl PricingContext {
         if let Ok(xccy) = instrument.extract::<CrossCurrencySwap>() {
             let t = xccy.build_trade_dual(&position)?;
             let mut pricer = DiscountedCashflowPricer::<
-                FloatFloatCrossCurrencySwap<DualFwd>,
-                FloatFloatCrossCurrencySwapTrade<DualFwd>,
+                FloatFloatCrossCurrencySwap<Recorded>,
+                FloatFloatCrossCurrencySwapTrade<Recorded>,
             >::new();
             pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
             let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
@@ -1345,7 +1346,7 @@ impl PricingContext {
         if let Ok(basis) = instrument.extract::<BasisSwap>() {
             let t = basis.build_trade_dual(&position)?;
             let mut pricer =
-                DiscountedCashflowPricer::<QsBasisSwap<DualFwd>, BasisSwapTrade<DualFwd>>::new();
+                DiscountedCashflowPricer::<QsBasisSwap<Recorded>, BasisSwapTrade<Recorded>>::new();
             pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
             let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
             return Ok(result);
@@ -1353,8 +1354,8 @@ impl PricingContext {
         if let Ok(xccy) = instrument.extract::<FixFloatCrossCurrencySwap>() {
             let t = xccy.build_trade_dual(&position)?;
             let mut pricer = DiscountedCashflowPricer::<
-                QsFixFloatXccy<DualFwd>,
-                FixFloatCrossCurrencySwapTrade<DualFwd>,
+                QsFixFloatXccy<Recorded>,
+                FixFloatCrossCurrencySwapTrade<Recorded>,
             >::new();
             pricer.set_discount_policy(Box::new(self.inner.csa_policy()));
             let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
@@ -1397,8 +1398,8 @@ impl PricingContext {
         if let Ok(frn) = instrument.extract::<FloatingRateNote>() {
             let t = frn.build_trade_dual(&position)?;
             let mut pricer = DiscountedCashflowPricer::<
-                QsFloatingRateNote<DualFwd>,
-                FloatingRateNoteTrade<DualFwd>,
+                QsFloatingRateNote<Recorded>,
+                FloatingRateNoteTrade<Recorded>,
             >::new();
             pricer.set_discount_policy(Box::new(self.bond_discount_policy(true)));
             let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;
@@ -1407,8 +1408,8 @@ impl PricingContext {
         if let Ok(deposit) = instrument.extract::<FixedRateDeposit>() {
             let t = deposit.build_trade_dual(&position)?;
             let mut pricer = DiscountedCashflowPricer::<
-                QsFixedRateDeposit<DualFwd>,
-                FixedRateDepositTrade<DualFwd>,
+                QsFixedRateDeposit<Recorded>,
+                FixedRateDepositTrade<Recorded>,
             >::new();
             pricer.set_discount_policy(Box::new(self.bond_discount_policy(true)));
             let result = pricer.evaluate(&t, reqs, market).map_err(qs_err)?;

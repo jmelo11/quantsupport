@@ -20,7 +20,7 @@ generates Hull–White, LGM or lognormal Brownian paths using standard-normal
 draws from seeded `StdRng`. This route does not inherit the Sobol/antithetic
 construction of `LgmMarketModel`.
 
-`GeneratedMonteCarloSimulation` stores the resulting values in `DualFwd`
+`GeneratedMonteCarloSimulation` stores the resulting values in `Recorded`
 containers with generation inputs held fixed. It exposes no simulation
 pillars, so subsequent differentiation covers only the operations performed
 on the stored values. The
@@ -129,7 +129,7 @@ forwards, FX, spots, path-dependent observations and numeraires. Its
 `generate_path` and `resolve_request` return `Result`, so failures retain their
 market/model categories instead of becoming silently absent paths.
 
-Scripting and XVA operate on these model responses in `DualFwd`. They can
+Scripting and XVA operate on these model responses in `Recorded`. They can
 propagate through registered model/curve inputs while rewinding temporary
 path nodes. The resulting sensitivities remain subject to fixed correlations, partial
 calibration Jacobians and payoff smoothing. Stored numerical simulations

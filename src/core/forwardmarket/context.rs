@@ -144,7 +144,7 @@ impl MarketView<'_> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ad::{dual::DualFwd, tape::Tape},
+        ad::{tape::Tape, Recorded},
         calibration::impliedquote::ImpliedQuotePricer,
         core::{
             elements::curveelement::{DiscountCurveElement, DividendCurveElement},
@@ -569,7 +569,7 @@ mod tests {
                 index.clone(),
                 Rc::new(RefCell::new(FlatForwardTermStructure::new(
                     today,
-                    DualFwd::from(0.04),
+                    Recorded::from(0.04),
                     rate_definition,
                 ))),
             ),
@@ -580,7 +580,7 @@ mod tests {
                 index.clone(),
                 Rc::new(RefCell::new(FlatForwardTermStructure::new(
                     today,
-                    DualFwd::from(0.01),
+                    Recorded::from(0.01),
                     rate_definition,
                 ))),
             ),
@@ -592,13 +592,13 @@ mod tests {
                 eur,
                 Rc::new(RefCell::new(FlatForwardTermStructure::new(
                     today,
-                    DualFwd::from(0.02),
+                    Recorded::from(0.02),
                     rate_definition,
                 ))),
             ),
         );
         let mut fx = FxStore::new();
-        fx.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::from(1.10));
+        fx.add_fx_rate(Currency::EUR, Currency::USD, Recorded::from(1.10));
         let mut fixings = FixingStore::default();
         fixings.add_fixing(&index, today, 100.0);
         let mut quotes = source.quote_store().clone();
@@ -804,9 +804,9 @@ mod tests {
         );
         Tape::rewind_to_init_fwd();
         Tape::start_recording_fwd();
-        let mut input = DualFwd::new(2.0);
+        let mut input = Recorded::new(2.0);
         input.put_on_tape();
-        let output: DualFwd = (input * input).into();
+        let output: Recorded = (input * input).into();
         let _future = source.advance_to(&config)?;
         output.backward()?;
         assert!((input.adjoint()?.value() - 4.0).abs() < 1e-12);

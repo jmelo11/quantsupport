@@ -1,5 +1,5 @@
 use crate::{
-    ad::{compiled::Recorded, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     indices::marketindex::MarketIndex,
     instruments::cashflows::{
         cashflow::SimpleCashflow, fixedratecoupon::FixedRateCoupon,

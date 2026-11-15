@@ -389,7 +389,7 @@ impl<T: Scalar> MakeInstrument for MakeSwaption<T> {
 mod tests {
     use super::*;
     use crate::{
-        ad::compiled::Recorded,
+        ad::Recorded,
         core::instrument::Instrument,
         rates::compounding::Compounding,
         time::{daycounter::DayCounter, enums::Frequency},

@@ -1,5 +1,5 @@
 use crate::{
-    ad::{constant::Const, dual::DualFwd, forward::ADForward, scalar::Scalar},
+    ad::{constant::Const, forward::ADForward, scalar::Scalar, Recorded},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     rates::{
         compounding::Compounding,
@@ -79,8 +79,8 @@ where
     }
 }
 
-impl Pillars<DualFwd> for FlatForwardTermStructure<DualFwd> {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl Pillars<Recorded> for FlatForwardTermStructure<Recorded> {
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.pillar_label
             .as_ref()
             .map(|label| vec![(label.clone(), self.rate.rate_ref())])
@@ -153,11 +153,11 @@ impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
     }
 }
 
-impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
+impl InterestRatesTermStructure<Recorded> for FlatForwardTermStructure<Recorded> {
     fn reference_date(&self) -> Date {
         self.reference_date
     }
-    fn discount_factor(&self, date: Date) -> Result<DualFwd> {
+    fn discount_factor(&self, date: Date) -> Result<Recorded> {
         if date < self.reference_date() {
             return Err(QSError::InvalidValueErr(format!(
                 "Date {date:?} is before reference date {reference_date:?}",
@@ -172,10 +172,10 @@ impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
         end_date: Date,
         comp: Compounding,
         freq: Frequency,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let comp_factor = self.discount_factor(start_date)? / self.discount_factor(end_date)?;
         let t = self.rate.day_counter().year_fraction(start_date, end_date);
-        Ok(InterestRate::<DualFwd>::implied_rate(
+        Ok(InterestRate::<Recorded>::implied_rate(
             comp_factor.into(),
             self.rate.day_counter(),
             comp,
@@ -185,7 +185,7 @@ impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
         .rate())
     }
 
-    fn nodes(&self) -> Option<Vec<(Date, DualFwd)>> {
+    fn nodes(&self) -> Option<Vec<(Date, Recorded)>> {
         None
     }
 
@@ -193,7 +193,7 @@ impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
         Some(self.rate.day_counter())
     }
 
-    fn discount_factor_from_time(&self, t: f64) -> Result<DualFwd> {
+    fn discount_factor_from_time(&self, t: f64) -> Result<Recorded> {
         if t < 0.0 {
             return Err(QSError::InvalidValueErr("Time must be non-negative".into()));
         }
@@ -201,7 +201,7 @@ impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
         Ok((Const::one() / cf).into())
     }
 
-    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<Recorded> {
         if (end - start).abs() < 1e-14 {
             let eps = 1e-8;
             let df_s = self.discount_factor_from_time(start)?;
@@ -216,10 +216,10 @@ impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
     }
 }
 
-impl ADCurveElement for FlatForwardTermStructure<DualFwd> {
+impl ADCurveElement for FlatForwardTermStructure<Recorded> {
     fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
         let mut curve = self.clone();
-        *curve.rate.rate_mut() = DualFwd::constant(ADForward::constant(self.value().value()));
+        *curve.rate.rate_mut() = Recorded::constant(ADForward::constant(self.value().value()));
         Ok(Box::new(curve))
     }
 }
@@ -315,7 +315,7 @@ mod tests {
     // fn test_ad_forward_rate() -> Result<()> {
     //     let reference_date = Date::new(2023, 8, 19);
 
-    //     let mut rate = DualFwd::from(0.05);
+    //     let mut rate = Recorded::from(0.05);
     //     Tape::start_recording_fwd();
     //     rate.put_on_tape();
     //     let term_structure =

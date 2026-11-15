@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    ad::compiled::Recorded,
+    ad::Recorded,
     core::elements::curveelement::ADCurveElement,
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::{Interpolate, Interpolator},

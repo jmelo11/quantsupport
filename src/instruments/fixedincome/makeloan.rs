@@ -1053,7 +1053,7 @@ fn contractual_cashflows<T: Scalar>(
 mod tests {
     use super::*;
     use crate::{
-        ad::{dual::DualFwd, forward::ADForward},
+        ad::{forward::ADForward, Recorded},
         core::{instrument::Instrument, makeinstrument::test_support::cashflows, trade::Trade},
         instruments::{
             cashflows::{cashflow::Cashflow, fixedratecoupon::FixedRateCoupon},
@@ -1368,7 +1368,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(coupons(&plain), coupons(&prepaying));
-        let ad: Loan<DualFwd> =
+        let ad: Loan<Recorded> =
             prepaying.into_scalar(Arc::new(PrepaymentModelConfiguration::Cpr(1.0)));
         assert_eq!(ad.notional(), 100_000.0);
         Ok(())
@@ -1448,7 +1448,7 @@ mod tests {
         let contractual_cashflows = cashflows(loan.contractual_leg())?;
         let trade_date = Date::new(2026, 1, 15);
         let trade = LoanTrade::new(loan, trade_date, Side::PayShort);
-        let converted = trade.into_scalar::<DualFwd>(Arc::new(configuration.clone()));
+        let converted = trade.into_scalar::<Recorded>(Arc::new(configuration.clone()));
         assert!(converted
             .instrument()
             .prepayment_model()
@@ -1460,9 +1460,9 @@ mod tests {
                 Date::new(2026, 1, 1),
                 Date::new(2026, 7, 1),
                 0.5,
-                DualFwd::scalar(100_000.0),
-                DualFwd::constant(ADForward::var(0.06)),
-                DualFwd::scalar(0.04),
+                Recorded::scalar(100_000.0),
+                Recorded::constant(ADForward::var(0.06)),
+                Recorded::scalar(0.04),
             ))?;
         assert!((probability.value() - (1.0 - 0.9_f64.sqrt())).abs() < 1e-12);
         assert!((probability.inner().first_derivative() - 2.0 / 0.9_f64.sqrt()).abs() < 1e-12);
@@ -1703,7 +1703,7 @@ mod resolution_tests {
             .with_maturity_date(reference() + p("2Y")?)
             .with_initial_amortization_rate(0.05)
             .build()?;
-        let principal = |loan: &Loan<DualFwd>| -> Result<Vec<f64>> {
+        let principal = |loan: &Loan<Recorded>| -> Result<Vec<f64>> {
             loan.contractual_leg()
                 .cashflows()
                 .iter()

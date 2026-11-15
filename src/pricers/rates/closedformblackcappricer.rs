@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, tape::Tape},
+    ad::{tape::Tape, Recorded},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -85,7 +85,7 @@ impl Default for ClosedFormBlackCapPricer {
 /// State for Black caplet/floorlet pricing.
 #[derive(Default)]
 struct BlackCapState {
-    value: Option<DualFwd>,
+    value: Option<Recorded>,
     market_data: Option<MarketData>,
 }
 
@@ -118,7 +118,7 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
         Tape::start_recording_fwd();
         Tape::set_mark_fwd();
         state.put_pillars_on_tape()?;
-        let mut npv = DualFwd::zero();
+        let mut npv = Recorded::zero();
         for c in caplets {
             let fixing_date = c.fixing_date();
             let start_date = c.start_accrual_date();
@@ -139,12 +139,12 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
                 .max(0.0);
 
             // Forward rate using the conventions from the caplet's rate definition
-            let fwd: DualFwd = if fixing_date < evaluation_date
+            let fwd: Recorded = if fixing_date < evaluation_date
                 && state
                     .get_market_data_reponse()
                     .is_some_and(MarketData::anchor_fixings)
             {
-                DualFwd::from(state.get_fixing(&index, fixing_date)?)
+                Recorded::from(state.get_fixing(&index, fixing_date)?)
             } else {
                 state
                     .get_discount_curve_element(&index)?
@@ -171,7 +171,7 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
                 .discount_factor(payment_date)?;
 
             let vol = if tau <= 0.0 {
-                DualFwd::zero()
+                Recorded::zero()
             } else {
                 state
                     .get_volatility_surface_element(&index)?
@@ -180,11 +180,11 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
             };
 
             let undiscounted = if tau <= 0.0 || vol.value().abs() < f64::EPSILON {
-                let payoff: DualFwd = match c.payoff_type() {
+                let payoff: Recorded = match c.payoff_type() {
                     CapletFloorletType::Caplet => (fwd - effective_strike).into(),
-                    CapletFloorletType::Floorlet => (DualFwd::from(effective_strike) - fwd).into(),
+                    CapletFloorletType::Floorlet => (Recorded::from(effective_strike) - fwd).into(),
                 };
-                payoff.max(DualFwd::zero())
+                payoff.max(Recorded::zero())
             } else {
                 match c.payoff_type() {
                     CapletFloorletType::Caplet => black_call_ad(fwd, effective_strike, vol, tau)?,
@@ -404,7 +404,7 @@ mod tests {
 
     use super::ClosedFormBlackCapPricer;
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::{
             elements::{
                 curveelement::DiscountCurveElement,
@@ -424,7 +424,7 @@ mod tests {
             capfloor::{CapFloor, CapFloorTrade, CapFloorType},
             capletfloorlet::{CapletFloorlet, CapletFloorletType},
         },
-        math::probability::norm_cdf::norm_cdf,
+        math::probability::normcdf::norm_cdf,
         rates::{
             compounding::Compounding,
             interestrate::RateDefinition,
@@ -476,12 +476,12 @@ mod tests {
         anchor_strike: f64,
     ) -> Result<(
         MarketData,
-        FlatForwardTermStructure<DualFwd>,
-        Rc<RefCell<InterpolatedVolatilitySurface<DualFwd>>>,
+        FlatForwardTermStructure<Recorded>,
+        Rc<RefCell<InterpolatedVolatilitySurface<Recorded>>>,
     )> {
         let discount_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(risk_free_rate),
+            Recorded::from(risk_free_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("discount_rate".to_string());
@@ -500,15 +500,15 @@ mod tests {
                 TimeUnit::Days,
             ),
             BTreeMap::from([
-                (F64Key::new(strike_lo), DualFwd::from(flat_vol)),
-                (F64Key::new(strike_hi), DualFwd::from(flat_vol)),
+                (F64Key::new(strike_lo), Recorded::from(flat_vol)),
+                (F64Key::new(strike_hi), Recorded::from(flat_vol)),
             ]),
         );
         surface_points.insert(
             Period::new(i32::try_from(days_after_start).unwrap_or(0), TimeUnit::Days),
             BTreeMap::from([
-                (F64Key::new(strike_lo), DualFwd::from(flat_vol)),
-                (F64Key::new(strike_hi), DualFwd::from(flat_vol)),
+                (F64Key::new(strike_lo), Recorded::from(flat_vol)),
+                (F64Key::new(strike_hi), Recorded::from(flat_vol)),
             ]),
         );
 

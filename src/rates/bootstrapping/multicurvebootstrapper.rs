@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     calibration::{
         calibrationpricer::CalibrationInstrumentPricer, calibrationprocess::CalibrationProcess,
     },
@@ -226,7 +226,7 @@ impl<'a> MultiCurveBootstrapper<'a> {
     fn calibrated_term_structure(
         spec: &CurveConfiguration,
         calibrated: &BootstrappedCurve,
-    ) -> Result<DiscountTermStructure<DualFwd>> {
+    ) -> Result<DiscountTermStructure<Recorded>> {
         let mut dates = vec![spec.reference_date()?];
         dates.extend(spec.pillar_dates());
         let ad_dfs = calibrated.output_discount_factors().map_or_else(
@@ -234,12 +234,12 @@ impl<'a> MultiCurveBootstrapper<'a> {
                 calibrated
                     .discount_factors()
                     .iter()
-                    .map(|&df| DualFwd::new(df))
+                    .map(|&df| Recorded::new(df))
                     .collect()
             },
-            <[DualFwd]>::to_vec,
+            <[Recorded]>::to_vec,
         );
-        let mut curve = DiscountTermStructure::<DualFwd>::new(
+        let mut curve = DiscountTermStructure::<Recorded>::new(
             dates,
             ad_dfs,
             spec.day_counter(),
@@ -539,7 +539,7 @@ impl<'a> MultiCurveBootstrapper<'a> {
             quotes: curve_config
                 .quote_values()
                 .into_iter()
-                .map(DualFwd::new)
+                .map(Recorded::new)
                 .collect(),
             labels: curve_config.pillar_labels(),
         };
@@ -560,7 +560,7 @@ impl<'a> MultiCurveBootstrapper<'a> {
             }
             sensitivities
                 .quotes
-                .extend(dep.parent_quote_values.iter().copied().map(DualFwd::new));
+                .extend(dep.parent_quote_values.iter().copied().map(Recorded::new));
             sensitivities
                 .labels
                 .extend(dep.parent_pillar_labels.iter().cloned());
@@ -575,15 +575,15 @@ impl<'a> MultiCurveBootstrapper<'a> {
     fn build_ad_discount_factors(
         converged_x: &[f64],
         sensitivities: &CurveSensitivities,
-    ) -> Vec<DualFwd> {
+    ) -> Vec<Recorded> {
         let mut ad_dfs = Vec::with_capacity(converged_x.len() + 1);
-        ad_dfs.push(DualFwd::new(1.0));
+        ad_dfs.push(Recorded::new(1.0));
         for (&value, row) in converged_x.iter().zip(&sensitivities.matrix) {
-            let mut df_ad = DualFwd::new(value);
+            let mut df_ad = Recorded::new(value);
             for (&sensitivity, &quote) in row.iter().zip(&sensitivities.quotes) {
                 if sensitivity.abs() > 1e-16 {
-                    let delta = quote - DualFwd::new(quote.value());
-                    df_ad = (df_ad + DualFwd::new(sensitivity) * delta).into();
+                    let delta = quote - Recorded::new(quote.value());
+                    df_ad = (df_ad + Recorded::new(sensitivity) * delta).into();
                 }
             }
             ad_dfs.push(df_ad);
@@ -623,7 +623,7 @@ type FactorizedJacobian = LU<f64, Dyn, Dyn>;
 /// Quote coordinates and their aligned discount-factor sensitivity matrix.
 struct CurveSensitivities {
     matrix: Vec<Vec<f64>>,
-    quotes: Vec<DualFwd>,
+    quotes: Vec<Recorded>,
     labels: Vec<String>,
 }
 
@@ -750,7 +750,7 @@ impl VectorFunc<f64, f64> for BootstrapObjectiveFunc<'_> {}
 #[cfg(test)]
 mod tests {
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::makeinstrument::MakeInstrument,
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
@@ -1343,7 +1343,7 @@ mod tests {
         );
 
         let mut fx_store = FxStore::new();
-        fx_store.add_fx_rate(Currency::USD, Currency::EUR, DualFwd::new(1.08));
+        fx_store.add_fx_rate(Currency::USD, Currency::EUR, Recorded::new(1.08));
 
         let bootstrapper =
             MultiCurveBootstrapper::new(vec![sofr_spec, collateral_spec], default_policy())
@@ -1391,8 +1391,8 @@ mod tests {
         );
 
         let mut fx_store = FxStore::new();
-        fx_store.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::new(1.0 / 1.08));
-        fx_store.add_fx_rate(Currency::CLP, Currency::USD, DualFwd::new(900.0));
+        fx_store.add_fx_rate(Currency::EUR, Currency::USD, Recorded::new(1.0 / 1.08));
+        fx_store.add_fx_rate(Currency::CLP, Currency::USD, Recorded::new(900.0));
 
         let bootstrapper =
             MultiCurveBootstrapper::new(vec![sofr_spec, collateral_spec], default_policy())

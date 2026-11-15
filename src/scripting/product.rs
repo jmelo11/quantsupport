@@ -20,7 +20,7 @@ This attribution and license notice must be preserved at the top of this file.
 use std::sync::Arc;
 
 use crate::{
-    ad::compiled::Recorded,
+    ad::Recorded,
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,

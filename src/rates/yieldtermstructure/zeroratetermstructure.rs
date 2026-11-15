@@ -3,7 +3,7 @@ use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::{dual::DualFwd, forward::ADForward, scalar::Scalar},
+    ad::{forward::ADForward, scalar::Scalar, Recorded},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
@@ -22,7 +22,7 @@ use crate::{
 use super::interestratestermstructure::InterestRatesTermStructure;
 
 /// A dated zero-rate curve with explicit rate conventions and interpolation.
-/// With `T = DualFwd`, zero rates retain their AD links and expose labeled
+/// With `T = Recorded`, zero rates retain their AD links and expose labeled
 /// sensitivities through the [`Pillars`] trait.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(
@@ -416,16 +416,16 @@ macro_rules! impl_zero_curve {
 }
 
 impl_zero_curve!(f64);
-impl_zero_curve!(DualFwd);
+impl_zero_curve!(Recorded);
 
 impl ZeroRateTermStructure<f64> {
     /// Converts the zero rates to AD values while preserving conventions and labels.
     #[must_use]
-    pub fn to_dual(&self) -> ZeroRateTermStructure<DualFwd> {
+    pub fn to_dual(&self) -> ZeroRateTermStructure<Recorded> {
         ZeroRateTermStructure {
             reference_date: self.reference_date,
             dates: self.dates.clone(),
-            rates: self.rates.iter().copied().map(DualFwd::new).collect(),
+            rates: self.rates.iter().copied().map(Recorded::new).collect(),
             year_fractions: self.year_fractions.clone(),
             rate_definition: self.rate_definition,
             interpolator: self.interpolator,
@@ -435,8 +435,8 @@ impl ZeroRateTermStructure<f64> {
     }
 }
 
-impl Pillars<DualFwd> for ZeroRateTermStructure<DualFwd> {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl Pillars<Recorded> for ZeroRateTermStructure<Recorded> {
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.pillar_labels
             .as_ref()
             .map(|labels| labels.iter().cloned().zip(self.rates.iter()).collect())
@@ -447,15 +447,15 @@ impl Pillars<DualFwd> for ZeroRateTermStructure<DualFwd> {
     }
 
     fn put_pillars_on_tape(&mut self) {
-        self.rates.iter_mut().for_each(DualFwd::put_on_tape);
+        self.rates.iter_mut().for_each(Recorded::put_on_tape);
     }
 }
 
-impl ADCurveElement for ZeroRateTermStructure<DualFwd> {
+impl ADCurveElement for ZeroRateTermStructure<Recorded> {
     fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
         let mut curve = self.clone();
         for value in &mut curve.rates {
-            *value = DualFwd::constant(ADForward::constant(value.value()));
+            *value = Recorded::constant(ADForward::constant(value.value()));
         }
         Ok(Box::new(curve))
     }
@@ -630,11 +630,11 @@ mod tests {
         let reference = Date::new(2026, 1, 1);
         Tape::rewind_to_init_fwd();
         Tape::start_recording_fwd();
-        let input = DualFwd::new(0.01);
+        let input = Recorded::new(0.01);
         let curve = ZeroRateTermStructure::new(
             reference,
             vec![reference],
-            vec![input.mul_val(DualFwd::scalar(2.0))],
+            vec![input.mul_val(Recorded::scalar(2.0))],
             RateDefinition::new(
                 DayCounter::Actual365,
                 Compounding::Continuous,

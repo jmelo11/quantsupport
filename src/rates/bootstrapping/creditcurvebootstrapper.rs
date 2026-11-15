@@ -11,8 +11,8 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    ad::dual::DualFwd,
     ad::scalar::Scalar,
+    ad::Recorded,
     core::elements::curveelement::{CreditCurveElement, DiscountCurveElement},
     indices::marketindex::MarketIndex,
     math::solvers::{bisection::Bisection, solvertraits::ContFunc},
@@ -155,20 +155,20 @@ impl CreditCurveBootstrapper {
         let mut dates = Vec::with_capacity(n + 1);
         let mut survivals = Vec::with_capacity(n + 1);
         dates.push(ref_date);
-        survivals.push(DualFwd::scalar(1.0));
+        survivals.push(Recorded::scalar(1.0));
         for (d, s) in pillar_dates.iter().zip(&base_survivals) {
             dates.push(*d);
-            survivals.push(DualFwd::scalar(*s));
+            survivals.push(Recorded::scalar(*s));
         }
 
-        let curve = DiscountTermStructure::<DualFwd>::new(
+        let curve = DiscountTermStructure::<Recorded>::new(
             dates,
             survivals,
             spec.day_counter(),
             spec.interpolator(),
             spec.enable_extrapolation(),
         )?
-        .with_pillar_values(spreads.iter().map(|s| DualFwd::scalar(*s)).collect())?
+        .with_pillar_values(spreads.iter().map(|s| Recorded::scalar(*s)).collect())?
         .with_pillar_labels(labels)?
         .with_ift_sensitivities(jacobian);
 
@@ -358,12 +358,12 @@ mod tests {
                     .expect("valid date advancement")
             })
             .collect();
-        let dfs: Vec<DualFwd> = dates
+        let dfs: Vec<Recorded> = dates
             .iter()
-            .map(|d| DualFwd::scalar((-rate * dc.year_fraction(ref_date, *d)).exp()))
+            .map(|d| Recorded::scalar((-rate * dc.year_fraction(ref_date, *d)).exp()))
             .collect();
         let curve =
-            DiscountTermStructure::<DualFwd>::new(dates, dfs, dc, Interpolator::LogLinear, true)?;
+            DiscountTermStructure::<Recorded>::new(dates, dfs, dc, Interpolator::LogLinear, true)?;
         Ok(DiscountCurveElement::new(
             MarketIndex::SOFR,
             std::rc::Rc::new(std::cell::RefCell::new(curve)),

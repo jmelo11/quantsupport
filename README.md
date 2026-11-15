@@ -51,7 +51,7 @@ fn main() -> Result<()> {
     let maturity_date = Date::new(2029, 1, 15);
     let notional = 10_000_000.0;
 
-    let swap = MakeSwap::<DualFwd>::default()
+    let swap = MakeSwap::<Recorded>::default()
         .with_identifier("USD_IRS_5Y".to_string())
         .with_start_date(valuation_date)
         .with_maturity_date(maturity_date)
@@ -72,7 +72,7 @@ fn main() -> Result<()> {
 
     let curve = FlatForwardTermStructure::new(
         valuation_date,
-        DualFwd::from(0.03),
+        Recorded::from(0.03),
         RateDefinition::new(
             DayCounter::Actual360,
             Compounding::Continuous,
@@ -93,7 +93,7 @@ fn main() -> Result<()> {
         .with_base_currency(Currency::USD)
         .with_constructed_elements(elements);
 
-    let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
+    let pricer = DiscountedCashflowPricer::<Swap<Recorded>, SwapTrade<Recorded>>::new();
     let requests = [
         Request::Value,
         Request::FairRate(0),

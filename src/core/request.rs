@@ -1,5 +1,5 @@
 use crate::{
-    ad::{compiled::Recorded, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         cashflowaggregation::CouponDetails,
         collateral::Discountable,
@@ -431,7 +431,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        ad::compiled::Recorded,
+        ad::Recorded,
         core::{instrument::AssetClass, trade::Side},
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,

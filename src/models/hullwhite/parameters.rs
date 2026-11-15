@@ -1,7 +1,7 @@
 //! Resolved Hull–White parameters and differentiable calibration state.
 use crate::rates::yieldtermstructure::primalcurve::PrimalCurve;
 use crate::{
-    ad::{compiled::Recorded, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::marketdatahandling::marketdata::MarketData,
     indices::marketindex::MarketIndex,
     models::{

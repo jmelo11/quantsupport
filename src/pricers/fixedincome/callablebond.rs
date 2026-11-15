@@ -3,7 +3,7 @@ use super::bondevents::{bond_event_grid, BondEventGrid};
 use super::bondpricer::{contractual_market_request, BondValuation};
 use crate::instruments::fixedincome::bondterms::BondTerms;
 use crate::{
-    ad::{compiled::Recorded, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,

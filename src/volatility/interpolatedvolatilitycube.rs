@@ -1,6 +1,6 @@
 use crate::core::marketdatahandling::constructedelementstore::SharedElement;
 use crate::{
-    ad::{dual::DualFwd, forward::ADForward, scalar::Scalar},
+    ad::{forward::ADForward, scalar::Scalar, Recorded},
     core::{elements::volatilitycubelement::ADVolatilityCubeElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     math::interpolation::{
@@ -161,8 +161,8 @@ impl<T: BilinearValue> VolatilityCube<T> for InterpolatedVolatilityCube<T> {
     }
 }
 
-impl Pillars<DualFwd> for InterpolatedVolatilityCube<DualFwd> {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl Pillars<Recorded> for InterpolatedVolatilityCube<Recorded> {
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.labels.as_ref().map(|labels| {
             labels
                 .iter()
@@ -191,7 +191,7 @@ impl Pillars<DualFwd> for InterpolatedVolatilityCube<DualFwd> {
     }
 }
 
-impl ADVolatilityCubeElement for InterpolatedVolatilityCube<DualFwd> {
+impl ADVolatilityCubeElement for InterpolatedVolatilityCube<Recorded> {
     fn clone_cube(&self) -> Result<SharedElement<dyn ADVolatilityCubeElement>> {
         let mut market = self.clone();
         for value in market
@@ -200,7 +200,7 @@ impl ADVolatilityCubeElement for InterpolatedVolatilityCube<DualFwd> {
             .flat_map(|values| values.values_mut())
             .flat_map(|values| values.values_mut())
         {
-            *value = DualFwd::constant(ADForward::constant(value.value()));
+            *value = Recorded::constant(ADForward::constant(value.value()));
         }
         Ok(Rc::new(RefCell::new(market)))
     }
@@ -211,7 +211,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         indices::marketindex::MarketIndex,
         math::interpolation::extrapolation::ExtrapolationPolicy,
         time::{date::Date, enums::TimeUnit, period::Period},
@@ -271,16 +271,16 @@ mod tests {
     }
 
     #[test]
-    fn cube_interpolates_interior_dualfwd() {
+    fn cube_interpolates_interior_recorded() {
         let f64_cube = build_cube_f64();
-        // rebuild with DualFwd values
+        // rebuild with Recorded values
         let mut points = BTreeMap::new();
         for (exp, tenor_map) in f64_cube.points.iter() {
             let mut dm = BTreeMap::new();
             for (tenor, smile) in tenor_map {
-                let ds: BTreeMap<F64Key, DualFwd> = smile
+                let ds: BTreeMap<F64Key, Recorded> = smile
                     .iter()
-                    .map(|(k, v)| (k.clone(), DualFwd::from(*v)))
+                    .map(|(k, v)| (k.clone(), Recorded::from(*v)))
                     .collect();
                 dm.insert(*tenor, ds);
             }
@@ -301,7 +301,7 @@ mod tests {
                 Period::new(3, TimeUnit::Years),
                 0.035,
             )
-            .expect("cube interpolation DualFwd");
+            .expect("cube interpolation Recorded");
         assert!((vol.value() - 0.245_035).abs() < 1e-10);
     }
 

@@ -96,7 +96,7 @@ the two: changing a deposit, swap or bond quote changes the solved discount
 factors and hence the value of a trade. On some directly constructed curves,
 the pricing nodes themselves are the independent risk inputs.
 
-`Pillars<DualFwd>` exposes labels, values and tape-registration operations.
+`Pillars<Recorded>` exposes labels, values and tape-registration operations.
 Calibration supplies a Jacobian to connect pricing nodes to independent market
 inputs. A derivative labeled `OIS_USD_SOFR_5Y` is therefore a derivative with
 respect to that quoted contract, not necessarily a five-year zero rate or a

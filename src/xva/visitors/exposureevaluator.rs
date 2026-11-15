@@ -5,11 +5,11 @@
 //!
 //! Two modes:
 //! - `evaluate` -- generic `T`, returns NPV cubes only.
-//! - `evaluate_with_xva` -- `DualFwd`-only free function, returns cubes
+//! - `evaluate_with_xva` -- `Recorded`-only free function, returns cubes
 //!   plus XVA values and sensitivities.
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar, tape::Tape},
+    ad::{scalar::Scalar, tape::Tape, Recorded},
     math::solvers::solvertraits::Matrix,
     time::date::Date,
     utils::errors::{QSError, Result},
@@ -242,16 +242,16 @@ impl<'a, T: Scalar + 'static> ExposureEvaluator<'a, T> {
 
 /// Callback type for [`XvaModelSetup::with_model`].
 ///
-/// Receives a thread-local `MarketModel<DualFwd>` and the tracked
-/// `(label, DualFwd)` leaves, returns an arbitrary `Result<R>`.
+/// Receives a thread-local `MarketModel<Recorded>` and the tracked
+/// `(label, Recorded)` leaves, returns an arbitrary `Result<R>`.
 pub type ModelCallback<'a, R> =
-    dyn FnMut(&dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> Result<R> + 'a;
+    dyn FnMut(&dyn MarketModel<Recorded>, &[(String, Recorded)]) -> Result<R> + 'a;
 
 /// Per-thread model construction for the Savine parallel AAD loop.
 ///
 /// Each rayon thread calls [`with_model`](Self::with_model) once. The
-/// implementation creates owned `DualFwd` curves, calls
-/// `put_pillars_on_tape`, builds a `MarketModel<DualFwd>` that borrows
+/// implementation creates owned `Recorded` curves, calls
+/// `put_pillars_on_tape`, builds a `MarketModel<Recorded>` that borrows
 /// those curves, and invokes the callback with the model and its tracked
 /// leaves. Everything stays on the stack of `with_model`, so no
 /// self-referential struct is needed.
@@ -263,9 +263,9 @@ pub trait XvaModelSetup: Send + Sync {
     ///
     /// Must be called after `start_recording_fwd` and before
     /// `set_mark_fwd`. The callback receives:
-    /// - `model` -- a `MarketModel<DualFwd>` whose curves have pillars on
+    /// - `model` -- a `MarketModel<Recorded>` whose curves have pillars on
     ///   the current thread's tape.
-    /// - `leaves` -- tracked `(label, DualFwd)` pairs whose adjoints carry
+    /// - `leaves` -- tracked `(label, Recorded)` pairs whose adjoints carry
     ///   curve sensitivities after the backward pass.
     /// # Errors
     /// Returns an error if model construction or callback execution fails.
@@ -305,9 +305,9 @@ impl VariationMarginSimulation {
     /// Applies the configured variation-margin terms to one exposure path.
     fn adjust_path(
         &self,
-        npvs: &[DualFwd],
-        scenario: &PathScenario<DualFwd>,
-    ) -> Result<Vec<DualFwd>> {
+        npvs: &[Recorded],
+        scenario: &PathScenario<Recorded>,
+    ) -> Result<Vec<Recorded>> {
         if !self.terms.variation_margin {
             return Ok(npvs.to_vec());
         }
@@ -320,7 +320,7 @@ impl VariationMarginSimulation {
             .enumerate()
             .map(|(date_index, &npv)| {
                 let accrual = if date_index == 0 {
-                    DualFwd::one()
+                    Recorded::one()
                 } else {
                     let discount = self
                         .accrual_request_indices
@@ -335,7 +335,7 @@ impl VariationMarginSimulation {
                             "CSA remuneration discount must be finite and positive".into(),
                         ));
                     }
-                    DualFwd::one().div_val(discount)
+                    Recorded::one().div_val(discount)
                 };
                 let fx = if let Some(slot) = self.fx_request_index {
                     scenario
@@ -346,7 +346,7 @@ impl VariationMarginSimulation {
                             QSError::EvaluationErr("Missing CSA collateral FX rate".into())
                         })?
                 } else {
-                    DualFwd::one()
+                    Recorded::one()
                 };
                 if !fx.value().is_finite() || fx.value() <= 0.0 {
                     return Err(QSError::InvalidValueErr(
@@ -497,15 +497,15 @@ where
                     Tape::rewind_to_mark_fwd();
 
                     let scenario = model.generate_path(i)?;
-                    let mut total = DualFwd::zero();
-                    let mut ns_npvs = vec![vec![DualFwd::zero(); n_dates]; ns_ids.len()];
+                    let mut total = Recorded::zero();
+                    let mut ns_npvs = vec![vec![Recorded::zero(); n_dates]; ns_ids.len()];
                     let mut ns_npvs_f64 = vec![vec![0.0_f64; n_dates]; ns_ids.len()];
 
                     for (date_index, active_claims) in active_claims_by_date.iter().enumerate() {
                         let date_responses = &scenario[date_index];
                         for &(ns_index, claim) in active_claims {
                             let value =
-                                claim.evaluate_dualfwd(dates[date_index], date_responses)?;
+                                claim.evaluate_recorded(dates[date_index], date_responses)?;
                             ns_npvs[ns_index][date_index] =
                                 ns_npvs[ns_index][date_index].add_val(value);
                             ns_npvs_f64[ns_index][date_index] += value.value();
@@ -783,7 +783,7 @@ impl crate::utils::plot::Plot for NpvCube {
 mod tests {
     use super::*;
     use crate::{
-        ad::{dual::DualFwd, scalar::Scalar},
+        ad::{scalar::Scalar, Recorded},
         core::{
             collateral::SingleCurveCSADiscountPolicy, makeinstrument::MakeInstrument,
             pillars::Pillars, trade::Side,
@@ -850,22 +850,22 @@ mod tests {
             accrual_request_indices: vec![0],
             fx_request_index: Some(1),
         };
-        let mut scenario: PathScenario<DualFwd> = [2.0, 2.2]
+        let mut scenario: PathScenario<Recorded> = [2.0, 2.2]
             .into_iter()
             .map(|fx| {
                 vec![
                     SimulationResponse {
-                        discounts: Some(DualFwd::one()),
+                        discounts: Some(Recorded::one()),
                         ..SimulationResponse::default()
                     },
                     SimulationResponse {
-                        fx_rates: Some(DualFwd::scalar(fx)),
+                        fx_rates: Some(Recorded::scalar(fx)),
                         ..SimulationResponse::default()
                     },
                 ]
             })
             .collect();
-        let npvs = [DualFwd::scalar(200.0), DualFwd::scalar(220.0)];
+        let npvs = [Recorded::scalar(200.0), Recorded::scalar(220.0)];
         let adjusted = margin.adjust_path(&npvs, &scenario)?;
         assert_eq!(adjusted[0].value(), 20.0);
         assert_eq!(adjusted[1].value(), 22.0);
@@ -875,12 +875,12 @@ mod tests {
         scenario[0][0].discounts = None;
         assert!(margin.adjust_path(&npvs, &scenario).is_err());
         for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-            scenario[0][0].discounts = Some(DualFwd::scalar(invalid));
+            scenario[0][0].discounts = Some(Recorded::scalar(invalid));
             assert!(margin.adjust_path(&npvs, &scenario).is_err());
-            scenario[0][0].discounts = Some(DualFwd::one());
-            scenario[0][1].fx_rates = Some(DualFwd::scalar(invalid));
+            scenario[0][0].discounts = Some(Recorded::one());
+            scenario[0][1].fx_rates = Some(Recorded::scalar(invalid));
             assert!(margin.adjust_path(&npvs, &scenario).is_err());
-            scenario[0][1].fx_rates = Some(DualFwd::scalar(2.0));
+            scenario[0][1].fx_rates = Some(Recorded::scalar(2.0));
         }
         Ok(())
     }
@@ -918,21 +918,21 @@ mod tests {
         }
 
         fn with_model<R>(&self, dates: &[Date], callback: &mut ModelCallback<'_, R>) -> Result<R> {
-            let dfs: Vec<DualFwd> = self
+            let dfs: Vec<Recorded> = self
                 .discount_factors
                 .iter()
-                .map(|&v| DualFwd::scalar(v))
+                .map(|&v| Recorded::scalar(v))
                 .collect();
 
             let n_inner = self.discount_factors.len() - 1;
-            let pillar_values: Vec<DualFwd> = self.discount_factors[1..]
+            let pillar_values: Vec<Recorded> = self.discount_factors[1..]
                 .iter()
-                .map(|&v| DualFwd::scalar(v))
+                .map(|&v| Recorded::scalar(v))
                 .collect();
             let pillar_labels: Vec<String> =
                 (0..n_inner).map(|i| format!("DF_{}", i + 1)).collect();
 
-            let mut curve = DiscountTermStructure::<DualFwd>::new(
+            let mut curve = DiscountTermStructure::<Recorded>::new(
                 self.curve_dates.clone(),
                 dfs,
                 self.dc,
@@ -947,7 +947,7 @@ mod tests {
 
             curve.put_pillars_on_tape();
 
-            let leaves: Vec<(String, DualFwd)> = curve
+            let leaves: Vec<(String, Recorded)> = curve
                 .pillars()
                 .unwrap_or_default()
                 .into_iter()
@@ -955,8 +955,8 @@ mod tests {
                 .collect();
 
             let rate_model = LgmRateModel::new(
-                DualFwd::scalar(self.lambda),
-                DualFwd::scalar(self.sigma),
+                Recorded::scalar(self.lambda),
+                Recorded::scalar(self.sigma),
                 &curve,
             );
 

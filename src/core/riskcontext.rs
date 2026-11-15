@@ -6,9 +6,9 @@ use nalgebra::DMatrix;
 
 use crate::{
     ad::{
-        dual::DualFwd,
         forward::ADForward,
         tape::{Tape, TapeHolder},
+        Recorded,
     },
     calibration::impliedquote::ImpliedQuotePricer,
     core::{
@@ -167,7 +167,7 @@ impl Projection {
             labels,
             values: values
                 .into_iter()
-                .map(|value| DualFwd::constant(ADForward::constant(value)))
+                .map(|value| Recorded::constant(ADForward::constant(value)))
                 .collect(),
             mapping,
         }))
@@ -309,8 +309,8 @@ impl PricingContext {
                 }
                 Tape::reset_adjoints_fwd();
                 let factor = curve.discount_factor(date)?;
-                let rate = InterestRate::<DualFwd>::implied_rate(
-                    (DualFwd::one() / factor).into(),
+                let rate = InterestRate::<Recorded>::implied_rate(
+                    (Recorded::one() / factor).into(),
                     definition.day_counter(),
                     definition.compounding(),
                     definition.frequency(),
@@ -496,12 +496,12 @@ impl Drop for ScratchTape {
 struct MappedCurve {
     inner: Box<dyn ADCurveElement>,
     labels: Vec<String>,
-    values: Vec<DualFwd>,
+    values: Vec<Recorded>,
     mapping: Vec<Vec<f64>>,
 }
 
-impl Pillars<DualFwd> for MappedCurve {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl Pillars<Recorded> for MappedCurve {
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         Some(self.labels.iter().cloned().zip(&self.values).collect())
     }
     fn pillar_labels(&self) -> Option<Vec<String>> {
@@ -509,7 +509,7 @@ impl Pillars<DualFwd> for MappedCurve {
     }
 
     fn put_pillars_on_tape(&mut self) {
-        self.values.iter_mut().for_each(DualFwd::put_on_tape);
+        self.values.iter_mut().for_each(Recorded::put_on_tape);
         self.inner.put_pillars_on_tape();
         // Target leaves precede native leaves, which precede all curve operations.
         // Linking the native leaves therefore preserves reverse tape ordering.
@@ -543,18 +543,18 @@ impl ADCurveElement for MappedCurve {
             values: self
                 .values
                 .iter()
-                .map(|value| DualFwd::constant(ADForward::constant(value.value())))
+                .map(|value| Recorded::constant(ADForward::constant(value.value())))
                 .collect(),
             mapping: self.mapping.clone(),
         }))
     }
 }
 
-impl InterestRatesTermStructure<DualFwd> for MappedCurve {
+impl InterestRatesTermStructure<Recorded> for MappedCurve {
     fn reference_date(&self) -> Date {
         self.inner.reference_date()
     }
-    fn discount_factor(&self, date: Date) -> Result<DualFwd> {
+    fn discount_factor(&self, date: Date) -> Result<Recorded> {
         self.inner.discount_factor(date)
     }
     fn forward_rate(
@@ -563,19 +563,19 @@ impl InterestRatesTermStructure<DualFwd> for MappedCurve {
         end: Date,
         comp: Compounding,
         freq: Frequency,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         self.inner.forward_rate(start, end, comp, freq)
     }
-    fn nodes(&self) -> Option<Vec<(Date, DualFwd)>> {
+    fn nodes(&self) -> Option<Vec<(Date, Recorded)>> {
         self.inner.nodes()
     }
     fn day_counter(&self) -> Option<DayCounter> {
         self.inner.day_counter()
     }
-    fn discount_factor_from_time(&self, time: f64) -> Result<DualFwd> {
+    fn discount_factor_from_time(&self, time: f64) -> Result<Recorded> {
         self.inner.discount_factor_from_time(time)
     }
-    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<Recorded> {
         self.inner.forward_rate_from_time(start, end)
     }
 }

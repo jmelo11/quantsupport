@@ -1,5 +1,5 @@
 use crate::{
-    ad::compiled::Recorded,
+    ad::Recorded,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     models::hullwhite::hullwhitecalibrationquality::HullWhiteCalibrationQuality,

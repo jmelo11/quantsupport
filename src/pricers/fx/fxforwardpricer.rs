@@ -1,5 +1,6 @@
 use crate::{
-    ad::{dual::DualFwd, tape::Tape}, core::{
+    ad::{tape::Tape, Recorded},
+    core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::{AssetClass, Instrument},
@@ -14,7 +15,12 @@ use crate::{
         pricerstate::PricerState,
         request::{HandleFairRate, HandleSensitivities, HandleValue, Request},
         trade::Trade,
-    }, currencies::currency::Currency, indices::{fxpair::FxPair, marketindex::MarketIndex}, instruments::fx::fxforward::{FxForward, FxForwardTrade}, time::date::Date, utils::errors::{QSError, Result},
+    },
+    currencies::currency::Currency,
+    indices::{fxpair::FxPair, marketindex::MarketIndex},
+    instruments::fx::fxforward::{FxForward, FxForwardTrade},
+    time::date::Date,
+    utils::errors::{QSError, Result},
 };
 use std::collections::HashSet;
 
@@ -82,7 +88,7 @@ impl Default for FxForwardPricer {
 #[derive(Default)]
 struct FxForwardState {
     evaluation_date: Date,
-    value: Option<DualFwd>,
+    value: Option<Recorded>,
     market_data: Option<MarketData>,
 }
 
@@ -118,20 +124,18 @@ impl FxForwardState {
         instrument: &FxForward,
         base_index: &MarketIndex,
         quote_index: &MarketIndex,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let fixing = instrument.fixing_date();
         if self
             .get_market_data_reponse()
             .is_some_and(MarketData::anchor_fixings)
         {
             if let Some(date) = fixing.filter(|date| *date < self.evaluation_date) {
-                let pair = MarketIndex::FxPair(
-                    FxPair::new(
-                        instrument.base_currency(),
-                        instrument.quote_currency(),
-                    )?,
-                );
-                return self.get_fixing(&pair, date).map(DualFwd::from);
+                let pair = MarketIndex::FxPair(FxPair::new(
+                    instrument.base_currency(),
+                    instrument.quote_currency(),
+                )?);
+                return self.get_fixing(&pair, date).map(Recorded::from);
             }
         }
         let date = fixing.unwrap_or_else(|| instrument.delivery_date());
@@ -190,11 +194,11 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
         };
 
         // NPV = notional * (F_model - K) * DF_quote * side
-        let notional = DualFwd::new(trade.notional());
-        let npv: DualFwd = inst.forward_price().map_or_else(
+        let notional = Recorded::new(trade.notional());
+        let npv: Recorded = inst.forward_price().map_or_else(
             || (notional * forward * factor).into(),
             |k| {
-                let side = DualFwd::new(trade.side().sign());
+                let side = Recorded::new(trade.side().sign());
                 (notional * (forward - k) * factor * side).into()
             },
         );
@@ -423,7 +427,7 @@ impl Pricer for FxForwardPricer {
 mod tests {
     use super::FxForwardPricer;
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::{
             collateral::DiscountPolicy,
             elements::curveelement::DiscountCurveElement,
@@ -522,13 +526,13 @@ mod tests {
     ) -> Result<MarketData> {
         let base_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(base_rate),
+            Recorded::from(base_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("base_rate".to_string());
         let quote_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(quote_rate),
+            Recorded::from(quote_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("quote_rate".to_string());
@@ -544,7 +548,7 @@ mod tests {
         );
 
         let mut fx_store = FxStore::new();
-        fx_store.add_fx_rate(BASE_CCY, QUOTE_CCY, DualFwd::new(spot));
+        fx_store.add_fx_rate(BASE_CCY, QUOTE_CCY, Recorded::new(spot));
 
         Ok(MarketData::new(HashMap::new(), constructed_elements).with_fx_store(fx_store))
     }
@@ -593,12 +597,12 @@ mod tests {
     ) -> Result<(f64, f64)> {
         let base_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(base_rate),
+            Recorded::from(base_rate),
             RateDefinition::default(),
         );
         let quote_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(quote_rate),
+            Recorded::from(quote_rate),
             RateDefinition::default(),
         );
         Ok((

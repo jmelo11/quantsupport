@@ -7,10 +7,10 @@
 //! Apply payment discounting and contract scaling separately.
 
 use crate::{
-    ad::{dual::DualFwd, expr::FloatExt},
+    ad::{expr::FloatExt, Recorded},
     math::probability::{
-        norm_cdf::{norm_cdf, NormCDF},
         norm_pdf::norm_pdf,
+        normcdf::{norm_cdf, NormCDF},
     },
     rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     time::{date::Date, daycounter::DayCounter, enums::TimeUnit, period::Period},
@@ -97,7 +97,7 @@ pub fn bachelier_call(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<f64> 
 }
 
 // ---------------------------------------------------------------------------
-// DualFwd (AD-enabled) variants
+// Recorded (AD-enabled) variants
 // ---------------------------------------------------------------------------
 
 /// Black forward-price `d1` and `d2` (AD-enabled).
@@ -111,7 +111,12 @@ pub fn bachelier_call(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<f64> 
 /// Returns an error if `strike` or `tau` are non-positive.
 /// Forward, volatility, and input finiteness are not checked; invalid inputs
 /// can produce nonfinite outputs rather than errors.
-pub fn d1_d2_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<(DualFwd, DualFwd)> {
+pub fn d1_d2_ad(
+    fwd: Recorded,
+    strike: f64,
+    vol: Recorded,
+    tau: f64,
+) -> Result<(Recorded, Recorded)> {
     if strike <= 0.0 {
         return Err(QSError::InvalidValueErr("strike must be positive".into()));
     }
@@ -121,8 +126,8 @@ pub fn d1_d2_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<(Du
         ));
     }
     let sqrt_tau = tau.sqrt();
-    let d1: DualFwd = ((fwd / strike).ln() / (vol * sqrt_tau) + vol * sqrt_tau * 0.5).into();
-    let d2: DualFwd = (d1 - vol * sqrt_tau).into();
+    let d1: Recorded = ((fwd / strike).ln() / (vol * sqrt_tau) + vol * sqrt_tau * 0.5).into();
+    let d2: Recorded = (d1 - vol * sqrt_tau).into();
     Ok((d1, d2))
 }
 
@@ -136,7 +141,7 @@ pub fn d1_d2_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<(Du
 ///
 /// # Errors
 /// Returns an error if d₁/d₂ computation fails.
-pub fn black_call_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<DualFwd> {
+pub fn black_call_ad(fwd: Recorded, strike: f64, vol: Recorded, tau: f64) -> Result<Recorded> {
     let (d1, d2) = d1_d2_ad(fwd, strike, vol, tau)?;
     Ok((fwd * norm_cdf(d1) - norm_cdf(d2) * strike).into())
 }
@@ -151,10 +156,10 @@ pub fn black_call_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Resul
 ///
 /// # Errors
 /// Returns an error if d₁/d₂ computation fails.
-pub fn black_put_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<DualFwd> {
+pub fn black_put_ad(fwd: Recorded, strike: f64, vol: Recorded, tau: f64) -> Result<Recorded> {
     let (d1, d2) = d1_d2_ad(fwd, strike, vol, tau)?;
-    let neg_d2: DualFwd = (-d2).into();
-    let neg_d1: DualFwd = (-d1).into();
+    let neg_d2: Recorded = (-d2).into();
+    let neg_d1: Recorded = (-d1).into();
     Ok((norm_cdf(neg_d2) * strike - fwd * norm_cdf(neg_d1)).into())
 }
 

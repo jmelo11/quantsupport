@@ -23,7 +23,7 @@
 use std::cell::Ref;
 
 use crate::{
-    ad::compiled::Recorded,
+    ad::Recorded,
     core::elements::volatilitysurfaceelement::{
         ADVolatilitySurfaceElement, VolatilitySurfaceElement,
     },

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::{constant::Const, dual::DualFwd, expr::FloatExt, scalar::Scalar},
+    ad::{constant::Const, expr::FloatExt, scalar::Scalar, Recorded},
     time::{date::Date, daycounter::DayCounter, enums::Frequency},
     utils::errors::{QSError, Result},
 };
@@ -174,14 +174,14 @@ where
     }
 }
 
-impl From<InterestRate<f64>> for InterestRate<DualFwd> {
+impl From<InterestRate<f64>> for InterestRate<Recorded> {
     fn from(value: InterestRate<f64>) -> Self {
-        Self::from_rate_definition(DualFwd::new(value.rate().value()), value.rate_definition())
+        Self::from_rate_definition(Recorded::new(value.rate().value()), value.rate_definition())
     }
 }
 
-impl From<InterestRate<DualFwd>> for InterestRate<f64> {
-    fn from(value: InterestRate<DualFwd>) -> Self {
+impl From<InterestRate<Recorded>> for InterestRate<f64> {
+    fn from(value: InterestRate<Recorded>) -> Self {
         Self::from_rate_definition(value.rate().value(), value.rate_definition())
     }
 }
@@ -299,14 +299,14 @@ impl InterestRate<f64> {
     }
 }
 
-impl InterestRate<DualFwd> {
+impl InterestRate<Recorded> {
     /// Calculates the implied interest rate from a compound factor.
     ///
     /// # Errors
     /// Returns an error if the compound factor or time are invalid for the
     /// requested compounding convention.
     pub fn implied_rate(
-        compound: DualFwd,
+        compound: Recorded,
         result_dc: DayCounter,
         comp: Compounding,
         freq: Frequency,
@@ -318,7 +318,7 @@ impl InterestRate<DualFwd> {
             ));
         }
         // NOTE: Unlike the f64 version we do NOT short-circuit when
-        // compound ≈ 1.  Returning `DualFwd::zero()` would sever the
+        // compound ≈ 1.  Returning `Recorded::zero()` would sever the
         // connection to the AD tape and produce a zero-row Jacobian,
         // which breaks Newton solvers that rely on AD derivatives
         // (e.g. multi-curve bootstrapping).  The normal formulas below
@@ -327,7 +327,7 @@ impl InterestRate<DualFwd> {
             // The only safe early-out: when time is non-positive AND
             // compound ≈ 1 the rate is mathematically 0.  Otherwise error.
             if (compound.value() - 1.0).abs() < 1e-12 {
-                return Ok(Self::new(DualFwd::zero(), comp, freq, result_dc));
+                return Ok(Self::new(Recorded::zero(), comp, freq, result_dc));
             }
             return Err(QSError::InvalidValueErr(
                 "Positive time required".to_string(),
@@ -370,7 +370,7 @@ impl InterestRate<DualFwd> {
 
     /// Calculates the compound factor between two dates using the day counter.
     #[must_use]
-    pub fn compound_factor(&self, start: Date, end: Date) -> DualFwd {
+    pub fn compound_factor(&self, start: Date, end: Date) -> Recorded {
         let day_counter = self.day_counter();
         let year_fraction = day_counter.year_fraction(start, end); // for now
         self.compound_factor_from_yf(year_fraction)
@@ -378,7 +378,7 @@ impl InterestRate<DualFwd> {
 
     /// Calculates the compound factor from a year fraction.
     #[must_use]
-    pub fn compound_factor_from_yf(&self, year_fraction: f64) -> DualFwd {
+    pub fn compound_factor_from_yf(&self, year_fraction: f64) -> Recorded {
         let rate = self.rate();
         let compounding = self.compounding();
         let f = f64::from(self.frequency() as i32);
@@ -405,7 +405,7 @@ impl InterestRate<DualFwd> {
 
     /// Calculates the discount factor between two dates.
     #[must_use]
-    pub fn discount_factor(&self, start: Date, end: Date) -> DualFwd {
+    pub fn discount_factor(&self, start: Date, end: Date) -> Recorded {
         (Const::one() / self.compound_factor(start, end)).into()
     }
 
@@ -420,7 +420,7 @@ impl InterestRate<DualFwd> {
         _end_date: Date,
         _comp: Compounding,
         _freq: Frequency,
-    ) -> DualFwd {
+    ) -> Recorded {
         self.rate
     }
 }

@@ -1,7 +1,7 @@
 //! Numerical clean/dirty quote conversion, yield solving and duration analytics.
 use super::bondpricer::ResolvedCashflow;
 use crate::{
-    ad::compiled::Recorded,
+    ad::Recorded,
     instruments::{
         cashflows::{
             cashflowtype::CashflowType,

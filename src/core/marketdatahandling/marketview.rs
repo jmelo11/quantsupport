@@ -632,7 +632,7 @@ impl MarketDataProvider for MarketView<'_> {
 mod tests {
     use super::*;
     use crate::prelude::{
-        ADForward, CurveConfiguration, DualFwd, QuoteStore, ScenarioType, Shock, Tape,
+        ADForward, CurveConfiguration, QuoteStore, Recorded, ScenarioType, Shock, Tape,
     };
     use crate::{
         currencies::currency::Currency,
@@ -795,7 +795,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             base_nodes
         );
-        let factor: DualFwd = curve.curve().discount_factor(Date::new(2027, 2, 24))?;
+        let factor: Recorded = curve.curve().discount_factor(Date::new(2027, 2, 24))?;
         factor.backward()?;
         assert!(element
             .curve()

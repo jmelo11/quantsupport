@@ -109,7 +109,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ad::{compiled::Recorded, scalar::Scalar},
+        ad::{scalar::Scalar, Recorded},
         core::{
             elements::curveelement::DiscountCurveElement,
             marketdatahandling::constructedelementstore::ConstructedElementStore,

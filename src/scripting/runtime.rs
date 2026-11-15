@@ -22,7 +22,7 @@ use std::{collections::HashMap, ops::Range};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
-    ad::{dual::DualFwd, tape::Tape},
+    ad::{tape::Tape, Recorded},
     core::marketdatahandling::discountrequest::DiscountRequest,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -114,11 +114,11 @@ pub struct ScriptEngine {
 /// Callback used by [`ScriptModelSetup`] to expose a model whose AD leaves
 /// belong to the calling Rayon worker's thread-local tape.
 pub type ScriptModelCallback<'a, R> =
-    dyn FnMut(&mut dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> Result<R> + 'a;
+    dyn FnMut(&mut dyn MarketModel<Recorded>, &[(String, Recorded)]) -> Result<R> + 'a;
 
 /// Factory for rebuilding a script market model on each Rayon worker.
 ///
-/// A [`DualFwd`] value contains a pointer into a thread-local reverse-mode
+/// A [`Recorded`] value contains a pointer into a thread-local reverse-mode
 /// tape. Consequently, parallel pricing must rebuild curves, model
 /// parameters, and tracked leaves inside each worker instead of sharing one
 /// model created on the caller's tape.
@@ -354,7 +354,7 @@ impl ScriptEngine {
     /// When `result_variable` is `Some`, the accumulated mark adjoints are
     /// propagated to the start of the tape after the loop, so leaves recorded
     /// before this call (curve pillar quotes, model parameters) expose
-    /// `d(mean result)/d(leaf)` through [`adjoint`](DualFwd::adjoint).
+    /// `d(mean result)/d(leaf)` through [`adjoint`](Recorded::adjoint).
     /// Callers must NOT run their own backward pass.
     ///
     /// When eligible rate observations are present, the selected result uses
@@ -368,7 +368,7 @@ impl ScriptEngine {
     /// propagation fails, or the model supplies zero paths.
     pub fn evaluate(
         &self,
-        model: &mut dyn MarketModel<DualFwd>,
+        model: &mut dyn MarketModel<Recorded>,
         result_variable: Option<&str>,
     ) -> Result<HashMap<String, f64>> {
         self.evaluate_with_cashflows(model, result_variable)
@@ -386,7 +386,7 @@ impl ScriptEngine {
     /// [`evaluate`](Self::evaluate).
     pub fn evaluate_with_cashflows(
         &self,
-        model: &mut dyn MarketModel<DualFwd>,
+        model: &mut dyn MarketModel<Recorded>,
         result_variable: Option<&str>,
     ) -> Result<(HashMap<String, f64>, Vec<ExpectedCashflow>)> {
         if let Some(name) = result_variable {
@@ -461,7 +461,7 @@ impl ScriptEngine {
             let scenario = self.scenario_from_path(&path, &numeraires, compact_responses)?;
             let values =
                 self.evaluate_path_collecting(&scenario, &mut cashflows, 1.0 / n_scenarios)?;
-            let adjusted_result: Option<DualFwd> = if use_controls {
+            let adjusted_result: Option<Recorded> = if use_controls {
                 let controls = self.path_controls(&path, &numeraires, compact_responses)?;
                 result_variable
                     .and_then(|name| values.get(name))
@@ -499,7 +499,7 @@ impl ScriptEngine {
                         _ => None,
                     })
             }) {
-                let contribution: DualFwd = (number / n_scenarios).into();
+                let contribution: Recorded = (number / n_scenarios).into();
                 if contribution.is_on_tape() {
                     contribution.backward_to_mark()?;
                 }
@@ -517,7 +517,7 @@ impl ScriptEngine {
     /// Evaluates Monte Carlo paths in parallel with one model and AD tape per
     /// Rayon worker.
     ///
-    /// The setup rebuilds the model on every worker so no [`DualFwd`] node is
+    /// The setup rebuilds the model on every worker so no [`Recorded`] node is
     /// shared across thread-local tapes. Paths are divided into contiguous,
     /// deterministic ranges, and worker values and adjoints are summed after
     /// all ranges complete. The normalization always uses the total path
@@ -573,7 +573,7 @@ impl ScriptEngine {
                     let control_expectations = if use_controls {
                         self.control_expectations(model)?
                     } else {
-                        [DualFwd::zero(); 2]
+                        [Recorded::zero(); 2]
                     };
                     Tape::set_mark_fwd();
                     let (values, cashflows) = self.evaluate_path_range(
@@ -640,7 +640,7 @@ impl ScriptEngine {
     }
 
     /// Checks the declared path count and installs the script event dates and market requests.
-    fn configure_model(&self, model: &mut dyn MarketModel<DualFwd>, n_paths: usize) -> Result<()> {
+    fn configure_model(&self, model: &mut dyn MarketModel<Recorded>, n_paths: usize) -> Result<()> {
         if model.n_paths() != n_paths {
             return Err(QSError::InvalidValueErr(format!(
                 "model exposes {} paths but setup declares {n_paths}",
@@ -702,13 +702,13 @@ impl ScriptEngine {
     #[allow(clippy::too_many_arguments)]
     fn evaluate_path_range(
         &self,
-        model: &dyn MarketModel<DualFwd>,
+        model: &dyn MarketModel<Recorded>,
         result_variable: Option<&str>,
         path_range: Range<usize>,
         n_paths: usize,
-        numeraires: &[DualFwd],
+        numeraires: &[Recorded],
         use_controls: bool,
-        control_expectations: [DualFwd; 2],
+        control_expectations: [Recorded; 2],
         control_betas: [f64; 2],
     ) -> Result<(HashMap<String, f64>, Vec<ExpectedCashflow>)> {
         let compact_responses = model.uses_compact_dated_requests();
@@ -765,7 +765,7 @@ impl ScriptEngine {
                         },
                     )
                 }) {
-                    let contribution: DualFwd = (number / n_scenarios).into();
+                    let contribution: Recorded = (number / n_scenarios).into();
                     if contribution.is_on_tape() {
                         contribution.backward_to_mark()?;
                     }
@@ -829,9 +829,9 @@ impl ScriptEngine {
     }
 
     /// Computes the model expectations of discount and forward control variables.
-    fn control_expectations(&self, model: &dyn MarketModel<DualFwd>) -> Result<[DualFwd; 2]> {
-        let mut bonds = DualFwd::zero();
-        let mut forwards = DualFwd::zero();
+    fn control_expectations(&self, model: &dyn MarketModel<Recorded>) -> Result<[Recorded; 2]> {
+        let mut bonds = Recorded::zero();
+        let mut forwards = Recorded::zero();
         for request in &self.requests {
             for discount in request.dfs() {
                 bonds += model.resolve_discount_request(self.reference_date, discount)?;
@@ -853,12 +853,12 @@ impl ScriptEngine {
     /// Extracts discount and forward control variables from one simulated path.
     fn path_controls(
         &self,
-        path: &PathScenario<DualFwd>,
-        numeraires: &[DualFwd],
+        path: &PathScenario<Recorded>,
+        numeraires: &[Recorded],
         compact_responses: bool,
-    ) -> Result<[DualFwd; 2]> {
-        let mut bonds = DualFwd::zero();
-        let mut forwards = DualFwd::zero();
+    ) -> Result<[Recorded; 2]> {
+        let mut bonds = Recorded::zero();
+        let mut forwards = Recorded::zero();
         for (event_index, ((responses, mapping), fallback_numeraire)) in path
             .iter()
             .zip(&self.response_maps)
@@ -915,7 +915,7 @@ impl ScriptEngine {
     /// response is absent.
     pub fn generate_scenarios(
         &self,
-        model: &mut dyn MarketModel<DualFwd>,
+        model: &mut dyn MarketModel<Recorded>,
     ) -> Result<Vec<SimulationPath>> {
         if model.n_paths() == 0 {
             return Err(QSError::InvalidValueErr(
@@ -943,8 +943,8 @@ impl ScriptEngine {
         &self,
         payment_id: usize,
         valuation_date: Date,
-        responses: &[SimulationResponse<DualFwd>],
-    ) -> Result<DualFwd> {
+        responses: &[SimulationResponse<Recorded>],
+    ) -> Result<Recorded> {
         let scenario = self.scenario_from_responses(responses)?;
         if self.max_nested_ifs == 0 {
             let evaluator = SingleScenarioEvaluator::new()
@@ -955,7 +955,7 @@ impl ScriptEngine {
             evaluator.visit_events(&self.events, &self.variable_indexes)?;
             Ok(evaluator
                 .captured_payment_value()
-                .unwrap_or_else(DualFwd::zero))
+                .unwrap_or_else(Recorded::zero))
         } else {
             let evaluator = FuzzyEvaluator::new(self.n_variables, self.max_nested_ifs)
                 .with_simulation_path(&scenario)
@@ -964,19 +964,19 @@ impl ScriptEngine {
             evaluator.visit_events(&self.events, &self.variable_indexes)?;
             Ok(evaluator
                 .captured_payment_value()
-                .unwrap_or_else(DualFwd::zero))
+                .unwrap_or_else(Recorded::zero))
         }
     }
 
     /// Resolves event numeraires, using one where a numeraire is not required.
-    fn event_numeraires(&self, model: &dyn MarketModel<DualFwd>) -> Result<Vec<DualFwd>> {
+    fn event_numeraires(&self, model: &dyn MarketModel<Recorded>) -> Result<Vec<Recorded>> {
         self.events
             .event_dates()
             .into_iter()
             .zip(&self.requests)
             .map(|(event_date, request)| {
                 if !request.requires_numeraire() || event_date <= self.reference_date {
-                    return Ok(DualFwd::one());
+                    return Ok(Recorded::one());
                 }
                 let request = DiscountRequest::new(self.local_discount_index.clone(), event_date);
                 let discount = model
@@ -986,7 +986,7 @@ impl ScriptEngine {
                             "resolving numeraire for script event dated {event_date}"
                         ))
                     })?;
-                Ok((DualFwd::one() / discount).into())
+                Ok((Recorded::one() / discount).into())
             })
             .collect()
     }
@@ -994,8 +994,8 @@ impl ScriptEngine {
     /// Maps a dated model path to the script event response layout.
     fn scenario_from_path(
         &self,
-        path: &PathScenario<DualFwd>,
-        numeraires: &[DualFwd],
+        path: &PathScenario<Recorded>,
+        numeraires: &[Recorded],
         compact_responses: bool,
     ) -> Result<SimulationPath> {
         if path.len() != self.response_maps.len() {
@@ -1046,14 +1046,14 @@ impl ScriptEngine {
     /// Maps flat model responses into the market data required by each script event.
     fn scenario_from_responses(
         &self,
-        responses: &[SimulationResponse<DualFwd>],
+        responses: &[SimulationResponse<Recorded>],
     ) -> Result<SimulationPath> {
         self.response_maps
             .iter()
             .enumerate()
             .map(|(event_index, mapping)| {
                 Ok(SimulationData::new(
-                    DualFwd::one(),
+                    Recorded::one(),
                     collect_responses(
                         responses,
                         mapping.discounts,
@@ -1184,12 +1184,12 @@ fn flatten_requests(
 
 /// Extracts a required response range and reports any missing market response.
 fn collect_responses(
-    responses: &[SimulationResponse<DualFwd>],
+    responses: &[SimulationResponse<Recorded>],
     range: ResponseRange,
     event_index: usize,
     kind: &str,
-    select: impl Fn(&SimulationResponse<DualFwd>) -> Option<DualFwd>,
-) -> Result<Vec<DualFwd>> {
+    select: impl Fn(&SimulationResponse<Recorded>) -> Option<Recorded>,
+) -> Result<Vec<Recorded>> {
     (range.start..range.start + range.len)
         .map(|response_index| {
             responses
@@ -1271,12 +1271,12 @@ mod tests {
 
     struct FailingPathModel(usize);
 
-    impl MarketModel<DualFwd> for FailingPathModel {
+    impl MarketModel<Recorded> for FailingPathModel {
         fn n_paths(&self) -> usize {
             self.0
         }
 
-        fn generate_path(&self, _index: usize) -> Result<PathScenario<DualFwd>> {
+        fn generate_path(&self, _index: usize) -> Result<PathScenario<Recorded>> {
             Err(QSError::SolverErr("covariance factorization failed".into()))
         }
 
@@ -1287,28 +1287,28 @@ mod tests {
             &self,
             _date: Date,
             _request: &DiscountRequest,
-        ) -> Result<DualFwd> {
-            Ok(DualFwd::one())
+        ) -> Result<Recorded> {
+            Ok(Recorded::one())
         }
         fn resolve_forward_rate_request(
             &self,
             _date: Date,
             _request: &ForwardRateRequest,
-        ) -> Result<DualFwd> {
-            Ok(DualFwd::zero())
+        ) -> Result<Recorded> {
+            Ok(Recorded::zero())
         }
-        fn resolve_fx_request(&self, _date: Date, _request: &FxRequest) -> Result<DualFwd> {
-            Ok(DualFwd::one())
+        fn resolve_fx_request(&self, _date: Date, _request: &FxRequest) -> Result<Recorded> {
+            Ok(Recorded::one())
         }
-        fn resolve_spot_request(&self, _date: Date, _request: &SpotRequest) -> Result<DualFwd> {
-            Ok(DualFwd::one())
+        fn resolve_spot_request(&self, _date: Date, _request: &SpotRequest) -> Result<Recorded> {
+            Ok(Recorded::one())
         }
         fn resolve_path_dependent_request(
             &self,
             _date: Date,
             _request: &PathDependentRequest,
-        ) -> Result<DualFwd> {
-            Ok(DualFwd::zero())
+        ) -> Result<Recorded> {
+            Ok(Recorded::zero())
         }
     }
 
@@ -1333,7 +1333,7 @@ mod tests {
         assert!(error.to_string().contains("generating script path 0"));
 
         Tape::start_recording_fwd();
-        let _leaf = DualFwd::new(1.0);
+        let _leaf = Recorded::new(1.0);
         let engine =
             error_test_engine("value = RateIndex(\"SOFR\", \"2025-01-01\", \"2026-01-01\");")?;
         let error = engine.evaluate(&mut model, Some("value")).unwrap_err();
@@ -1385,7 +1385,7 @@ mod tests {
         assert!(matches!(error.root_cause(), QSError::InvalidValueErr(_)));
         assert!(error.to_string().contains("market model exposes no paths"));
         let error = engine
-            .scenario_from_path(&vec![vec![]], &[DualFwd::one()], false)
+            .scenario_from_path(&vec![vec![]], &[Recorded::one()], false)
             .unwrap_err();
         assert!(matches!(error.root_cause(), QSError::NotFoundErr(_)));
         assert!(error
@@ -1408,14 +1408,14 @@ mod tests {
 
         fn with_model<R>(&self, callback: &mut ScriptModelCallback<'_, R>) -> Result<R> {
             self.calls.fetch_add(1, Ordering::Relaxed);
-            let curve = DiscountTermStructure::<DualFwd>::new(
+            let curve = DiscountTermStructure::<Recorded>::new(
                 vec![self.reference_date, self.payment_date],
-                vec![DualFwd::one(), DualFwd::scalar(self.discount)],
+                vec![Recorded::one(), Recorded::scalar(self.discount)],
                 DayCounter::Actual365,
                 Interpolator::LogLinear,
                 true,
             )?;
-            let rate_model = LgmRateModel::new(DualFwd::scalar(0.03), DualFwd::zero(), &curve);
+            let rate_model = LgmRateModel::new(Recorded::scalar(0.03), Recorded::zero(), &curve);
             let mut model = LgmMarketModel::new(
                 Currency::USD,
                 MarketIndex::SOFR,
@@ -1460,19 +1460,19 @@ mod tests {
             (-rate * day_counter.year_fraction(reference_date, event_date)).exp();
         let final_discount_value =
             (-rate * day_counter.year_fraction(reference_date, final_date)).exp();
-        let event_discount = DualFwd::new(event_discount_value);
-        let curve = DiscountTermStructure::<DualFwd>::new(
+        let event_discount = Recorded::new(event_discount_value);
+        let curve = DiscountTermStructure::<Recorded>::new(
             vec![reference_date, event_date, final_date],
             vec![
-                DualFwd::one(),
+                Recorded::one(),
                 event_discount,
-                DualFwd::new(final_discount_value),
+                Recorded::new(final_discount_value),
             ],
             day_counter,
             Interpolator::LogLinear,
             true,
         )?;
-        let rate_model = LgmRateModel::new(DualFwd::scalar(0.05), DualFwd::zero(), &curve);
+        let rate_model = LgmRateModel::new(Recorded::scalar(0.05), Recorded::zero(), &curve);
         let mut model = LgmMarketModel::new(
             Currency::USD,
             MarketIndex::SOFR,
@@ -1519,18 +1519,18 @@ mod tests {
         let observation_df =
             (-rate * day_counter.year_fraction(reference_date, observation_date)).exp();
         let payment_df = (-rate * day_counter.year_fraction(reference_date, payment_date)).exp();
-        let curve = DiscountTermStructure::<DualFwd>::new(
+        let curve = DiscountTermStructure::<Recorded>::new(
             vec![reference_date, observation_date, payment_date],
             vec![
-                DualFwd::one(),
-                DualFwd::new(observation_df),
-                DualFwd::new(payment_df),
+                Recorded::one(),
+                Recorded::new(observation_df),
+                Recorded::new(payment_df),
             ],
             day_counter,
             Interpolator::LogLinear,
             true,
         )?;
-        let rate_model = LgmRateModel::new(DualFwd::scalar(0.03), DualFwd::zero(), &curve);
+        let rate_model = LgmRateModel::new(Recorded::scalar(0.03), Recorded::zero(), &curve);
         let mut model = LgmMarketModel::new(
             Currency::USD,
             MarketIndex::SOFR,
@@ -1585,24 +1585,24 @@ mod tests {
         let rate = 0.05_f64;
         let tau = day_counter.year_fraction(reference_date, event_date);
         let event_discount_value = (-rate * tau).exp();
-        let curve = DiscountTermStructure::<DualFwd>::new(
+        let curve = DiscountTermStructure::<Recorded>::new(
             vec![reference_date, event_date],
-            vec![DualFwd::one(), DualFwd::new(event_discount_value)],
+            vec![Recorded::one(), Recorded::new(event_discount_value)],
             day_counter,
             Interpolator::LogLinear,
             true,
         )?;
-        let rate_model = LgmRateModel::new(DualFwd::scalar(0.05), DualFwd::zero(), &curve);
-        let eq_rate_model = LgmRateModel::new(DualFwd::scalar(0.05), DualFwd::zero(), &curve);
-        let spot_0 = DualFwd::new(100.0);
+        let rate_model = LgmRateModel::new(Recorded::scalar(0.05), Recorded::zero(), &curve);
+        let eq_rate_model = LgmRateModel::new(Recorded::scalar(0.05), Recorded::zero(), &curve);
+        let spot_0 = Recorded::new(100.0);
         // Zero vol and zero dividend yield: S_T = S_0 * exp(r * tau) exactly,
         // so the discounted payoff equals S_0 on every path.
         let equity_model = LgmEquityModel::new(
             &eq_rate_model,
-            DualFwd::zero(),
+            Recorded::zero(),
             spot_0,
-            DualFwd::zero(),
-            DualFwd::zero(),
+            Recorded::zero(),
+            Recorded::zero(),
         );
         let mut model = LgmMarketModel::new(
             Currency::USD,

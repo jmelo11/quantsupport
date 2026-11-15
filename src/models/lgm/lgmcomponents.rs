@@ -52,7 +52,7 @@ use crate::{
 /// The borrowed discount curve supplies `P(0, t)` and the initial forward
 /// curve. It is therefore both the calibration anchor and the source of the
 /// model's exact time-zero curve fit. Use [`f64`] for ordinary valuation and an
-/// AD scalar such as [`DualFwd`](crate::ad::dual::DualFwd) when parameter or
+/// AD scalar such as [`Recorded`](crate::ad::Recorded) when parameter or
 /// curve sensitivities are required.
 pub struct LgmRateModel<'a, T: Scalar> {
     lambda: T,
@@ -804,7 +804,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::elements::volatilitysurfaceelement::VolatilitySurfaceElement,
         indices::marketindex::MarketIndex,
         math::interpolation::interpolator::Interpolator,
@@ -859,8 +859,8 @@ mod tests {
         let curve = flat_curve(reference_date)?;
 
         let smile = BTreeMap::from([
-            (F64Key::new(0.0), DualFwd::from(MARKET_VOL)),
-            (F64Key::new(0.10), DualFwd::from(MARKET_VOL)),
+            (F64Key::new(0.0), Recorded::from(MARKET_VOL)),
+            (F64Key::new(0.10), Recorded::from(MARKET_VOL)),
         ]);
         let mut points = BTreeMap::new();
         points.insert(Period::new(1, TimeUnit::Months), smile.clone());

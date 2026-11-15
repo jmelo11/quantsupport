@@ -1,5 +1,5 @@
 use crate::{
-    ad::dual::DualFwd,
+    ad::Recorded,
     core::{
         elements::{
             curveelement::{CreditCurveElement, DiscountCurveElement, DividendCurveElement},
@@ -89,13 +89,13 @@ pub trait PricerState {
 
     /// Retrieves the exchange rate between two currencies from the exchange-rate store.
     ///
-    /// Returns an [`DualFwd`] so that sensitivities to FX rates are captured on the AD tape.
+    /// Returns an [`Recorded`] so that sensitivities to FX rates are captured on the AD tape.
     ///
     /// ## Errors
     ///
     /// Returns an error if the market data response or exchange-rate store is not available,
     /// or if no rate path exists between the two currencies.
-    fn get_exchange_rate(&self, base: Currency, quote: Currency) -> Result<DualFwd> {
+    fn get_exchange_rate(&self, base: Currency, quote: Currency) -> Result<Recorded> {
         self.get_market_data_reponse()
             .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .fx_store()

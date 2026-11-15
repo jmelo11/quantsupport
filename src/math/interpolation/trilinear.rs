@@ -62,8 +62,8 @@ impl TrilinearInterpolator {
 mod tests {
     use super::ExtrapolationPolicy;
     use super::{TrilinearInterpolator, TrilinearPoint};
-    use crate::ad::dual::DualFwd;
     use crate::ad::tape::Tape;
+    use crate::ad::Recorded;
 
     fn cube_points_f64() -> Vec<TrilinearPoint<f64>> {
         // 2×2×2 cube: x in {0,1}, y in {0,1}, z in {0,1}
@@ -132,18 +132,18 @@ mod tests {
     }
 
     #[test]
-    fn trilinear_center_dualfwd() {
-        let points: Vec<TrilinearPoint<DualFwd>> = cube_points_f64()
+    fn trilinear_center_recorded() {
+        let points: Vec<TrilinearPoint<Recorded>> = cube_points_f64()
             .into_iter()
             .map(|p| TrilinearPoint {
                 x: p.x,
                 y: p.y,
                 z: p.z,
-                value: DualFwd::from(p.value),
+                value: Recorded::from(p.value),
             })
             .collect();
         let val = TrilinearInterpolator::interpolate(0.5, 0.5, 0.5, points)
-            .expect("center interpolation DualFwd");
+            .expect("center interpolation Recorded");
         assert!((val.value() - 5.5).abs() < 1e-12);
     }
 
@@ -271,7 +271,7 @@ mod tests {
                 x: point.x,
                 y: point.y,
                 z: point.z,
-                value: DualFwd::from(point.value),
+                value: Recorded::from(point.value),
             })
             .collect();
         let value = TrilinearInterpolator::interpolate_with_extrapolation(

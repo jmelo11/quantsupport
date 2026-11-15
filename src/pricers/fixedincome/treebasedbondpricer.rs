@@ -9,7 +9,7 @@ use super::{
 };
 use crate::instruments::fixedincome::bondterms::BondTerms;
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         collateral::DiscountPolicy,
         evaluationresults::EvaluationResults,
@@ -282,7 +282,7 @@ impl BondPricingEngine for TreeBasedBondPricer {
     }
     fn prepare(
         &self,
-        trade: &impl BondTerms<DualFwd>,
+        trade: &impl BondTerms<Recorded>,
         index: &MarketIndex,
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, Self::Model<f64>)> {
@@ -314,7 +314,7 @@ impl BondPricingEngine for TreeBasedBondPricer {
         &self,
         model: &Self::Model<f64>,
         market: &MarketData,
-    ) -> Result<Self::Model<DualFwd>> {
+    ) -> Result<Self::Model<Recorded>> {
         model
             .as_ref()
             .map(|model| model.ad_model(market))
@@ -340,9 +340,9 @@ impl BondPricingEngine for TreeBasedBondPricer {
         }
     }
 }
-impl<T: BondTerms<DualFwd>> HandleCashflows<T, BondState> for TreeBasedBondPricer {}
+impl<T: BondTerms<Recorded>> HandleCashflows<T, BondState> for TreeBasedBondPricer {}
 impl Pricer for TreeBasedBondPricer {
-    type Item = SteppedCouponBondTrade<DualFwd>;
+    type Item = SteppedCouponBondTrade<Recorded>;
     type Policy = dyn DiscountPolicy;
 
     fn evaluate(
@@ -395,13 +395,13 @@ pub mod test_support {
         coupon: f64,
         _structure: PaymentStructure,
         call_schedule: Vec<CallScheduleEntry>,
-    ) -> SteppedCouponBondTrade<DualFwd> {
+    ) -> SteppedCouponBondTrade<Recorded> {
         let pricing_anchor = if call_schedule.is_empty() {
             BondPricingAnchor::ZSpread(0.0)
         } else {
             BondPricingAnchor::OAS(0.0)
         };
-        let instrument = MakeSteppedCouponBond::<DualFwd>::default()
+        let instrument = MakeSteppedCouponBond::<Recorded>::default()
             .with_identifier("TEST-BOND".into())
             .with_start_date(evaluation_date)
             .with_maturity_date(maturity_date)
@@ -426,7 +426,7 @@ pub mod test_support {
     /// Returns a bond's tree value, panicking if evaluation fails.
     pub fn value(
         pricer: &TreeBasedBondPricer,
-        trade: &SteppedCouponBondTrade<DualFwd>,
+        trade: &SteppedCouponBondTrade<Recorded>,
         provider: &TestProvider,
     ) -> f64 {
         pricer
@@ -983,7 +983,7 @@ mod tests {
                     index,
                     Rc::new(RefCell::new(FlatForwardTermStructure::new(
                         evaluation,
-                        DualFwd::from(rate),
+                        Recorded::from(rate),
                         definition,
                     ))),
                 ),
@@ -1191,7 +1191,7 @@ mod tests {
     #[test]
     fn engines_agree_for_positional_mixed_coupons_and_amortization() {
         let evaluation_date = Date::new(2025, 1, 1);
-        let instrument = MakeSteppedCouponBond::<DualFwd>::default()
+        let instrument = MakeSteppedCouponBond::<Recorded>::default()
             .with_identifier("MIXED-STEP-BOND".into())
             .with_start_date(evaluation_date)
             .with_maturity_date(Date::new(2031, 1, 1))
@@ -1432,13 +1432,13 @@ mod tests {
             .into_contingent_claims("SHORT-CALLABLE")?
             .iter()
             .all(|claim| claim.side() == Side::PayShort));
-        let converted: SteppedCouponBondTrade<DualFwd> = scalar.into();
+        let converted: SteppedCouponBondTrade<Recorded> = scalar.into();
         assert_eq!(converted.pricing_anchor(), short.pricing_anchor());
         for use_fourier in [false, true] {
             let (provider, _) = provider_with_method(evaluation, 12, use_fourier);
             let tree = tree_pricer();
             let fourier = fourier_pricer();
-            let price = |trade: &SteppedCouponBondTrade<DualFwd>| -> Result<f64> {
+            let price = |trade: &SteppedCouponBondTrade<Recorded>| -> Result<f64> {
                 let result = if use_fourier {
                     fourier.evaluate(trade, &[Request::Value], &provider)?
                 } else {

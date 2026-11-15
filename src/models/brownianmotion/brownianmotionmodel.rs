@@ -1,8 +1,8 @@
 use crate::{
-    ad::{dual::DualFwd, expr::FloatExt, scalar::Scalar},
+    ad::{expr::FloatExt, scalar::Scalar, Recorded},
     math::probability::{
-        norm_cdf::{norm_cdf, NormCDF},
         norm_pdf::FRAC_1_SQRT_2PI,
+        normcdf::{norm_cdf, NormCDF},
     },
     models::{
         montecarloengine::{PathGenerator, TimeDependentVolatility},
@@ -167,7 +167,7 @@ impl BrownianMotion<f64> {
     }
 }
 
-impl BrownianMotion<DualFwd> {
+impl BrownianMotion<Recorded> {
     /// Undiscounted Black call/put price from a forward (AD-enabled).
     ///
     /// `fwd` and `vol` retain AD dependencies; strike and expiry are constants.
@@ -178,12 +178,12 @@ impl BrownianMotion<DualFwd> {
     /// Returns an error if strike or time to expiry are non-positive.
     /// Forward, volatility, and finiteness are not validated; see [`d1_d2_ad`].
     pub fn closed_form_price(
-        fwd: DualFwd,
+        fwd: Recorded,
         strike: f64,
-        vol: DualFwd,
+        vol: Recorded,
         tau: f64,
         is_call: bool,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         if is_call {
             black_call_ad(fwd, strike, vol, tau)
         } else {
@@ -200,17 +200,17 @@ impl BrownianMotion<DualFwd> {
     /// # Errors
     /// Propagates [`d1_d2_ad`] validation errors.
     pub fn delta(
-        fwd: DualFwd,
+        fwd: Recorded,
         strike: f64,
-        vol: DualFwd,
+        vol: Recorded,
         tau: f64,
         is_call: bool,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let (d1, _) = d1_d2_ad(fwd, strike, vol, tau)?;
         if is_call {
             Ok(norm_cdf(d1))
         } else {
-            let neg_d1: DualFwd = (-d1).into();
+            let neg_d1: Recorded = (-d1).into();
             Ok(norm_cdf(neg_d1))
         }
     }
@@ -222,7 +222,7 @@ impl BrownianMotion<DualFwd> {
     ///
     /// # Errors
     /// Propagates [`d1_d2_ad`] validation errors.
-    pub fn vega(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<DualFwd> {
+    pub fn vega(fwd: Recorded, strike: f64, vol: Recorded, tau: f64) -> Result<Recorded> {
         let (d1, _) = d1_d2_ad(fwd, strike, vol, tau)?;
         let pdf_d1 = (-d1 * d1 * 0.5).exp() * FRAC_1_SQRT_2PI;
         Ok((fwd * pdf_d1 * tau.sqrt()).into())
@@ -237,18 +237,18 @@ impl BrownianMotion<DualFwd> {
     /// # Errors
     /// Propagates [`d1_d2_ad`] validation errors.
     pub fn rho(
-        fwd: DualFwd,
+        fwd: Recorded,
         strike: f64,
-        vol: DualFwd,
+        vol: Recorded,
         tau: f64,
         is_call: bool,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let (_, d2) = d1_d2_ad(fwd, strike, vol, tau)?;
         let st = strike * tau;
         if is_call {
             Ok((norm_cdf(d2) * st).into())
         } else {
-            let neg_d2: DualFwd = (-d2).into();
+            let neg_d2: Recorded = (-d2).into();
             Ok((-(norm_cdf(neg_d2) * st)).into())
         }
     }
@@ -264,19 +264,19 @@ impl BrownianMotion<DualFwd> {
     /// # Errors
     /// Propagates [`d1_d2_ad`] validation errors.
     pub fn theta(
-        fwd: DualFwd,
+        fwd: Recorded,
         strike: f64,
-        vol: DualFwd,
+        vol: Recorded,
         tau: f64,
         is_call: bool,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let (d1, d2) = d1_d2_ad(fwd, strike, vol, tau)?;
         let pdf_d1 = (-d1 * d1 * 0.5).exp() * FRAC_1_SQRT_2PI;
         let term1 = -fwd * pdf_d1 * vol / (2.0 * tau.sqrt());
         if is_call {
             Ok((term1 + norm_cdf(d2) * strike).into())
         } else {
-            let neg_d2: DualFwd = (-d2).into();
+            let neg_d2: Recorded = (-d2).into();
             Ok((term1 - norm_cdf(neg_d2) * strike).into())
         }
     }

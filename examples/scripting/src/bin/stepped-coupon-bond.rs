@@ -14,10 +14,10 @@ fn reference_date() -> Date {
     Date::new(2025, 1, 1)
 }
 
-fn curve() -> FlatForwardTermStructure<DualFwd> {
+fn curve() -> FlatForwardTermStructure<Recorded> {
     FlatForwardTermStructure::new(
         reference_date(),
-        DualFwd::from(0.03),
+        Recorded::from(0.03),
         RateDefinition::new(
             DayCounter::Actual365,
             Compounding::Continuous,
@@ -27,8 +27,8 @@ fn curve() -> FlatForwardTermStructure<DualFwd> {
     .with_pillar_label("SOFR.flat".into())
 }
 
-fn native_trade() -> Result<SteppedCouponBondTrade<DualFwd>> {
-    let instrument = MakeSteppedCouponBond::<DualFwd>::default()
+fn native_trade() -> Result<SteppedCouponBondTrade<Recorded>> {
+    let instrument = MakeSteppedCouponBond::<Recorded>::default()
         .with_identifier("SCRIPT-CHECK-STEP-CALL".into())
         .with_start_date(reference_date())
         .with_maturity_date(Date::new(2029, 1, 1))
@@ -148,7 +148,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut scripted_curve = curve();
     Tape::start_recording_fwd();
     scripted_curve.put_pillars_on_tape();
-    let rate_model = LgmRateModel::new(DualFwd::scalar(0.05), DualFwd::zero(), &scripted_curve);
+    let rate_model = LgmRateModel::new(Recorded::scalar(0.05), Recorded::zero(), &scripted_curve);
     let mut model = LgmMarketModel::new(
         Currency::USD,
         MarketIndex::SOFR,

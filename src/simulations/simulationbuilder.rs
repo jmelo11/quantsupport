@@ -204,7 +204,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ad::compiled::Recorded,
+        ad::Recorded,
         core::elements::{
             curveelement::DiscountCurveElement, volatilitysurfaceelement::VolatilitySurfaceElement,
         },

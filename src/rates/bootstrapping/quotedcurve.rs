@@ -1,5 +1,5 @@
 use crate::{
-    ad::compiled::Recorded,
+    ad::Recorded,
     core::elements::curveelement::ADCurveElement,
     quotes::quote::{Level, Quote, QuoteInstrument},
     rates::{

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
@@ -868,7 +868,7 @@ impl XvaEngine {
 }
 
 /// Snapshot of f64 curve data extracted from the `PricingContext`.
-/// Each rayon thread uses this to build a thread-local `DualFwd` curve.
+/// Each rayon thread uses this to build a thread-local `Recorded` curve.
 #[derive(Clone)]
 struct CurveSnapshot {
     dates: Vec<Date>,
@@ -911,18 +911,18 @@ struct LgmResolvedParams {
 }
 
 impl LgmResolvedParams {
-    /// Builds the per-thread `DualFwd` sigma schedule. Calibrated sigmas are
+    /// Builds the per-thread `Recorded` sigma schedule. Calibrated sigmas are
     /// rebuilt as tape expressions connected to vol-quote leaves via the
     /// calibration IFT sensitivities:
     ///   `sigma_i = sigma_i0 + (dsigma/dvol)_i * (v_i - v_i0)`
     /// so the backward pass yields dXVA/dvol. The vol leaves are appended to
     /// `all_leaves` under their quote labels.
-    fn dualfwd_schedule(&self, all_leaves: &mut Vec<(String, DualFwd)>) -> Vec<(f64, DualFwd)> {
+    fn recorded_schedule(&self, all_leaves: &mut Vec<(String, Recorded)>) -> Vec<(f64, Recorded)> {
         self.vol_pillars.as_ref().map_or_else(
             || {
                 self.sigma_schedule
                     .iter()
-                    .map(|&(t, s)| (t, DualFwd::scalar(s)))
+                    .map(|&(t, s)| (t, Recorded::scalar(s)))
                     .collect()
             },
             |pillars| {
@@ -930,11 +930,11 @@ impl LgmResolvedParams {
                     .iter()
                     .zip(pillars)
                     .map(|(&(t, s), vp)| {
-                        let leaf = DualFwd::new(vp.market_vol);
+                        let leaf = Recorded::new(vp.market_vol);
                         all_leaves.push((vp.label.clone(), leaf));
-                        let delta: DualFwd = (leaf - DualFwd::scalar(vp.market_vol)).into();
-                        let sigma: DualFwd =
-                            (DualFwd::scalar(s) + DualFwd::scalar(vp.dsigma_dvol) * delta).into();
+                        let delta: Recorded = (leaf - Recorded::scalar(vp.market_vol)).into();
+                        let sigma: Recorded =
+                            (Recorded::scalar(s) + Recorded::scalar(vp.dsigma_dvol) * delta).into();
                         (t, sigma)
                     })
                     .collect()
@@ -952,23 +952,23 @@ struct VolPillar {
 }
 
 impl CurveSnapshot {
-    /// Build a `DiscountTermStructure<DualFwd>` on the current thread's tape.
+    /// Build a `DiscountTermStructure<Recorded>` on the current thread's tape.
     ///
     /// # Errors
     /// Returns an error if curve construction or pillar assignment fails.
-    fn build_dualfwd_curve(&self) -> Result<DiscountTermStructure<DualFwd>> {
-        let dfs: Vec<DualFwd> = self
+    fn build_recorded_curve(&self) -> Result<DiscountTermStructure<Recorded>> {
+        let dfs: Vec<Recorded> = self
             .discount_factors
             .iter()
-            .map(|&v| DualFwd::scalar(v))
+            .map(|&v| Recorded::scalar(v))
             .collect();
-        let pvs: Vec<DualFwd> = self
+        let pvs: Vec<Recorded> = self
             .pillar_values
             .iter()
-            .map(|&v| DualFwd::scalar(v))
+            .map(|&v| Recorded::scalar(v))
             .collect();
 
-        let mut curve = DiscountTermStructure::<DualFwd>::new(
+        let mut curve = DiscountTermStructure::<Recorded>::new(
             self.dates.clone(),
             dfs,
             self.day_counter,
@@ -1008,7 +1008,7 @@ unsafe impl Send for InternalModelSetup {}
 unsafe impl Sync for InternalModelSetup {}
 
 impl InternalModelSetup {
-    /// Builds the LGM rate models on top of the rebuilt `DualFwd` curves and
+    /// Builds the LGM rate models on top of the rebuilt `Recorded` curves and
     /// registers them (plus any derived-curve driver links) on `model`.
     /// Returns separate rate-model instances for FX models to borrow.
     ///
@@ -1017,21 +1017,21 @@ impl InternalModelSetup {
     /// the same vol quotes.
     fn add_rate_models<'c>(
         &self,
-        built_curves: &'c [(MarketIndex, DiscountTermStructure<DualFwd>)],
-        all_leaves: &mut Vec<(String, DualFwd)>,
-        model: &mut LgmMarketModel<'c, DualFwd>,
-    ) -> Result<Vec<(MarketIndex, LgmRateModel<'c, DualFwd>)>> {
-        let mut schedules: HashMap<MarketIndex, Vec<(f64, DualFwd)>> = HashMap::new();
+        built_curves: &'c [(MarketIndex, DiscountTermStructure<Recorded>)],
+        all_leaves: &mut Vec<(String, Recorded)>,
+        model: &mut LgmMarketModel<'c, Recorded>,
+    ) -> Result<Vec<(MarketIndex, LgmRateModel<'c, Recorded>)>> {
+        let mut schedules: HashMap<MarketIndex, Vec<(f64, Recorded)>> = HashMap::new();
         for (idx, _) in built_curves {
             let params = self.model_params.get(idx).ok_or_else(|| {
                 QSError::NotFoundErr(format!("Model config missing for curve {idx:?}"))
             })?;
             if params.driver.is_none() {
-                schedules.insert(idx.clone(), params.dualfwd_schedule(all_leaves));
+                schedules.insert(idx.clone(), params.recorded_schedule(all_leaves));
             }
         }
 
-        let mut fx_rate_models: Vec<(MarketIndex, LgmRateModel<'c, DualFwd>)> = Vec::new();
+        let mut fx_rate_models: Vec<(MarketIndex, LgmRateModel<'c, Recorded>)> = Vec::new();
         for (idx, curve) in built_curves {
             let params = self.model_params.get(idx).ok_or_else(|| {
                 QSError::NotFoundErr(format!("Model config missing for curve {idx:?}"))
@@ -1046,7 +1046,7 @@ impl InternalModelSetup {
                 })?
                 .clone();
             let rate_model = LgmRateModel::new_piecewise(
-                DualFwd::scalar(params.lambda),
+                Recorded::scalar(params.lambda),
                 schedule.clone(),
                 curve,
             )?;
@@ -1059,7 +1059,7 @@ impl InternalModelSetup {
             // rate model for the FX model to borrow.
             if !self.fx_configs.is_empty() {
                 let fx_rate =
-                    LgmRateModel::new_piecewise(DualFwd::scalar(params.lambda), schedule, curve)?;
+                    LgmRateModel::new_piecewise(Recorded::scalar(params.lambda), schedule, curve)?;
                 fx_rate_models.push((idx.clone(), fx_rate));
             }
         }
@@ -1073,13 +1073,13 @@ impl XvaModelSetup for InternalModelSetup {
     }
 
     fn with_model<R>(&self, dates: &[Date], callback: &mut ModelCallback<'_, R>) -> Result<R> {
-        // 1. Build DualFwd curves and collect leaves.
-        let mut built_curves: Vec<(MarketIndex, DiscountTermStructure<DualFwd>)> = Vec::new();
-        let mut all_leaves: Vec<(String, DualFwd)> = Vec::new();
+        // 1. Build Recorded curves and collect leaves.
+        let mut built_curves: Vec<(MarketIndex, DiscountTermStructure<Recorded>)> = Vec::new();
+        let mut all_leaves: Vec<(String, Recorded)> = Vec::new();
 
         for (idx, snap) in &self.curves {
-            let curve = snap.build_dualfwd_curve()?;
-            let leaves: Vec<(String, DualFwd)> = curve
+            let curve = snap.build_recorded_curve()?;
+            let leaves: Vec<(String, Recorded)> = curve
                 .pillars()
                 .unwrap_or_default()
                 .into_iter()
@@ -1147,8 +1147,8 @@ impl XvaModelSetup for InternalModelSetup {
             // FX spot and vol are tracked tape leaves so the backward pass
             // yields dXVA/dspot and dXVA/dvol.
             let pair = format!("{}{}", fx_cfg.foreign_currency, self.domestic_currency);
-            let spot_leaf = DualFwd::new(spot);
-            let fx_vol_leaf = DualFwd::new(fx_cfg.fx_vol);
+            let spot_leaf = Recorded::new(spot);
+            let fx_vol_leaf = Recorded::new(fx_cfg.fx_vol);
             all_leaves.push((format!("FX.{pair}.spot"), spot_leaf));
             all_leaves.push((format!("FX.{pair}.vol"), fx_vol_leaf));
 
@@ -1157,7 +1157,7 @@ impl XvaModelSetup for InternalModelSetup {
                 for_rate,
                 fx_vol_leaf,
                 spot_leaf,
-                DualFwd::scalar(fx_cfg.rho),
+                Recorded::scalar(fx_cfg.rho),
             );
             model.add_fx_model(fx_cfg.foreign_currency, fx_model);
         }

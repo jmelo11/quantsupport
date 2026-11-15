@@ -22,11 +22,11 @@ numerical work without derivative recording. `Fwd<T>` carries a value and a
 forward derivative seed, and nesting it raises the derivative order.
 `Dual<T>` records reverse-mode operations. Standard deterministic pricing and
 constructed-market wrappers generally use
-`DualFwd = Dual<Fwd2>`, with `Fwd2 = Fwd<Fwd<f64>>`.
+`Recorded = Dual<Fwd2>`, with `Fwd2 = Fwd<Fwd<f64>>`.
 
 Choose a scalar supported by the full valuation workflow. The generic
 discounted-cashflow pricer, for example, requires trades implementing
-`LegsProvider<DualFwd>`, even though many underlying mathematical types also
+`LegsProvider<Recorded>`, even though many underlying mathematical types also
 support `f64` and other scalars.
 
 Constructed curves commonly use `Rc<RefCell<dyn ADCurveElement>>`. They share

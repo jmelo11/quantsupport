@@ -9,7 +9,7 @@ use super::{
 };
 use crate::instruments::fixedincome::bondterms::BondTerms;
 use crate::{
-    ad::{compiled::Recorded, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         collateral::DiscountPolicy,
         evaluationresults::EvaluationResults,

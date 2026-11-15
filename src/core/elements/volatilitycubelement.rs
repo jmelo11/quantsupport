@@ -1,7 +1,7 @@
 use std::cell::{Ref, RefMut};
 
 use crate::{
-    ad::compiled::Recorded,
+    ad::Recorded,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     utils::errors::{QSError, Result},

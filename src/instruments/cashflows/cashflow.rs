@@ -1,5 +1,5 @@
 use crate::{
-    ad::{compiled::Recorded, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     time::date::Date,
     utils::errors::Result,
 };

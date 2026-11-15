@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::Interpolator,
     rates::{compounding::Compounding, interestrate::RateDefinition},
@@ -15,7 +15,7 @@ use super::{
 };
 
 /// A zero-rate curve whose pillars are specified as tenors from its reference date.
-/// With `T = DualFwd`, it exposes the same AD curve interface as the dated curve.
+/// With `T = Recorded`, it exposes the same AD curve interface as the dated curve.
 #[derive(Clone, Debug)]
 pub struct TenorBasedZeroRateTermStructure<T: Scalar = f64> {
     tenors: Vec<Period>,
@@ -151,7 +151,7 @@ where
 impl TenorBasedZeroRateTermStructure<f64> {
     /// Converts the zero rates to AD values while preserving tenors and labels.
     #[must_use]
-    pub fn to_dual(&self) -> TenorBasedZeroRateTermStructure<DualFwd> {
+    pub fn to_dual(&self) -> TenorBasedZeroRateTermStructure<Recorded> {
         TenorBasedZeroRateTermStructure {
             tenors: self.tenors.clone(),
             curve: self.curve.to_dual(),
@@ -159,8 +159,8 @@ impl TenorBasedZeroRateTermStructure<f64> {
     }
 }
 
-impl Pillars<DualFwd> for TenorBasedZeroRateTermStructure<DualFwd> {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl Pillars<Recorded> for TenorBasedZeroRateTermStructure<Recorded> {
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.curve.pillars()
     }
 
@@ -173,7 +173,7 @@ impl Pillars<DualFwd> for TenorBasedZeroRateTermStructure<DualFwd> {
     }
 }
 
-impl ADCurveElement for TenorBasedZeroRateTermStructure<DualFwd> {
+impl ADCurveElement for TenorBasedZeroRateTermStructure<Recorded> {
     fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
         self.curve.clone_curve()
     }

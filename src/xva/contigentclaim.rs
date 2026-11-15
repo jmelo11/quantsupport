@@ -9,7 +9,7 @@
 //! or the [`MakeContingentClaim`](super::makecontigentclaim::MakeContingentClaim) builder.
 
 use crate::{
-    ad::{compiled::Recorded, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         collateral::Discountable,
         instrument::AssetClass,

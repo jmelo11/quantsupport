@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    ad::compiled::Recorded,
+    ad::Recorded,
     core::elements::volatilitysurfaceelement::VolatilitySurfaceElement,
     indices::marketindex::MarketIndex,
     quotes::{quote::Level, quoteselector::QuoteSelector},

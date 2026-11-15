@@ -24,7 +24,7 @@ use crate::utils::errors::{QSError, Result};
 /// Minimal complex number that only requires [`Scalar`].
 ///
 /// Unlike `num_complex::Complex<T>`, this does not require `T: Num`, which
-/// makes it compatible with expression-template AD types like `DualFwd`.
+/// makes it compatible with expression-template AD types like `Recorded`.
 #[derive(Clone, Copy, Debug)]
 pub struct Complex<T> {
     /// Real part.
@@ -234,18 +234,18 @@ mod tests {
         assert!(approx(energy_freq, 4.0 * energy_time));
     }
 
-    // FFT with DualFwd scalars.
+    // FFT with Recorded scalars.
     #[test]
     fn adreal_fft_derivative() {
-        use crate::ad::dual::DualFwd;
         use crate::ad::tape::Tape;
+        use crate::ad::Recorded;
 
         Tape::start_recording_fwd();
         let n = 4;
-        let x0 = DualFwd::new(1.0);
-        let c = DualFwd::scalar(1.0);
-        let z = DualFwd::scalar(0.0);
-        let mut data: Vec<Complex<DualFwd>> = vec![
+        let x0 = Recorded::new(1.0);
+        let c = Recorded::scalar(1.0);
+        let z = Recorded::scalar(0.0);
+        let mut data: Vec<Complex<Recorded>> = vec![
             Complex::new(x0, z),
             Complex::new(c, z),
             Complex::new(c, z),

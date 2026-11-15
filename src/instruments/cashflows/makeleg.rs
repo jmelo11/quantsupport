@@ -1,5 +1,5 @@
 #[cfg(test)]
-use crate::ad::compiled::Recorded;
+use crate::ad::Recorded;
 use crate::{
     ad::scalar::Scalar,
     core::{

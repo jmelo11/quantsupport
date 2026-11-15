@@ -69,7 +69,7 @@ pub enum QSError {
     TapeError(String),
     /// A generic AD number error.
     #[error("AD Real error: {0}")]
-    DualFwdError(String),
+    RecordedError(String),
     /// Attempted to access a node that is not recorded on the tape.
     #[error("Node not indexed in tape")]
     NodeNotIndexedInTapeErr,
@@ -129,7 +129,7 @@ impl QSError {
             Self::InterpolationErr(_) => ("interpolation", "InterpolationErr"),
             Self::NodeError(_) => ("node", "NodeError"),
             Self::TapeError(_) => ("tape", "TapeError"),
-            Self::DualFwdError(_) => ("dual_forward", "DualFwdError"),
+            Self::RecordedError(_) => ("dual_forward", "RecordedError"),
             Self::NodeNotIndexedInTapeErr => ("node_not_indexed", "NodeNotIndexedInTapeErr"),
             Self::UnexpectedErr(_) => ("unexpected", "UnexpectedErr"),
             Self::QuoteParsingErr(_) => ("quote_parsing", "QuoteParsingErr"),

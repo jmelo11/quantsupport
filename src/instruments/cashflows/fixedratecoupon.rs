@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     instruments::cashflows::{
         cashflow::Cashflow,
         coupons::{accrual_fraction, LinearCoupon},
@@ -113,13 +113,13 @@ impl LinearCoupon<f64> for FixedRateCoupon<f64> {
     }
 }
 
-impl Cashflow<DualFwd> for FixedRateCoupon<DualFwd> {
-    fn amount(&self) -> Result<DualFwd> {
+impl Cashflow<Recorded> for FixedRateCoupon<Recorded> {
+    fn amount(&self) -> Result<Recorded> {
         let year_fraction = self
             .rate
             .day_counter()
             .year_fraction(self.accrual_start_date, self.accrual_end_date);
-        Ok((self.rate.rate() * DualFwd::new(year_fraction * self.notional)).into())
+        Ok((self.rate.rate() * Recorded::new(year_fraction * self.notional)).into())
     }
 
     fn payment_date(&self) -> Date {
@@ -127,8 +127,8 @@ impl Cashflow<DualFwd> for FixedRateCoupon<DualFwd> {
     }
 }
 
-impl LinearCoupon<DualFwd> for FixedRateCoupon<DualFwd> {
-    fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<DualFwd> {
+impl LinearCoupon<Recorded> for FixedRateCoupon<Recorded> {
+    fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<Recorded> {
         let year_fraction = accrual_fraction(
             self.rate.day_counter(),
             self.accrual_start_date,
@@ -136,7 +136,7 @@ impl LinearCoupon<DualFwd> for FixedRateCoupon<DualFwd> {
             start_date,
             end_date,
         )?;
-        Ok((self.rate.rate() * DualFwd::new(year_fraction * self.notional)).into())
+        Ok((self.rate.rate() * Recorded::new(year_fraction * self.notional)).into())
     }
 
     fn accrual_start_date(&self) -> Date {
@@ -152,7 +152,7 @@ impl LinearCoupon<DualFwd> for FixedRateCoupon<DualFwd> {
     }
 }
 
-impl From<FixedRateCoupon<f64>> for FixedRateCoupon<DualFwd> {
+impl From<FixedRateCoupon<f64>> for FixedRateCoupon<Recorded> {
     fn from(value: FixedRateCoupon<f64>) -> Self {
         Self::new(
             value.notional,
@@ -164,8 +164,8 @@ impl From<FixedRateCoupon<f64>> for FixedRateCoupon<DualFwd> {
     }
 }
 
-impl From<FixedRateCoupon<DualFwd>> for FixedRateCoupon<f64> {
-    fn from(value: FixedRateCoupon<DualFwd>) -> Self {
+impl From<FixedRateCoupon<Recorded>> for FixedRateCoupon<f64> {
+    fn from(value: FixedRateCoupon<Recorded>) -> Self {
         Self::new(
             value.notional,
             Box::new((*value.rate).into()),

@@ -6,7 +6,7 @@ use super::bondpricinganchor::BondPricingAnchor;
 use crate::time::daycounter::DayCounter;
 
 use crate::{
-    ad::{compiled::Recorded, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         collateral::Discountable,
         instrument::{AssetClass, Instrument},

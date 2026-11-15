@@ -665,7 +665,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ad::compiled::Recorded,
+        ad::Recorded,
         core::{
             elements::volatilitysurfaceelement::VolatilitySurfaceElement,
             marketdatahandling::constructedelementstore::ConstructedElementStore,

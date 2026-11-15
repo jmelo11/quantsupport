@@ -32,7 +32,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // FX spot: 1 CLP = 1/900 USD  (i.e. 900 CLP per 1 USD)
     let mut fx_store = FxStore::new();
-    fx_store.add_fx_rate(Currency::CLP, Currency::USD, DualFwd::from(1.0 / 900.0));
+    fx_store.add_fx_rate(Currency::CLP, Currency::USD, Recorded::from(1.0 / 900.0));
 
     let mut ctx = PricingContext::new()
         .with_quote_store(quote_store)

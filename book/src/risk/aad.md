@@ -20,7 +20,7 @@ estimates.
 `Fwd<T>` stores a value and a first-order seed of the inner scalar type.
 Nesting supplies higher orders: `Fwd1 = Fwd<f64>` and
 `Fwd2 = Fwd<Fwd<f64>>`. `Dual<T>` records reverse operations;
-`DualFwd = Dual<Fwd2>` is the standard pricing scalar.
+`Recorded = Dual<Fwd2>` is the standard pricing scalar.
 
 ```rust
 # extern crate quantsupport;
@@ -43,8 +43,8 @@ use quantsupport::ad::expr::FloatExt;
 use quantsupport::prelude::*;
 
 Tape::start_recording_fwd();
-let x = DualFwd::new(0.04);
-let y: DualFwd = (x * DualFwd::scalar(2.0)).exp().into();
+let x = Recorded::new(0.04);
+let y: Recorded = (x * Recorded::scalar(2.0)).exp().into();
 y.backward()?;
 assert!((x.adjoint()?.value() - 2.0 * 0.08_f64.exp()).abs() < 1e-12);
 Tape::stop_recording_fwd();

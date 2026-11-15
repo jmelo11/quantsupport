@@ -569,8 +569,7 @@ impl<T: Scalar> MakeInstrument for MakeSteppedCouponBond<T> {
 mod tests {
     use super::*;
     use crate::{
-        ad::compiled::Recorded, indices::marketindex::MarketIndex,
-        instruments::cashflows::cashflow::Cashflow,
+        ad::Recorded, indices::marketindex::MarketIndex, instruments::cashflows::cashflow::Cashflow,
     };
 
     #[test]
