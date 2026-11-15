@@ -1,10 +1,9 @@
 # Net interest income forecasting
 
 [Forecasting net interest income](nii_forecast.ipynb) builds a book of 300 distinct
-seasoned contracts, forecasts monthly earned interest, and sizes deposit hedges
-from native sensitivity reports. It shows both an opening hedge and monthly
-PV01 rebalancing as new business arrives. All implementation and technical
-explanations are in the notebook.
+seasoned contracts and forecasts monthly earned interest with prepayment,
+replacement lending, planned growth and funding scenarios. All implementation
+and technical explanations are in the notebook.
 
 The forecast has three steps:
 
@@ -57,7 +56,7 @@ Contracts use native `qs.Side`, `qs.Currency`, `qs.MarketIndex`, `qs.DayCounter`
 `qs.Frequency`, `qs.Compounding` and repayment structures. Local enums describe
 segments, product and rate types, production origins, principal movements and
 forecast scenarios. Orders and cohorts retain business state; inventory, income,
-principal movements, production and hedge reports use pandas DataFrames directly.
+principal movements and production reports use pandas DataFrames directly.
 
 `ForecastTables` creates the income, production, cashflow, balance and monthly
 summary tables. `ExampleTables` builds display comparisons. The forecast uses
@@ -102,63 +101,6 @@ period. Production on the horizon changes closing principal and earns no
 in-horizon interest. Coupons paid after the horizon still contribute interest
 earned before it. Current opening balances include expected historical
 prepayments.
-
-## Deposit hedging
-
-`DepositHedgingEngine` receives the opening book's native sensitivity report.
-We quote par deposits across ESTR, composite LOANFUNDING and EURIBOR3m at 1, 3, 6,
-12, 24, 60 and 120 months. Each reference deposit contributes a PV01 matrix
-column. The least-squares fit chooses all signed notionals jointly; positive
-amounts create `qs.Side.LongReceive` deposits and negative amounts create
-`qs.Side.PayShort` deposits. Rounded trades are repriced to show residual risk.
-
-With `cash_neutral=True`, initial lending and borrowing amounts are equal.
-This funding choice is independent of keeping forecast principal constant.
-The opening comparison keeps hedge coupons fixed and lets those positions run
-off. Their PV01 hedge does not automatically offset floating NII changes.
-The notebook explains the sizing equations and shows both the residual risk
-and the hedge's income and principal-cash effects.
-
-### Rebalance as new loans originate
-
-`MonthlyHedgingEngine` advances the business book through each monthly date.
-It retains original loan notionals and keeps past coupon resets and refinancing
-benchmark observations in a fixing store. Native pricing replays prepayment
-from origination at every date, applying the reduction once.
-At each rebalance it includes originated lending and funding plus surviving
-hedges, drops matured positions, and sizes additional cash-neutral deposit trades
-against their combined current PV01. Existing hedge trades retain their original
-coupons and notionals. Rounded new hedges are repriced; their native risk is added
-to the existing report, avoiding a second valuation of the large business book.
-
-Date-boundary payments and originations precede the solve. Mid-month originations
-join the next monthly solve. `monthly`, `rebalances`, `tickets`, `risk` and
-`productions` report the income, dated residual risk, executed trades and new
-business. This targets PV01; it does not target sensitivity of forecast NII.
-
-```python
-def market_at(when, fixings):
-    return MarketSetup.context(as_of=when, fixings=fixings)
-
-monthly_hedge = MonthlyHedgingEngine(hedger).forecast(
-    portfolio, AS_OF, HORIZON, market_at=market_at, fixings=context.fixings,
-    rollovers=constant_balance_rules, planned=growth,
-)
-monthly_hedge.rebalances
-```
-
-The worked monthly market path holds quoted zero rates unchanged by tenor and
-advances the reference date. Missing realized EURIBOR3m resets use the current
-month's forwards, including refinancing observations; supplied observations
-take precedence. Supply another
-`market_at(date, fixings)` factory for observed or simulated dated markets.
-Expected prepayments stand in for realized principal in this credit-free example.
-The unhedged and hedged NII columns use the same monthly market path, which can
-differ from the earlier full-horizon forecasts using fixed-date forward curves.
-
-Monthly risk rebalancing requires fresh valuations on each dated book.
-Cashflows, sensitivities and that month's accrued amount are requested together,
-so the loan pricer shares one projection across those outputs.
 
 ## Run and scope
 
