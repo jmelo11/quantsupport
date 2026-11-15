@@ -48,6 +48,14 @@ jobs:
         run: |
           python -m pip install dist/*.whl
           python -m unittest discover -s bindings/python/tests -v
+      - name: Execute Python examples
+        if: matrix.python == '3.12' && matrix.platform.runner == 'ubuntu-22.04'
+        run: |
+          python -m pip install -r bindings/python/examples/requirements.txt
+          python -m unittest discover -s bindings/python/examples -p test_run_notebooks.py -v
+          python -m unittest discover -s tools/tests -p test_nii_forecast.py -v
+          python bindings/python/examples/run_notebooks.py
+          python bindings/python/examples/sensitivity/risk_reprojection.py
       - name: Check type hints
         shell: bash
         run: |
