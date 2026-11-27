@@ -1,6 +1,6 @@
 //! Quantitative finance library for pricing, market construction and risk.
 //!
-//! `QuantSupport` (QS) is written in Rust, with Python and Excel bindings. It
+//! `QuantSupport` (QS) is written in Rust. It
 //! supports instrument valuation across several asset classes, sensitivities
 //! using automatic differentiation, interest-rate and credit curve construction,
 //! volatility markets, Monte Carlo simulation and valuation adjustments.
@@ -19,9 +19,7 @@
 //!
 //! This reference describes the native Rust API. The
 //! [Book](https://jmelo11.github.io/quantsupport/) explains financial concepts
-//! and workflows across the three interfaces. The
-//! [binding documentation](https://jmelo11.github.io/quantsupport/api/)
-//! provides detailed Python and Excel guides and references.
+//! and Rust workflows.
 //!
 //! # Quick example: a receive-fixed swap
 //!

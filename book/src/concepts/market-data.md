@@ -50,8 +50,7 @@ All quote parameters are positional. A regular swap accepts
 Empty fields retain the index defaults. For example,
 `Swap_EUR_EURIBOR3m_1Y___1_Actual365` changes settlement to one business day
 and fixed accrual to ACT/365. Appending `_Actual360` explicitly sets the
-floating day count too. Overrides apply independently, including when supplied
-through Python quote records or Excel quote identifiers.
+floating day count too. Overrides apply independently to each quote identifier.
 
 Day counts are also positional for deposits, futures, bonds, zero rates, CDS,
 caps, caplets, OIS, basis and cross-currency swaps, and swaptions. Bond coupon
@@ -133,6 +132,3 @@ spot FX is side-independent.
 Fixing histories are supplied separately and do not carry publication-vintage
 filtering. Historical valuation therefore requires the application to supply
 the appropriate historical observations, including any revision policy.
-The [Python](../python/getting-started.md) and
-[Excel](../excel/historical-pricing.md) workflows use the same native archive
-and selection rules.

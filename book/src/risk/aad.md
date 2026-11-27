@@ -191,7 +191,7 @@ numbers whose generation inputs are held fixed. The stored-path equity pricer
 therefore reports discounting and FX risk, whereas a scripted model valuation
 can differentiate its simulated model inputs. Compare performance only after
 checking that the requested outputs and risk boundaries are the same. The
-[benchmark methodology](../../../docs/benchmarks.md) records capture, compilation,
+[benchmark runners](../../../tools/README.md#benchmarks) record capture, compilation,
 market refresh and repeated execution separately.
 
 ## Calibration dependencies

@@ -46,14 +46,8 @@ jobs:
     with:
       ref: ${{ needs.prepare.outputs.ref }}
 
-  bindings:
-    needs: prepare
-    uses: ./.github/workflows/bindings.yml
-    with:
-      ref: ${{ needs.prepare.outputs.ref }}
-
   publish-crate:
-    needs: [prepare, rust, bindings]
+    needs: [prepare, rust]
     runs-on: ubuntu-latest
     environment: crates-io
     permissions:
@@ -81,51 +75,17 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-  publish-python:
-    needs: [prepare, rust, bindings, publish-crate]
-    runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/quantsupport
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v6
-        with:
-          pattern: python-*
-          merge-multiple: true
-          path: dist
-      - name: Publish Python wheels and source distribution
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
-
   github-release:
-    needs: [prepare, publish-crate, publish-python]
+    needs: [prepare, publish-crate]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v6
-        with:
-          pattern: python-*
-          merge-multiple: true
-          path: dist
-      - uses: actions/download-artifact@v6
-        with:
-          pattern: portable-python-*
-          merge-multiple: true
-          path: dist
-      - uses: actions/download-artifact@v6
-        with:
-          name: excel-windows-x64
-          path: dist
-      - name: Create release and attach packages
+      - name: Create Rust release
         run: |
           if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$RELEASE_TAG"
           fi
-          gh release upload "$RELEASE_TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: v${{ needs.prepare.outputs.version }}

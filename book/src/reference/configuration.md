@@ -1,9 +1,7 @@
 # Serializable configuration
 
 Configuration records the observations and construction rules needed to
-rebuild a market. Rust uses Serde for the native types, Python accepts typed
-definitions and supported dictionaries, and Excel constructors create the
-corresponding native configurations. Applications load and save these inputs
+rebuild a market. Rust uses Serde for the native types. Applications load and save these inputs
 using their own file conventions.
 
 ## Observations and curve membership
@@ -139,10 +137,9 @@ Across these types, dates use `YYYY-MM-DD`, periods use forms such as `3M`
 and `5Y`, and enum spelling follows canonical native variants. Standard
 `MarketIndex` variants serialize as strings; structured forms include
 `{"Collateral":["CLP","USD"]}`, `{"Credit":"NAME"}` and
-`{"Equity":"AAPL"}`. A supported Python string conversion is not necessarily
-an alias accepted by a serialized Rust enum.
+`{"Equity":"AAPL"}`. Use these canonical forms when serializing native enums.
 
 Historical snapshot archives preserve complete native construction inputs using
 this discipline. They exclude runtime AD state, fixing histories and
-binding-only registrations. Preserve those external assumptions separately when
+application registrations. Preserve those external assumptions separately when
 recording a reproducible valuation.

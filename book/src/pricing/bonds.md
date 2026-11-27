@@ -77,8 +77,7 @@ The builder delegates date generation to `MakeSchedule`. In addition to
 `payment_frequency`, it accepts a calendar, business-day convention,
 termination-date convention, date-generation rule, end-of-month flag,
 first-coupon date and next-to-last-coupon date. The final date defaults to the
-same adjustment convention as intermediate dates. Python exposes the same
-schedule controls.
+same adjustment convention as intermediate dates.
 
 Side belongs to `SteppedCouponBondTrade` or `FixedRateBondTrade`, together with
 the pricing anchor and optional settlement/spread day-count terms. Instrument
@@ -260,9 +259,7 @@ Backward Fourier evolution uses the same model assignment:
 }
 ```
 
-The configured model is resolved using the policy-selected discount index. Automatic
-Python dispatch reads the same configuration and instantiates the selected
-engine.
+The configured model is resolved using the policy-selected discount index.
 
 ## Hull-White dynamics and curve fit
 
@@ -370,10 +367,6 @@ Runnable examples are:
   prices the same mixed-coupon instrument with both engines.
 - `cargo run --manifest-path examples/scripting/Cargo.toml --bin stepped-coupon-bond`
   compares the native tree with an equivalent scripted deterministic payoff.
-- `bindings/python/examples/valuation/bonds/stepped_coupon_bond.ipynb` constructs and
-  prices the product from Python with typed terms and auxiliary model settings.
-- `bindings/python/examples/scripting/scripted_cashflows.ipynb` explains the
-  scripted underlying and its deterministic native comparison.
 
 Calibrated Hull–White parameters retain the entire piecewise sigma schedule.
 Transition variance integration splits at every sigma boundary, using the

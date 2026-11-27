@@ -32,9 +32,7 @@ components can therefore consume earlier dependencies. Reinitialization
 rebuilds from the original inputs.
 
 Native pricers and simulation services manage their own differentiation
-recording scopes. In Python, entering a context also establishes the binding's
-scope and enables construction on request; explicit `initialize()` performs
-the eager build.
+recording scopes.
 
 ## Dependency-driven construction
 

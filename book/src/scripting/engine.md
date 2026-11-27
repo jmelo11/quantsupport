@@ -106,6 +106,4 @@ any exercise rule it uses; this claim bridge does not solve general optimal
 stopping for scripted callable products.
 
 The Rust examples compare native and scripted swaps under controlled matching
-setups. Python's `evaluate_script` is a narrower averaged-variable service,
-described in [Working in Python](../python/getting-started.md); it does not
-expose every cashflow, path or claim-bridge facility available in Rust.
+setups.

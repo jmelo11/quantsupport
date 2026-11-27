@@ -2,7 +2,7 @@ name: Rust
 
 on:
   push:
-    branches: [feature/cranelift-parallel-ad]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -35,8 +35,6 @@ jobs:
         python-version: '3.12'
     - name: Test release automation
       run: python -m unittest discover -s tools/tests -p 'test_release.py' -v
-    - name: Test Excel download staging
-      run: python -m unittest discover -s tools/tests -p 'test_*downloads.py' -v
     - name: Build
       run: cargo +stable build -p quantsupport --verbose
     - name: Run Clippy

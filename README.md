@@ -1,7 +1,6 @@
 # QuantSupport
 
-QuantSupport (QS) is a quantitative finance library written in Rust, with
-Python and Excel bindings. It supports valuation across several asset classes,
+QuantSupport (QS) is a quantitative finance library written in Rust. It supports valuation across several asset classes,
 market sensitivities using automatic differentiation, interest-rate and credit
 curve construction, volatility markets, Monte Carlo simulation and XVA.
 
@@ -18,17 +17,20 @@ cargo add quantsupport
 
 ## Bindings
 
-- **Python:** typed instruments, market data, pricing, and risk analytics. See the [Python README](bindings/python/README.md) for installation, build instructions, examples, and the API reference.
-- **Excel:** a native XLL for 64-bit Windows Excel. See the [Excel README](bindings/excel/README.md) for downloads, installation, build instructions, and the worksheet API reference.
+Python and Excel are maintained in separate repositories. Each owns its core
+dependency pin, package version, build and release workflows, and documentation.
+
+- **Python:** typed instruments, market data, pricing, and risk analytics. See the [Python README](https://github.com/jmelo11/quantsupport-python/blob/main/README.md) for installation, build instructions, examples, and the API reference.
+- **Excel:** a native XLL for 64-bit Windows Excel. See the [Excel README](https://github.com/jmelo11/quantsupport-excel/blob/main/README.md) for downloads, installation, build instructions, and the worksheet API reference.
 
 ## Documentation
 
 | Reading purpose | Entry point |
 | --- | --- |
-| Financial concepts, architecture, conventions, and all three interfaces | [QuantSupport Book](https://jmelo11.github.io/quantsupport/) |
+| Financial concepts, architecture, conventions, and Rust workflows | [QuantSupport Book](https://jmelo11.github.io/quantsupport/) |
 | Exact native Rust signatures, errors, and numerical contracts | [Rust API reference](https://docs.rs/quantsupport/latest/quantsupport/) |
-| Independently usable binding guides and declarations | [Python documentation](https://jmelo11.github.io/quantsupport/api/python/) and [Excel documentation](https://jmelo11.github.io/quantsupport/api/excel/) |
-| Executable quantitative-finance studies | [Notebook collection](bindings/python/examples/README.md) |
+| Independently usable binding guides and declarations | [Python documentation](https://jmelo11.github.io/quantsupport-python/python/) and [Excel documentation](https://jmelo11.github.io/quantsupport-excel/excel/) |
+| Executable quantitative-finance studies | [Notebook collection](https://github.com/jmelo11/quantsupport-python/blob/main/examples/README.md) |
 
 ## Quick start: price and risk a swap
 

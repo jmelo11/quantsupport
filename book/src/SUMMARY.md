@@ -7,10 +7,6 @@
 - [Installation](getting-started/installation.md)
 - [A first valuation](getting-started/first-swap.md)
 - [Working in Rust](getting-started/rust-api.md)
-- [Download and use Python](python/getting-started.md)
-- [Installing the Excel add-in](excel/installation.md)
-- [Working in Excel](excel/workbook.md)
-- [Historical valuation in Excel](excel/historical-pricing.md)
 
 # Contracts and market state
 

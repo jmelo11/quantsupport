@@ -115,7 +115,7 @@ In particular, a quote's extraction date need not be its effective date, and
 measured from a later start `S` using `discount_factor(T) / discount_factor(S)`.
 The curve's day counter measures interpolation time; it does not override the
 swap quote's fixed or floating coupon day counts. See the executable
-[Euribor 3M reconciliation](../../../examples/bootstrap/euribor3m-reconciliation.md)
+[Euribor 3M reconciliation](../../../examples/bootstrap/src/bin/euribor3m-reconciliation.rs)
 for an annual-versus-semiannual comparison and an independent cashflow check.
 
 ## Differentiating calibration

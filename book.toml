@@ -1,7 +1,7 @@
 [book]
 title = "The QuantSupport Book"
 authors = ["QuantSupport contributors"]
-description = "Contracts, market construction, valuation, numerical risk, simulation and XVA in Rust, Python and Excel."
+description = "Contracts, market construction, valuation, numerical risk, simulation and XVA in Rust."
 language = "en"
 src = "book/src"
 
@@ -32,9 +32,6 @@ additional-js = ["mermaid.min.js", "mermaid-init.js"]
 "simulation/lgm.html" = "../simulation/monte-carlo.html"
 "xva/overview.html" = "../simulation/exposure.html"
 "xva/sensitivities.html" = "../xva/cva-dva-fva.html"
-"python/api.html" = "../python/getting-started.html"
-"excel/reference.html" = "../excel/workbook.html"
-"reference/bindings.html" = "../getting-started/installation.html"
 "reference/glossary.html" = "../concepts/instruments.html"
 
 [output.html.fold]

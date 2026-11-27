@@ -10,6 +10,4 @@ Run from the repository root:
 cargo run -p valuation-swaps
 ```
 
-The [Python swaps walkthroughs](../../../bindings/python/examples/valuation/swaps/README.md)
-are isolated in the matching product folder. Return to the
-[valuation catalog](../README.md).
+Return to the [valuation catalog](../README.md).

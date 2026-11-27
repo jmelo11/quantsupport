@@ -60,11 +60,6 @@ unchanged. Requests rebuild affected dependencies; unrelated simulations are
 not generated. Unchanged calibrated data can be reused with detached AD
 wrappers. An affected simulation uses its configured seed when rebuilt.
 
-In Python, the corresponding scope is `with context, scenario:`. The innermost
-active context supplies the base market, nested scenarios compose in entry
-order, and scope exit releases temporary state even on exceptions. Define
-scenarios separately from the context constructor.
-
 ## Local validation and stress interpretation
 
 For one input, a central comparison uses

@@ -71,19 +71,13 @@ class BookStructureTests(unittest.TestCase):
                         self.assertIn(unquote(parsed.fragment),
                                       anchors(destination.read_text()))
 
-    def test_interfaces_are_substantive_and_independent(self):
-        for relative in (
-            "getting-started/rust-api.md", "python/getting-started.md",
-            "excel/workbook.md",
-        ):
-            with self.subTest(chapter=relative):
-                text = (SOURCE / relative).read_text()
-                self.assertGreater(len(prose(text).split()), 350)
-                self.assertNotIn("](../api/", text)
-        self.assertIn("https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll",
-                      (SOURCE / "excel/installation.md").read_text())
-        self.assertIn("https://jmelo11.github.io/quantsupport/downloads/quantsupport-excel-windows-x64.zip",
-                      (SOURCE / "excel/installation.md").read_text())
+    def test_book_documents_only_the_rust_library(self):
+        guide = (SOURCE / "getting-started/rust-api.md").read_text()
+        self.assertGreater(len(prose(guide).split()), 350)
+        for path in SOURCE.rglob("*.md"):
+            with self.subTest(chapter=path.relative_to(SOURCE)):
+                self.assertNotRegex(path.read_text(), r"quantsupport-(?:python|excel)")
+                self.assertNotRegex(path.read_text(), r"(?m)^```(?:python|excel)")
 
     def test_runnable_rust_has_a_crate_harness(self):
         runnable = 0
@@ -102,14 +96,6 @@ class BookStructureTests(unittest.TestCase):
                         self.assertIn("# extern crate quantsupport;", content)
         self.assertGreaterEqual(runnable, 4)
 
-    def test_worksheet_context_argument_positions(self):
-        text = (SOURCE / "excel/workbook.md").read_text()
-        formulas = re.findall(r"QS\.CONTEXT\.CREATE\(([^)\n]+)\)", text)
-        self.assertEqual(len(formulas), 1)
-        arguments = formulas[0].split(",")
-        self.assertEqual(arguments[12:14], ['"USD"', '"SOFR"'])
-        self.assertEqual(arguments[3:12], [""] * 9)
-
     def test_reference_catalog_is_not_a_book_preprocessor(self):
         configuration = (ROOT / "book.toml").read_text()
         self.assertNotIn("[preprocessor.bindings]", configuration)
@@ -119,9 +105,10 @@ class BookStructureTests(unittest.TestCase):
         configuration = (ROOT / "book.toml").read_text()
         section = configuration.split("[output.html.redirect]", 1)[1].split("\n[", 1)[0]
         redirects = re.findall(r'^"([^"]+)" = "([^"]+)"$', section, re.M)
-        self.assertEqual(len(redirects), 16)
+        self.assertEqual(len(redirects), 13)
         for old, target in redirects:
             with self.subTest(old=old):
+                self.assertFalse(urlsplit(target).scheme)
                 destination = (SOURCE / Path(old).parent / target).with_suffix(".md")
                 self.assertTrue(destination.resolve().exists())
 

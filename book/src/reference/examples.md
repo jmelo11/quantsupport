@@ -2,8 +2,7 @@
 
 The example collection supplies complete market inputs and valuations for the
 workflows developed in this book. Run the Rust packages from the repository
-root so their data paths resolve. Python notebooks have companion loaders and
-data files in their own directories.
+root so their data paths resolve.
 
 ## From one valuation to a constructed market
 
@@ -39,36 +38,6 @@ cargo run -p scripting-examples --bin stepped-coupon-bond
 These compare native and scripted representations under specified models and
 payoff rules. Their assertions test those setups; stochastic comparisons also
 require a sampling tolerance and matching exercise assumptions.
-
-## Python and Excel
-
-The Python notebook collection follows the same scopes under
-`bindings/python/examples`: bootstrap; valuation/swaps, bonds, caps and loans;
-volatility surfaces; Hull–White; sensitivities; scripting; and XVA. Each can
-run in a fresh kernel. The repository's existing runner executes a selected
-scope or the whole collection:
-
-```sh
-python bindings/python/examples/run_notebooks.py valuation/swaps
-python bindings/python/examples/run_notebooks.py
-```
-
-The optional
-[rendered studies](https://jmelo11.github.io/quantsupport/api/python/studies/index.html)
-present the same canonical notebooks and saved outputs without requiring a
-local kernel.
-
-The notebook
-[directory](https://github.com/jmelo11/quantsupport/tree/main/bindings/python/examples)
-contains local loaders and illustrative market/model files. Read the
-problem-setting narrative and units alongside the code; do not copy helper
-defaults into an unrelated market without reviewing them.
-
-Excel supplies swap and historical-pricing workbooks. Load the released XLL
-before opening them and reconstruct native handles with full recalculation.
-The [workbook chapter](../excel/workbook.md) explains revisioned dependencies;
-the [historical chapter](../excel/historical-pricing.md) explains snapshots.
-Their formulas, not saved handle strings, are the reproducible workflow.
 
 ## Checking examples and prose
 

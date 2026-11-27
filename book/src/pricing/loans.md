@@ -15,19 +15,13 @@ amortization, Actual/365 accrual, a null calendar, unadjusted payments, zero
 fixing lag, no prepayment or credit, and 40% recovery. Set the calendar, fixing
 lag, and payment convention to the contract's actual terms.
 
-Coupons use the same positional list as `SteppedCouponBond`: Rust accepts
-`with_coupons(Vec<CashflowType<T>>)` and Python accepts the corresponding
-`FixedRateCoupon`, `FloatingRateCoupon`, and `OptionEmbeddedCoupon` objects in
-`coupons=[...]`. The final supplied coupon repeats through maturity. For monthly
-payments, `[qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.04))] * 12` followed
-by `[qs.FloatingRateCoupon(index=qs.MarketIndex.EURIBOR12m, spread=0.01)]`
-defines twelve fixed periods followed by floating periods. Lists can also step
-fixed coupons, spreads or floating indices. Empty lists, non-coupon entries and
-lists longer than the generated schedule are rejected. `OptionEmbeddedCoupon`
-accepts a native `PayoffOps` expression, such as `(2 * qs.PayoffOps.Index +
-0.005).max(0.02).min(0.09)`. The expression evaluates the observed index; the
-coupon's separate spread is added afterward. Serialization preserves the
-complete expression tree.
+Coupons use the same positional list as `SteppedCouponBond`, supplied through
+`with_coupons(Vec<CashflowType<T>>)`. The final supplied coupon repeats through
+maturity. Lists can step fixed coupons, spreads or floating indices. Empty lists,
+non-coupon entries and lists longer than the generated schedule are rejected.
+An embedded coupon's `PayoffOps` expression evaluates the observed index, and
+its separate spread is added afterward. Serialization preserves the complete
+expression tree.
 
 ## Contractual principal
 
@@ -61,8 +55,7 @@ Rust makers built with `MakeInstrument::build_using` obtain the initial all-in r
 the first coupon's fixing or forecast, including spread and payoff rules. An
 explicit `with_initial_amortization_rate` overrides that observation. Direct
 `build()` construction requires an explicit initial all-in `amortization_rate`
-for floating-first French/balloon loans. Python makers use `build_using(context)` when that rate is omitted.
-Excel constructs the loan using its explicit construction context. The builder
+for floating-first French/balloon loans. The builder
 retains a contractual baseline and recasts known fixed coupon steps. During
 valuation, French and balloon loans recalculate the installment at each
 contractual coupon/reset change from the opening balance and remaining maturity.
@@ -73,9 +66,8 @@ Accrual day counters belong to coupons. A floating coupon uses its explicit
 day counter, falling back to its index convention when omitted. Fixed coupons
 use their `InterestRate` day counter. The loan uses those same conventions for
 principal amortization and preserves them when generating each cashflow.
-`MakeLoan::with_day_counter` and Python `Loan(day_counter=...)` have been removed;
-move that setting into the coupon. With an initial amortization rate matching
-the first all-in floating fixing, French payments are level through the first
+Set the day counter on the coupon rather than the loan builder. With an initial
+amortization rate matching the first all-in floating fixing, French payments are level through the first
 reset, including months with different accrual lengths. Later resets set a new
 level installment for their rate period.
 
@@ -182,11 +174,8 @@ leg 2 recovery redemptions. Prepayment is projected from origination, including
 periods before evaluation. Historical coupon and refinancing observations needed
 to replay this history are required; missing fixings raise an error.
 
-Python's `qs.Request.Cashflows()` defaults to
-`qs.Request.Cashflows(from_evaluation_date=True)` and reports payments strictly
-after evaluation. Pass `from_evaluation_date=False` to include the full schedule
-and initial advance. Rust uses `Request::Cashflows(true)` or
-`Request::Cashflows(false)`; Excel accepts `Cashflows(false)` as its request name.
+`Request::Cashflows(true)` reports payments strictly after evaluation. Use
+`Request::Cashflows(false)` to include the full schedule and initial advance.
 The report window does not affect PV, which includes future receipts and excludes
 the initial advance. Floating rows include their contractual `fixing_date`; monthly
 coupons sharing an annual reset have the same date. Fixed and principal rows have
@@ -196,7 +185,7 @@ Payment schedules accept forward/backward generation, month-end alignment,
 `first_coupon_date` and `next_to_last_coupon_date`. The first anchor ends an
 initial stub; the penultimate anchor starts a final stub. `Backward` generation
 places an automatically generated stub at the beginning; `Forward` places it at
-the end. Excel accepts these controls as rows in the existing loan settings table.
+the end.
 The default French convention
 keeps the same scheduled installment for a stub, with interest based on its actual
 accrual fraction and the remainder allocated to principal.
@@ -210,54 +199,12 @@ on the evaluation date. Default between payments pays recovery on opening
 principal at the period-end payment date. This is a discrete recovery timing
 approximation. Credit and prepayment affect pricing state, not the contract.
 
-```python
-import quantsupport as qs
-
-loan = qs.Loan(
-    identifier="EUR-MORTGAGE", start_date=qs.Date(year=2026, month=2, day=24),
-    maturity_date=qs.Date(year=2056, month=2, day=24), notional=250_000.0,
-    coupons=[qs.FloatingRateCoupon(index=qs.MarketIndex.EURIBOR12m, spread=0.01)],
-    currency=qs.Currency.EUR,
-    repayment=qs.LoanRepaymentStructure.french(), amortization_rate=0.05,
-    payment_frequency=qs.Frequency.Monthly,
-    calendar=qs.Calendar.TARGET, fixing_lag=2,
-    prepayment=qs.PrepaymentModelConfiguration.constant_annual_cpr(cpr=0.12),
-)
-trade = qs.Trade(instrument=loan, trade_date=reference_date, side=qs.Side.LongReceive)
-discount_policy = qs.FixedIncomeDiscountPolicy(discount_curve_by_currency={qs.Currency.EUR: qs.MarketIndex.ESTR})
-with qs.PricingContext(quotes=quotes, curves=curves, fixings=fixings, csa_policy=csa_policy,
-                      fixed_income_policy=discount_policy) as context:
-    result = context.evaluate(trade=trade, requests=[qs.Request.Value, qs.Request.Cashflows(), qs.Request.Sensitivities])
-    value = result.price
-    expected_receipts = result.cashflows
-    risk = result.sensitivities
-```
-
-The Python constructor delegates to the Rust builder. `to_dict` and `from_dict`
-serialize construction parameters; use Python's `json` module for files. Typed definitions and their
-plain serialized dictionaries are both accepted. `loan.coupon_fixing_requests()` lists
-unique coupon observations for loading fixings; valuation belongs to the pricer.
-
-`context.evaluate(qs.Trade(loan, reference_date), requests)` dispatches directly
-to the core Rust `LoanPricer`. Use `PricerConfiguration.loan(...)` with Python
-arguments and a typed `MarketIndex` to select fair-rate and refinancing settings:
-
-```python
-context.pricer_configurations = [qs.PricerConfiguration.loan(
-    refinancing_benchmark_index=qs.MarketIndex.EURIBOR12m,
-)]
-```
-
-Omitting this configuration uses the native defaults: no refinancing benchmark
-and preserved amortization during fair-rate trials. The context's
-`fixed_income_policy` selects discounting. Loans carry their payment currency,
-while the policy selects the discount curve. The same contract can therefore be
-valued against ESTR, EURIBOR, or a funding curve by changing the policy. Native
-Rust valuation requires a configured policy. In Python, the default context
-policy maps its base currency to its base curve when no explicit fixed-income
-policy is supplied.
-The same native settings apply to individual loan trades, portfolio members and
-scenarios. No Python pricer registration or trade subclass is needed.
+Set the refinancing benchmark and fair-rate schedule choices on the native
+pricer. The defaults use no refinancing benchmark and preserve amortization
+during fair-rate trials. Configure a `FixedIncomeDiscountPolicy` explicitly:
+the loan carries its payment currency, while the policy chooses the discount
+curve. The same contract can therefore be valued against ESTR, EURIBOR or a
+funding curve by changing the policy.
 
 Sensitivities are derivatives with respect to labelled market pillars. Multiply
 a rate-quote derivative by 0.0001 for the first-order PV change from a one-basis-point
@@ -275,19 +222,9 @@ advance PV, lock the result, extend through the next segment, and repeat.
 Every solved prefix therefore lends at par with its outstanding principal
 repaid at that prefix's end. Bounded coupons remain unsupported.
 
-`Request::FairRate(index)` in Rust and `qs.Request.FairRate(index)` in Python
-select one zero-based segment and return its scalar in `fair_rate`. Only the
-earlier segments needed for that target are solved. Use separate evaluations
-for several targets; invalid indices are errors. There is no second fair-rate
-attribute or implicit array. In Excel, `QS.REQUEST.FAIR.RATE(index)` supplies
-the request to `QS.EVALUATE`, then `QS.RESULT.FAIR.RATE` reads its scalar.
-
-```python
-with context:
-    second_rate = context.evaluate(
-        trade=trade, requests=[qs.Request.FairRate(1)]
-    ).fair_rate
-```
+`Request::FairRate(index)` selects one zero-based segment and returns its scalar
+in `fair_rate`. Only earlier segments needed for that target are solved. Use
+separate evaluations for several targets; invalid indices are errors.
 
 The pricer's `rebuild_amortization_for_fair_rate` parameter controls how solver
 trials treat principal. The default `false` preserves the already created
@@ -297,21 +234,7 @@ the first segment is solved, its rate stays fixed during later trials. A custom 
 metadata to use this mode. Neither mode changes the original instrument. Both apply the French reset rule
 during receipt projection.
 
-```python
-original_configurations = context.pricer_configurations
-try:
-    for rebuild in [False, True]:
-        context.pricer_configurations = [qs.PricerConfiguration.loan(
-            rebuild_amortization_for_fair_rate=rebuild,
-        )]
-        with context:
-            fair_rate = context.evaluate(trade, [qs.Request.FairRate(0)]).fair_rate
-            print(rebuild, fair_rate)
-finally:
-    context.pricer_configurations = original_configurations
-```
-
-In Rust, use `LoanPricer::new().with_fair_rate_amortization_rebuild(true)` for
+Use `LoanPricer::new().with_fair_rate_amortization_rebuild(true)` for
 rebuilding. The solver searches within [-5%, 50%], reducing the upper bound when
 a trial rate would produce invalid amortization. It reports unbracketed
 solutions as errors. To reprice a preserving-mode solution through the builder,
@@ -324,25 +247,13 @@ mortgage example uses an Actual/360 fixed coupon, whereas
 constructor to reprice this mortgage would change the contract and would no
 longer reproduce the par target.
 
-Runnable examples remain in their separate product directories:
+Run `cargo run -p valuation-loans` for the complete native example. It uses
+the illustrative EUR and borrower-credit inputs in
+`examples/valuation/loans/data/loan_*.json`.
 
-- Rust: `cargo run -p valuation-loans`.
-- Python: `python bindings/python/examples/run_notebooks.py valuation/loans`.
-
-Both use the illustrative EUR and borrower-credit inputs in
-`examples/valuation/loans/data/loan_*.json`. The mortgage notebook develops
-amortization, annual EURIBOR resets, composite cost-of-funds discounting,
-market scenarios, prepayment, credit, and quote sensitivities over thirty years.
-It reuses one context by assigning `context.curves` and `context.fixed_income_policy`.
-Temporary benchmark and funding-spread shocks use `with context, scenario:` with
-`qs.Scenario(shocks=[qs.Shock(target=..., value=..., shock_type=...)])`. Pricing
-constructs requested market objects in an independent view. The base context
-retains its inputs and curves, including when the scope raises an exception.
-
-In Rust, `Scenario::new(vec![Shock::new(target, value, ScenarioType::Absolute)])`
-creates the same combination. `scenario.apply(&context)?` returns a borrowed
-`MarketDataProvider` accepted by pricers and `Evaluator`; the context stays unchanged.
-Funding-spread sensitivities use the original zero-rate quote identifiers
-`ZeroRate_EUR_OTHER:FUNDINGSPREAD_<tenor>`. The notebook isolates those derivatives by funding tenor,
-reports EUR changes for +1 bp, and compares the parallel funding exposure with
-fully repriced funding stress.
+`Scenario::new(vec![Shock::new(target, value, ScenarioType::Absolute)])`
+creates a quote shock. `scenario.apply(&context)?` returns a borrowed
+`MarketDataProvider` accepted by pricers and `Evaluator`; the context stays
+unchanged. Funding-spread sensitivities retain the original quote identifiers
+`ZeroRate_EUR_OTHER:FUNDINGSPREAD_<tenor>`. Multiply decimal-rate derivatives
+by `0.0001` for the approximate EUR change under a one-basis-point move.

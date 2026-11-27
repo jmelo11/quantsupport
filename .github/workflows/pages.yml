@@ -5,131 +5,46 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_run:
-    workflows: [Release]
-    branches: [main]
-    types: [completed]
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: Published release to deploy (blank selects latest)
-        required: false
-        type: string
-      documentation_ref:
-        description: Optional commit or ref supplying documentation, examples and tooling
-        required: false
-        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: pages-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && 'validation' || 'deployment' }}-${{ github.ref }}
-  # Keep release deployments queued when the version commit's skipped Release
-  # run also emits workflow_run. A skipped run must not replace a pending build.
-  queue: max
-  cancel-in-progress: false
+  group: rust-documentation-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Test release download staging
-        run: python -m unittest discover -s tools/tests -p 'test_*downloads.py' -v
-      - name: Select published release
-        id: release
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch')
+      - name: Validate Book structure and links
+        run: python -m unittest discover -s tools/tests -p test_book.py -v
+      - name: Install Book tools
         run: |
-          python tools/release/excel_downloads.py resolve --repository "$GITHUB_REPOSITORY" \
-            --run-id "$RELEASE_RUN_ID" --tag "$RELEASE_TAG"
-          cp tools/release/excel_downloads.py "$RUNNER_TEMP/excel_downloads.py"
-          cp tools/release/python_downloads.py "$RUNNER_TEMP/python_downloads.py"
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-      - name: Check out released source
-        if: steps.release.outputs.ref != ''
+          cargo install mdbook --version 0.5.2 --locked
+          cargo install mdbook-mermaid --version 0.17.0 --locked
+          mdbook-mermaid install .
+      - name: Build Book and validate Rust examples
         run: |
-          git checkout --detach "$RELEASE_REF"
-          # Older releases kept their documentation tests beside the content.
-          git restore --source="$WORKFLOW_REF" -- tools
-          for suite in book docs; do
-            if [ -d "$suite/tests" ]; then
-              cp "$suite/tests/"test_*.py tools/tests/
-            fi
-          done
-        env:
-          RELEASE_REF: ${{ steps.release.outputs.ref }}
-          WORKFLOW_REF: ${{ github.sha }}
-      - name: Restore requested documentation
-        if: steps.release.outputs.ref != '' && github.event_name == 'workflow_dispatch' && inputs.documentation_ref != ''
-        run: git restore --source="$DOCUMENTATION_REF" -- docs book bindings/python/examples tools
-        env:
-          DOCUMENTATION_REF: ${{ inputs.documentation_ref }}
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install binding documentation dependencies
-        run: python -m pip install -r docs/requirements.txt
-      - name: Install checkout Python bindings for guide examples
-        run: python -m pip install ./bindings/python
-      - name: Test notebook kernel selection and execution
-        run: python -m unittest discover -s bindings/python/examples -p test_run_notebooks.py -v
-      - name: Test Book structure and navigation
-        run: python -m unittest discover -s tools/tests -p 'test_book.py' -v
-      - name: Test binding reference generation
-        run: python -m unittest discover -s tools/tests -p 'test_reference.py' -v
-      - name: Install mdBook
-        run: cargo install mdbook --version 0.5.2 --locked
-      - name: Install mdBook Mermaid
-        run: cargo install mdbook-mermaid --version 0.17.0 --locked
-      - name: Install Mermaid assets
-        run: mdbook-mermaid install .
-      - name: Build book
-        run: mdbook build
-      - name: Test Rust Book examples
-        run: python tools/book/check_rust.py
-      - name: Check Rust API reference
-        run: RUSTDOCFLAGS='-D warnings' cargo doc -p quantsupport --no-deps
-      - name: Build API reference
-        run: sphinx-build -W -b html docs book/html/api
-      - name: Stage Excel downloads
-        if: steps.release.outputs.tag != ''
-        run: |
-          python "$RUNNER_TEMP/excel_downloads.py" stage --repository "$GITHUB_REPOSITORY" \
-            --tag "$RELEASE_TAG" --destination book/html/downloads --examples bindings/excel/examples
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-      - name: Stage Python packages and package page
-        if: steps.release.outputs.tag != ''
-        run: |
-          python "$RUNNER_TEMP/python_downloads.py" --repository "$GITHUB_REPOSITORY" \
-            --tag "$RELEASE_TAG" --page book/html/python/downloads.html \
-            --destination book/html/downloads/python
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-      - name: Configure Pages
-        if: steps.release.outputs.tag != ''
-        uses: actions/configure-pages@v5
-      - name: Upload Pages artifact
-        if: steps.release.outputs.tag != ''
-        uses: actions/upload-pages-artifact@v3
+          mdbook build
+          python tools/book/check_rust.py
+          RUSTDOCFLAGS='-D warnings' cargo doc -p quantsupport --no-deps
+      - uses: actions/configure-pages@v5
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:
           path: book/html
 
   deploy:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch')
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -139,6 +54,5 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy to GitHub Pages
+      - uses: actions/deploy-pages@v4
         id: deployment
-        uses: actions/deploy-pages@v4

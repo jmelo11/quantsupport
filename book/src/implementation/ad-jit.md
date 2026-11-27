@@ -341,7 +341,7 @@ sensitivity requests currently report first-order risk.
 | [compiledkernel.rs](https://github.com/jmelo11/quantsupport/blob/main/src/ad/compiledkernel.rs), [compiledprogram.rs](https://github.com/jmelo11/quantsupport/blob/main/src/ad/compiledprogram.rs) | Reusable scalar/path kernels, derivative orders and guarded multi-output programs |
 | [compiledfunction.rs](https://github.com/jmelo11/quantsupport/blob/main/src/ad/compiledfunction.rs), [implicitderivatives.rs](https://github.com/jmelo11/quantsupport/blob/main/src/ad/implicitderivatives.rs) | Vector residuals, Jacobians and derivatives through calibration |
 
-The [benchmark methodology](https://github.com/jmelo11/quantsupport/blob/main/docs/benchmarks.md) separates capture,
+The [benchmark runners](https://github.com/jmelo11/quantsupport/blob/main/tools/README.md#benchmarks) separate capture,
 compilation, market refresh and repeated native execution. These costs matter
 at different workload sizes: a small valuation may be dominated by preparation,
 while repeated path calculations can amortize it over many executions.
