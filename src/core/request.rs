@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         cashflowaggregation::CouponDetails,
         collateral::Discountable,
@@ -251,7 +251,7 @@ where
 /// or apply discounting.
 pub trait HandleCashflows<T, S>
 where
-    S: LegsProvider<DualFwd>,
+    S: LegsProvider<Recorded>,
 {
     /// Returns parallel cashflow columns with signed amounts in each leg's currency.
     ///
@@ -431,7 +431,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::{instrument::AssetClass, trade::Side},
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
@@ -449,11 +449,11 @@ mod tests {
 
     /// Mock state that implements LegsProvider for testing
     struct MockState {
-        legs: Vec<Leg<DualFwd>>,
+        legs: Vec<Leg<Recorded>>,
     }
 
-    impl LegsProvider<DualFwd> for MockState {
-        fn legs(&self) -> &[Leg<DualFwd>] {
+    impl LegsProvider<Recorded> for MockState {
+        fn legs(&self) -> &[Leg<Recorded>] {
             &self.legs
         }
     }
@@ -463,9 +463,9 @@ mod tests {
 
     impl HandleCashflows<MockTrade, MockState> for MockHandler {}
 
-    fn create_test_rate() -> InterestRate<DualFwd> {
+    fn create_test_rate() -> InterestRate<Recorded> {
         InterestRate::from_rate_definition(
-            DualFwd::new(0.05),
+            Recorded::new(0.05),
             crate::rates::interestrate::RateDefinition::new(
                 DayCounter::Actual360,
                 crate::rates::compounding::Compounding::Simple,
@@ -480,22 +480,22 @@ mod tests {
         let end = Date::new(2024, 4, 1);
         let floating = FloatingRateCoupon::new(
             100_000.0,
-            DualFwd::new(0.01),
+            Recorded::new(0.01),
             MarketIndex::SOFR,
             start,
             end,
             end,
         );
-        floating.set_fixing(DualFwd::new(0.04));
+        floating.set_fixing(Recorded::new(0.04));
         let negative_coupon = FloatingRateCoupon::new(
             100_000.0,
-            DualFwd::new(0.0),
+            Recorded::new(0.0),
             MarketIndex::SOFR,
             start,
             end,
             end,
         );
-        negative_coupon.set_fixing(DualFwd::new(-0.02));
+        negative_coupon.set_fixing(Recorded::new(-0.02));
         let cashflows = vec![
             CashflowType::FixedRateCoupon(FixedRateCoupon::new(
                 100_000.0,
@@ -509,13 +509,13 @@ mod tests {
                 OptionEmbeddedCoupon::new(
                     100_000.0,
                     MarketIndex::SOFR,
-                    DualFwd::new(0.0),
+                    Recorded::new(0.0),
                     start,
                     end,
                     end,
                     PayoffOps::Index,
                 )
-                .with_fixing(DualFwd::new(0.05)),
+                .with_fixing(Recorded::new(0.05)),
             ),
             CashflowType::Redemption(SimpleCashflow::new(100_000.0, end)),
             CashflowType::Disbursement(SimpleCashflow::new(100_000.0, start)),

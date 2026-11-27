@@ -41,7 +41,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // ── 3a. SOFR swap: receive fixed 3.78% vs pay SOFR quarterly ─────
     {
-        let swap = MakeSwap::<DualFwd>::default()
+        let swap = MakeSwap::<Recorded>::default()
             .with_identifier("USD_SOFR_IRS_5Y".to_string())
             .with_start_date(start)
             .with_maturity_date(maturity)
@@ -56,7 +56,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .build()?;
 
         let trade = SwapTrade::new(swap, start, notional, Side::LongReceive);
-        let output = price_product::<Swap<DualFwd>, SwapTrade<DualFwd>>(
+        let output = price_product::<Swap<Recorded>, SwapTrade<Recorded>>(
             "SOFR OIS 5Y Swap",
             &trade,
             &env.context,
@@ -69,7 +69,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // ── 3b. TermSOFR3m swap: receive fixed 4.00% vs pay TermSOFR3m quarterly
     {
-        let swap = MakeSwap::<DualFwd>::default()
+        let swap = MakeSwap::<Recorded>::default()
             .with_identifier("USD_TermSOFR3m_IRS_5Y".to_string())
             .with_start_date(start)
             .with_maturity_date(maturity)
@@ -84,7 +84,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .build()?;
 
         let trade = SwapTrade::new(swap, start, notional, Side::LongReceive);
-        let output = price_product::<Swap<DualFwd>, SwapTrade<DualFwd>>(
+        let output = price_product::<Swap<Recorded>, SwapTrade<Recorded>>(
             "TermSOFR3m 5Y Swap",
             &trade,
             &env.context,
@@ -104,7 +104,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             Frequency::Semiannual,
         );
 
-        let swap = MakeSwap::<DualFwd>::default()
+        let swap = MakeSwap::<Recorded>::default()
             .with_identifier("CLP_ICP_OIS_5Y".to_string())
             .with_start_date(start)
             .with_maturity_date(maturity)
@@ -119,7 +119,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .build()?;
 
         let trade = SwapTrade::new(swap, start, clp_notional, Side::LongReceive);
-        let output = price_product::<Swap<DualFwd>, SwapTrade<DualFwd>>(
+        let output = price_product::<Swap<Recorded>, SwapTrade<Recorded>>(
             "CLP ICP OIS 5Y Swap (USD collateral)",
             &trade,
             &env.context,
@@ -135,7 +135,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let usd_notional = 10_000_000.0;
         let clp_notional_xccy = usd_notional * 935.0;
 
-        let xccy = MakeFloatFloatCrossCurrencySwap::<DualFwd>::default()
+        let xccy = MakeFloatFloatCrossCurrencySwap::<Recorded>::default()
             .with_identifier("XCCY_CLP_ICP_SOFR_USD_5Y".to_string())
             .with_start_date(start)
             .with_maturity_date(maturity)
@@ -159,8 +159,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             Side::LongReceive,
         );
         let output = price_product::<
-            FloatFloatCrossCurrencySwap<DualFwd>,
-            FloatFloatCrossCurrencySwapTrade<DualFwd>,
+            FloatFloatCrossCurrencySwap<Recorded>,
+            FloatFloatCrossCurrencySwapTrade<Recorded>,
         >(
             "Cross-Currency Swap CLP/USD 5Y (receive CLP ICP, pay USD SOFR)",
             &trade,

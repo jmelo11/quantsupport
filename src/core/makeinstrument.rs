@@ -110,7 +110,7 @@ pub mod test_support {
         ] {
             let curve = FlatForwardTermStructure::new(
                 date,
-                DualFwd::from(rate),
+                Recorded::from(rate),
                 RateDefinition::new(
                     DayCounter::Actual360,
                     Compounding::Simple,
@@ -212,7 +212,7 @@ pub mod test_support {
     ///
     /// # Errors
     /// Propagates errors constructing the fixture's tenor inputs.
-    pub fn loan() -> Result<MakeLoan<DualFwd>> {
+    pub fn loan() -> Result<MakeLoan<Recorded>> {
         Ok(MakeLoan::default()
             .with_identifier("loan".into())
             .with_start_tenor(p("0D")?)

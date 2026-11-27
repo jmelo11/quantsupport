@@ -1,18 +1,21 @@
-/// Instruments used to calibrate bootstrapped curves.
+/// Provides the instruments used to calibrate bootstrapped curves.
 pub mod bootstrapcalibrationinstrument;
-/// Discounting policy used while bootstrapping.
+/// Provides the discounting policy used while bootstrapping.
 pub mod bootstrapdiscountpolicy;
-/// Bootstrapped yield-curve representation.
+/// Provides the bootstrapped yield-curve representation.
 pub mod bootstrappedcurve;
-/// One step in a curve bootstrap.
+/// Describes one instrument and solved node in a curve bootstrap.
 pub mod bootstrapstep;
-/// Shared curve-bootstrap utilities.
+/// Provides the shared curve-bootstrap utilities.
 pub mod bootstraputils;
+/// Calibrates survival probabilities to credit quotes and connects their sensitivities to those quotes.
 pub mod creditcurvebootstrapper;
+/// Describes the credit instruments, recovery and discount curve used in a credit bootstrap.
 pub mod creditcurveconfiguration;
-/// Serializable curve-bootstrap configuration.
+/// Provides the serializable curve-bootstrap configuration.
 pub mod curveconfiguration;
-/// Multi-curve bootstrap orchestration.
+/// Orders curve dependencies and calibrates the linked discount and forwarding curves.
 pub mod multicurvebootstrapper;
 
+/// Associates a constructed curve with its input quotes and calibration map.
 mod quotedcurve;

@@ -4,50 +4,50 @@
 //! instrument and trade abstractions, evaluation results, market-data handling,
 //! and collateral / CSA discount policy definitions.
 
-/// Injectable cashflow aggregation and convention-based implied coupon rates.
+/// Aggregates reported cashflows and calculates convention-based implied coupon rates.
 pub mod cashflowaggregation;
-/// Collateral / CSA discount policy module.
+/// Selects the curves and currencies used to discount collateralized positions.
 pub mod collateral;
-/// Constructed element module.
+/// Wraps constructed curves, volatility data and simulations for market-data consumers.
 pub mod elements;
-/// Evaluation results module.
+/// Stores the values, cashflows and sensitivities returned by a pricing request.
 pub mod evaluationresults;
-/// Trade evaluator that dispatches pricing requests to registered pricers.
+/// Dispatches a trade and its requests to the registered pricing method.
 pub mod evaluator;
-/// Instrument module.
+/// Defines the common interface implemented by financial instruments.
 pub mod instrument;
-/// Explicit construction contract for instrument makers.
+/// Defines how instrument makers resolve their terms against a market.
 pub mod makeinstrument;
-/// Builder for streaming portfolio accumulators.
+/// Builds streaming accumulators for portfolio valuation results.
 pub mod makeportfolioaccumulator;
-/// Market data handling module.
+/// Describes, resolves and stores the market inputs required by pricing methods.
 pub mod marketdatahandling;
-/// Serializable timestamped market inputs.
+/// Stores serializable market inputs at a specified valuation timestamp.
 pub mod marketsnapshot;
-/// Historical market snapshot archive.
+/// Archives market snapshots for historical valuation.
 pub mod marketsnapshotstore;
-/// Pillars module.
+/// Registers labelled market inputs so derivatives can be reported in their quote coordinates.
 pub mod pillars;
-/// Streaming portfolio valuation and numeric aggregation.
+/// Values collections of trades and aggregates their numerical results.
 pub mod portfolio;
-/// Pricer module.
+/// Defines the pricing interface implemented by the supported valuation methods.
 pub mod pricer;
-/// Typed instrument-to-pricer configuration.
+/// Selects and configures a pricing method for an instrument type.
 pub mod pricerconfiguration;
-/// Pricer state module.
+/// Stores the market inputs and intermediate values used during one valuation.
 pub mod pricerstate;
-/// Pricing data context module.
+/// Constructs and supplies the market dependencies required by a valuation.
 pub mod pricingcontext;
-/// Pricing request module.
+/// Defines pricing requests and their handlers for values, cashflows, fair rates and risk.
 pub mod request;
-/// Price-preserving rate-curve risk coordinate transformations.
+/// Changes the coordinates of reported curve risk while preserving curve values and prices.
 pub mod riskcontext;
-/// Historical market timestamp and quote-side selection.
+/// Selects the timestamp and quote side used for historical market observations.
 pub mod snapshotselector;
-/// Trade module.
+/// Associates contractual instruments with position information such as side and notional.
 pub mod trade;
-/// Visitor pattern module.
+/// Defines the visitor interfaces used to inspect supported financial objects.
 pub mod visitable;
 
-/// Deterministic forward markets generated as ordinary pricing-context inputs.
+/// Constructs deterministic future markets as ordinary pricing-context inputs.
 pub mod forwardmarket;

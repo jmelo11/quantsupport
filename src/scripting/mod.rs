@@ -28,19 +28,25 @@ This attribution and license notice must be preserved at the top of this file.
 #![allow(clippy::cargo, clippy::nursery, clippy::pedantic)]
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-/// Runtime market-data values supplied to scripts.
+/// Provides the runtime market-data values supplied to scripts.
 pub mod data;
-/// Maker for context-resolved scripted event schedules.
+/// Builds scripted event schedules from terms resolved against a pricing context.
 pub mod makescriptedproduct;
-/// Abstract syntax tree nodes and event streams.
+/// Provides the abstract syntax tree nodes and event streams.
 pub mod nodes;
-/// Lexer and parser for the scripting language.
+/// Tokenizes script source and parses it into an event stream.
 pub mod parsing;
+/// Converts dated payoff programs into contingent claims for valuation.
 pub mod product;
+/// Describes the market observations referenced by script events.
 pub mod request;
+/// Runs script events over market-model paths and reports their values, cashflows and sensitivities.
 pub mod runtime;
-/// AST analysis, transformation, and evaluation visitors.
+/// Traverses the script syntax tree to prepare event metadata and evaluate payoffs.
 pub mod visitors;
 
 /// Numeric representation used while evaluating scripts.
-pub type NumericType = crate::ad::dual::DualFwd;
+pub use crate::ad::Recorded as NumericType;
+
+/// Executes a prepared native program with the current market binding.
+mod execution;

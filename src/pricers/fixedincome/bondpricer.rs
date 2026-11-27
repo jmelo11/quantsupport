@@ -3,7 +3,7 @@ use super::bondanalytics::{
     bracketed_root, quoted_dirty_price, solve_yield, yield_price_and_derivative,
 };
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar, tape::Tape},
+    ad::{scalar::Scalar, Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -38,7 +38,7 @@ use std::collections::HashSet;
 /// Resolves the bond leg discount index through the required discount policy.
 fn discount_index(
     policy: Option<&dyn DiscountPolicy>,
-    trade: &impl BondTerms<DualFwd>,
+    trade: &impl BondTerms<Recorded>,
 ) -> Result<MarketIndex> {
     policy
         .ok_or_else(|| QSError::ValueNotSetErr("Bond discount policy".into()))?
@@ -52,15 +52,15 @@ pub(super) struct ResolvedCashflow<T> {
 }
 
 pub(super) struct BondState {
-    value: Option<DualFwd>,
+    value: Option<Recorded>,
     market_data: Option<MarketData>,
-    legs: Vec<Leg<DualFwd>>,
+    legs: Vec<Leg<Recorded>>,
     evaluation_date: Date,
     settlement_date: Date,
     discount_index: MarketIndex,
     spread_day_counter: DayCounter,
     resolved_spread: f64,
-    spread_node: Option<DualFwd>,
+    spread_node: Option<Recorded>,
     spread_label: String,
 }
 
@@ -74,15 +74,16 @@ impl PricerState for BondState {
     }
 }
 
-impl LegsProvider<DualFwd> for BondState {
-    fn legs(&self) -> &[Leg<DualFwd>] {
+impl LegsProvider<Recorded> for BondState {
+    /// Returns the trade legs used by the existing cashflow valuation.
+    fn legs(&self) -> &[Leg<Recorded>] {
         &self.legs
     }
 }
 
 /// Clones a contractual leg and installs historical or projected fixings on
 /// every floating coupon.
-fn resolve_leg<T: Scalar + From<DualFwd>>(
+fn resolve_leg<T: Scalar + From<Recorded>>(
     leg: &Leg<T>,
     market_data: &MarketData,
     evaluation_date: Date,
@@ -154,7 +155,7 @@ fn resolve_leg<T: Scalar + From<DualFwd>>(
 
 /// Resolves contractual earned interest without quote solving or a pricing model.
 fn bond_accrued_amount(
-    trade: &impl BondTerms<DualFwd>,
+    trade: &impl BondTerms<Recorded>,
     market_data: &MarketData,
     evaluation_date: Date,
     start: Date,
@@ -169,7 +170,7 @@ fn bond_accrued_amount(
     accrued_amount(&[resolved], Some(market_data), start, end)
 }
 
-impl<E: BondPricingEngine, T: BondTerms<DualFwd>> HandleAccruedAmount<T, BondState> for E {
+impl<E: BondPricingEngine, T: BondTerms<Recorded>> HandleAccruedAmount<T, BondState> for E {
     fn handle_accrued_amount(
         &self,
         trade: &T,
@@ -187,9 +188,9 @@ impl<E: BondPricingEngine, T: BondTerms<DualFwd>> HandleAccruedAmount<T, BondSta
 
 /// Collects resolved coupons and redemptions strictly after settlement.
 fn remaining_cashflows(
-    leg: &Leg<DualFwd>,
+    leg: &Leg<Recorded>,
     settlement_date: Date,
-) -> Result<Vec<ResolvedCashflow<DualFwd>>> {
+) -> Result<Vec<ResolvedCashflow<Recorded>>> {
     let mut cashflows = Vec::new();
     for cashflow in leg.cashflows() {
         let resolved = match cashflow {
@@ -218,7 +219,7 @@ fn remaining_cashflows(
             CashflowType::Redemption(redemption) if redemption.payment_date() > settlement_date => {
                 Some(ResolvedCashflow {
                     payment_date: redemption.payment_date(),
-                    amount: DualFwd::scalar(redemption.amount()?),
+                    amount: Recorded::scalar(redemption.amount()?),
                 })
             }
             CashflowType::FixedRateCoupon(_)
@@ -246,7 +247,7 @@ fn remaining_cashflows(
 }
 
 /// Sums principal redemptions that remain outstanding after settlement.
-fn outstanding_principal(leg: &Leg<DualFwd>, settlement_date: Date) -> Result<f64> {
+fn outstanding_principal(leg: &Leg<Recorded>, settlement_date: Date) -> Result<f64> {
     let principal = leg
         .cashflows()
         .iter()
@@ -274,7 +275,7 @@ pub(super) trait BondPricingEngine {
     /// Loads the market inputs and scalar model required by this engine.
     fn prepare(
         &self,
-        trade: &impl BondTerms<DualFwd>,
+        trade: &impl BondTerms<Recorded>,
         discount_index: &MarketIndex,
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, Self::Model<f64>)>;
@@ -283,7 +284,7 @@ pub(super) trait BondPricingEngine {
         &self,
         model: &Self::Model<f64>,
         market: &MarketData,
-    ) -> Result<Self::Model<DualFwd>>;
+    ) -> Result<Self::Model<Recorded>>;
     /// Values the resolved bond cashflows and issuer calls with the supplied model and spread.
     fn value<T: Scalar>(
         &self,
@@ -296,7 +297,7 @@ pub(super) trait BondPricingEngine {
 pub(super) struct BondValuation<'a, T: Scalar> {
     pub(super) curve: &'a dyn InterestRatesTermStructure<T>,
     pub(super) cashflows: &'a [ResolvedCashflow<T>],
-    pub(super) leg: &'a Leg<DualFwd>,
+    pub(super) leg: &'a Leg<Recorded>,
     pub(super) units: f64,
     pub(super) calls: &'a [CallScheduleEntry],
     pub(super) reference_date: Date,
@@ -333,7 +334,7 @@ pub(super) fn discounted_value<T: Scalar>(
 
 /// Requests contractual discount/forward curves and past coupon fixings.
 pub(super) fn contractual_market_request(
-    trade: &impl BondTerms<DualFwd>,
+    trade: &impl BondTerms<Recorded>,
     discount_index: Option<&MarketIndex>,
     evaluation_date: Date,
     anchor_fixings: bool,
@@ -398,27 +399,29 @@ pub(super) fn contractual_market_request(
 /// Records the engine valuation and the trade's spread as an independent risk factor.
 fn build_ad_value<E: BondPricingEngine>(
     engine: &E,
-    trade: &impl BondTerms<DualFwd>,
+    trade: &impl BondTerms<Recorded>,
     state: &mut BondState,
     model: &E::Model<f64>,
 ) -> Result<f64> {
-    Tape::start_recording_fwd();
-    Tape::set_mark_fwd();
+    Recording::start();
+    Recording::checkpoint();
     let result = (|| {
-        state.put_pillars_on_tape()?;
+        state.register_pillars()?;
         let market = state
             .market_data
             .as_mut()
             .ok_or_else(|| QSError::ValueNotSetErr("Bond market data".into()))?;
-        for cube in market
+        let mut cubes: Vec<_> = market
             .constructed_elements_mut()
             .volatility_cubes_mut()
-            .values_mut()
-        {
-            cube.cube_mut().put_pillars_on_tape();
+            .iter_mut()
+            .collect();
+        cubes.sort_by_cached_key(|(index, _)| index.to_string());
+        for (_, cube) in cubes {
+            cube.cube_mut().register_pillars();
         }
         let ad_model = engine.ad_model(model, market)?;
-        let spread = DualFwd::new(state.resolved_spread);
+        let spread = Recorded::new(state.resolved_spread);
         let resolved_leg = resolve_leg(trade.bond_leg(), market, state.evaluation_date, None)?;
         let cashflows = remaining_cashflows(&resolved_leg, state.settlement_date)?;
         let curve = market
@@ -437,7 +440,7 @@ fn build_ad_value<E: BondPricingEngine>(
         };
         let value = engine
             .value(&ad_model, &valuation, spread)?
-            .mul_val(DualFwd::scalar(trade.position_side().sign()));
+            .mul_val(Recorded::scalar(trade.position_side().sign()));
         drop(curve);
         state.legs = vec![resolved_leg.with_side(trade.position_side())];
         let source = trade.bond_leg().currency();
@@ -446,7 +449,7 @@ fn build_ad_value<E: BondPricingEngine>(
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (value * state.get_exchange_rate(source, target)?).into()
+            value * state.get_exchange_rate(source, target)?
         } else {
             value
         };
@@ -454,16 +457,16 @@ fn build_ad_value<E: BondPricingEngine>(
         state.spread_node = Some(spread);
         Ok(value.value())
     })();
-    Tape::stop_recording_fwd();
+    Recording::stop();
     result
 }
-/// Collects curve-pillar adjoints and the OAS or Z-spread adjoint in one
+/// Collects curve-pillar adjoints and the OAS or Z-spread derivative in one
 /// aggregated sensitivity table.
 fn sensitivities(state: &BondState) -> Result<SensitivityMap> {
     let value = state
         .value
         .ok_or_else(|| QSError::ValueNotSetErr("Bond PV".into()))?;
-    value.backward_to_mark()?;
+    value.differentiate_accumulating()?;
 
     let mut labels = Vec::new();
     let mut exposures = Vec::new();
@@ -475,26 +478,30 @@ fn sensitivities(state: &BondState) -> Result<SensitivityMap> {
     for element in elements.discount_curves().values() {
         for (label, pillar) in element.curve().pillars().into_iter().flatten() {
             labels.push(label);
-            exposures.push(pillar.adjoint().map_or(0.0, |adjoint| adjoint.value()));
+            exposures.push(
+                pillar
+                    .derivative()
+                    .map_or(0.0, |derivative| derivative.value()),
+            );
         }
     }
     for element in elements.volatility_surfaces().values() {
         for (label, pillar) in element.surface().pillars().into_iter().flatten() {
             labels.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
     }
     for element in elements.volatility_cubes().values() {
         for (label, pillar) in element.cube().pillars().into_iter().flatten() {
             labels.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
     }
     let spread = state
         .spread_node
         .ok_or_else(|| QSError::ValueNotSetErr("Bond spread risk factor".into()))?;
     labels.push(state.spread_label.clone());
-    exposures.push(spread.adjoint()?.value());
+    exposures.push(spread.derivative()?.value());
     for (label, exposure) in state.get_fx_sensitivities()? {
         labels.push(label);
         exposures.push(exposure);
@@ -515,7 +522,7 @@ pub(super) fn evaluate_bond<E, T>(
     context: &impl MarketDataProvider,
 ) -> Result<EvaluationResults>
 where
-    T: BondTerms<DualFwd>,
+    T: BondTerms<Recorded>,
     E: BondPricingEngine + HandleCashflows<T, BondState>,
 {
     let callable = !trade.call_schedule().is_empty();
@@ -741,7 +748,7 @@ where
 /// historical fixings and any dependencies required by model preparation.
 pub(super) fn bond_market_data_request(
     policy: Option<&dyn DiscountPolicy>,
-    trade: &impl BondTerms<DualFwd>,
+    trade: &impl BondTerms<Recorded>,
     instrument_type: InstrumentType,
 ) -> Option<MarketDataRequest> {
     let index = discount_index(policy, trade).ok()?;
@@ -791,7 +798,7 @@ impl BondPricingEngine for BondPricer {
     }
     fn prepare(
         &self,
-        trade: &impl BondTerms<DualFwd>,
+        trade: &impl BondTerms<Recorded>,
         index: &MarketIndex,
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, ())> {
@@ -812,9 +819,9 @@ impl BondPricingEngine for BondPricer {
         discounted_value(valuation, spread)
     }
 }
-impl<T: BondTerms<DualFwd>> HandleCashflows<T, BondState> for BondPricer {}
+impl<T: BondTerms<Recorded>> HandleCashflows<T, BondState> for BondPricer {}
 impl Pricer for BondPricer {
-    type Item = FixedRateBondTrade<DualFwd>;
+    type Item = FixedRateBondTrade<Recorded>;
     type Policy = dyn DiscountPolicy;
 
     fn evaluate(
@@ -924,7 +931,7 @@ pub mod test_support {
             Frequency::Annual,
         );
         let ad_curve =
-            FlatForwardTermStructure::new(evaluation_date, DualFwd::from(RATE), definition);
+            FlatForwardTermStructure::new(evaluation_date, Recorded::from(RATE), definition);
         let benchmark_curve = FlatForwardTermStructure::new(evaluation_date, RATE, definition);
         let mut elements = ConstructedElementStore::default();
         elements.discount_curves_mut().insert(
@@ -971,13 +978,13 @@ pub mod test_support {
         evaluation_date: Date,
         maturity_date: Date,
         coupon: f64,
-    ) -> FixedRateBondTrade<DualFwd> {
+    ) -> FixedRateBondTrade<Recorded> {
         let definition = RateDefinition::new(
             DayCounter::Actual365,
             Compounding::Compounded,
             Frequency::Semiannual,
         );
-        let instrument = MakeFixedRateBond::<DualFwd>::default()
+        let instrument = MakeFixedRateBond::<Recorded>::default()
             .with_identifier("TEST-BOND".into())
             .with_start_date(evaluation_date)
             .with_maturity_date(maturity_date)
@@ -1003,7 +1010,7 @@ pub mod test_support {
     /// Returns a straight bond's value, panicking if evaluation fails.
     pub fn fixed_value(
         pricer: &BondPricer,
-        trade: &FixedRateBondTrade<DualFwd>,
+        trade: &FixedRateBondTrade<Recorded>,
         provider: &TestProvider,
     ) -> f64 {
         pricer
@@ -1037,8 +1044,7 @@ mod tests {
     }
 
     #[test]
-    fn bond_accrual_reports_paid_coupon_interest_without_pv_or_tape() -> Result<()> {
-        use crate::ad::forward::TAPE_FWD;
+    fn bond_accrual_reports_paid_coupon_interest_without_pv_or_capture() -> Result<()> {
         let origin = Date::new(2025, 1, 1);
         let template = fixed_bond(origin, Date::new(2026, 1, 1), 0.06);
         let provider = TestProvider {
@@ -1047,8 +1053,8 @@ mod tests {
         };
         let start = Date::new(2025, 1, 15);
         let end = Date::new(2025, 2, 15);
-        Tape::stop_recording_fwd();
-        let before = TAPE_FWD.with(|tape| (tape.borrow().book.len(), tape.borrow().mark));
+        Recording::stop();
+        let before = (Recording::state().0, Recording::state().1);
         for side in [Side::LongReceive, Side::PayShort] {
             let trade = FixedRateBondTrade::new(
                 template.instrument().clone(),
@@ -1080,7 +1086,7 @@ mod tests {
                 .evaluate(&trade, &[Request::AccruedAmount(end, start)], &provider)
                 .is_err());
         }
-        let after = TAPE_FWD.with(|tape| (tape.borrow().book.len(), tape.borrow().mark));
+        let after = (Recording::state().0, Recording::state().1);
         assert_eq!(before, after);
         Ok(())
     }
@@ -1150,7 +1156,7 @@ mod tests {
             ),
         };
         for (cap, rate) in [(None, 0.05), (Some(0.02), 0.02)] {
-            let bond = MakeSteppedCouponBond::<DualFwd>::default()
+            let bond = MakeSteppedCouponBond::<Recorded>::default()
                 .with_identifier("COUPON-ACCRUAL".into())
                 .with_start_date(origin)
                 .with_maturity_date(Date::new(2026, 1, 1))
@@ -1195,7 +1201,7 @@ mod tests {
         let trade = fixed_bond(date, Date::new(2030, 1, 1), 0.04);
         let (provider, _) = provider(date, 12);
         let mut fx = FxStore::new();
-        fx.add_fx_rate(Currency::USD, Currency::EUR, DualFwd::new(0.9));
+        fx.add_fx_rate(Currency::USD, Currency::EUR, Recorded::new(0.9));
         let context = PricingContext::new()
             .with_quote_store(QuoteStore::new(date))
             .with_constructed_elements(provider.market_data.constructed_elements().clone())
@@ -1355,7 +1361,7 @@ mod tests {
         .with_settlement_date(settlement)
         .with_spread_day_counter(DayCounter::Actual360);
         let scalar: FixedRateBondTrade<f64> = long.clone().into();
-        let roundtrip: FixedRateBondTrade<DualFwd> = scalar.into();
+        let roundtrip: FixedRateBondTrade<Recorded> = scalar.into();
         assert_eq!(roundtrip.pricing_anchor(), long.pricing_anchor());
         assert_eq!(roundtrip.settlement_date(), Some(settlement));
         assert_eq!(roundtrip.spread_day_counter(), Some(DayCounter::Actual360));

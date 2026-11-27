@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::{
-    ad::{dual::DualFwd, tape::Tape},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -28,7 +28,7 @@ use crate::{
 /// State struct for storing intermediate values during FX option pricing.
 #[derive(Default)]
 struct FxEuropeanOptionState {
-    value: Option<DualFwd>,
+    value: Option<Recorded>,
     market_data: Option<MarketData>,
 }
 
@@ -99,9 +99,9 @@ impl HandleValue<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEuropeanOpt
         trade: &FxEuropeanOptionTrade,
         state: &mut FxEuropeanOptionState,
     ) -> Result<f64> {
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
-        state.put_pillars_on_tape()?;
+        Recording::start();
+        Recording::checkpoint();
+        state.register_pillars()?;
 
         let inst = trade.instrument();
         let base = inst.base_currency();
@@ -132,11 +132,11 @@ impl HandleValue<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEuropeanOpt
 
         let spot = state.get_exchange_rate(base, quote)?;
         // Garman-Kohlhagen forward: F = S * DF_base / DF_quote
-        let forward: DualFwd = (spot * df_base / df_quote).into();
+        let forward: Recorded = spot * df_base / df_quote;
 
         let strike = inst.strike().resolve(forward.value());
         let vol = if tau <= 0.0 {
-            DualFwd::zero()
+            Recorded::zero()
         } else {
             state
                 .get_fx_volatility_surface(&inst.pair()?)?
@@ -145,31 +145,31 @@ impl HandleValue<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEuropeanOpt
 
         let is_call = matches!(inst.option_type(), EuroOptionType::Call);
         let undiscounted = if tau <= 0.0 || vol.value().abs() < f64::EPSILON {
-            let payoff: DualFwd = match inst.option_type() {
-                EuroOptionType::Call => (forward - strike).into(),
-                EuroOptionType::Put => (DualFwd::from(strike) - forward).into(),
+            let payoff: Recorded = match inst.option_type() {
+                EuroOptionType::Call => forward - strike,
+                EuroOptionType::Put => Recorded::from(strike) - forward,
             };
-            payoff.max(DualFwd::zero())
+            payoff.max(Recorded::zero())
         } else {
-            BrownianMotion::<DualFwd>::closed_form_price(forward, strike, vol, tau, is_call)?
+            BrownianMotion::<Recorded>::closed_form_price(forward, strike, vol, tau, is_call)?
         };
 
-        let notional = DualFwd::new(trade.notional());
-        let side = DualFwd::new(trade.side().sign());
-        let npv: DualFwd = (df_quote * undiscounted * notional * side).into();
+        let notional = Recorded::new(trade.notional());
+        let side = Recorded::new(trade.side().sign());
+        let npv: Recorded = df_quote * undiscounted * notional * side;
         let source = inst.quote_currency();
         let npv = if let Some(target) = state
             .get_market_data_reponse()
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (npv * state.get_exchange_rate(source, target)?).into()
+            npv * state.get_exchange_rate(source, target)?
         } else {
             npv
         };
         state.value = Some(npv);
 
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(npv.value())
     }
 }
@@ -189,7 +189,7 @@ impl HandleSensitivities<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEur
                 .ok_or_else(|| QSError::UnexpectedErr("Missing value in FX option state".into()))?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
 
         let inst = trade.instrument();
         let policy = self.discount_policy.as_ref().ok_or_else(|| {
@@ -210,7 +210,7 @@ impl HandleSensitivities<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEur
             let element = state.get_discount_curve_element(&idx)?;
             for (label, value) in element.curve().pillars().into_iter().flatten() {
                 ids.push(label);
-                exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
+                exposures.push(value.derivative().map_or(0.0, |a| a.value()));
             }
         }
 
@@ -223,14 +223,14 @@ impl HandleSensitivities<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEur
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         // FX spot sensitivities
         if let Some(store) = state.get_fx_store() {
             for (label, value) in store.pillars().into_iter().flatten() {
                 ids.push(label);
-                exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
+                exposures.push(value.derivative().map_or(0.0, |a| a.value()));
             }
         }
 
@@ -332,7 +332,7 @@ mod tests {
     };
 
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::{
             collateral::DiscountPolicy,
             elements::{
@@ -434,26 +434,26 @@ mod tests {
 
         let base_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(base_rate),
+            Recorded::from(base_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("base_rate".to_string());
 
         let quote_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(quote_rate),
+            Recorded::from(quote_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("quote_rate".to_string());
 
         // Flat vol surface across two tenors
         let mut surface_points = BTreeMap::new();
-        let strikes: Vec<(F64Key, DualFwd)> = vec![
-            (F64Key::new(0.90), DualFwd::from(0.10)),
-            (F64Key::new(1.00), DualFwd::from(0.10)),
-            (F64Key::new(1.10), DualFwd::from(0.10)),
-            (F64Key::new(1.20), DualFwd::from(0.10)),
-            (F64Key::new(1.30), DualFwd::from(0.10)),
+        let strikes: Vec<(F64Key, Recorded)> = vec![
+            (F64Key::new(0.90), Recorded::from(0.10)),
+            (F64Key::new(1.00), Recorded::from(0.10)),
+            (F64Key::new(1.10), Recorded::from(0.10)),
+            (F64Key::new(1.20), Recorded::from(0.10)),
+            (F64Key::new(1.30), Recorded::from(0.10)),
         ];
 
         surface_points.insert(
@@ -500,7 +500,7 @@ mod tests {
         );
 
         let mut fx_store = FxStore::new();
-        fx_store.add_fx_rate(base_ccy, quote_ccy, DualFwd::new(spot));
+        fx_store.add_fx_rate(base_ccy, quote_ccy, Recorded::new(spot));
 
         let market_data =
             MarketData::new(HashMap::new(), constructed_elements).with_fx_store(fx_store);

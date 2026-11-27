@@ -1,55 +1,62 @@
 //! Pathwise CVA, DVA, and signed funding-adjustment estimators.
 //!
-//! [`XvaAggregator`] reduces dated NPVs from one path to a scalar
-//! adjustment contribution suitable for a backward differentiation pass.
+//! [`XvaAggregator`](crate::xva::aggregator::XvaAggregator) reduces dated NPVs from one path to a scalar
+//! adjustment contribution suitable for a differentiate differentiation pass.
 //! Contributions are normalized by the supplied total path count and must
 //! be summed across paths, not averaged a second time.
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     rates::yieldtermstructure::zeroratetermstructure::ZeroRateTermStructure,
     time::{date::Date, daycounter::DayCounter},
+    xva::aggregationplan::{AggregationPlan, ExposureTransform},
 };
 
 /// Aggregates dated NPVs from one path into one normalized adjustment contribution.
 ///
 /// Implementations are constructed **before** `set_mark` so that their
 /// `T`-typed fields (credit spread, recovery, survival probabilities, etc.)
-/// become pre-mark tape leaves.  [`aggregate_path`](Self::aggregate_path) is
+/// become pre-mark capture leaves.  [`aggregate_path`](Self::aggregate_path) is
 /// called **after** the mark inside each path iteration.
 pub trait XvaAggregator<T: Scalar>: Send + Sync {
+    /// Prepares bucket coefficients for native aggregation, when supported.
+    /// The default keeps custom aggregators explicitly unsupported by compiled execution.
+    fn compiled_plan(&self, _dates: &[Date]) -> Option<AggregationPlan<T>> {
+        None
+    }
+
     /// Human-readable name for this measure (e.g. `"CVA"`, `"DVA"`).
     fn name(&self) -> &'static str;
 
     /// Combines dated NPVs into one contribution for the implementing measure.
     ///
     /// `npvs[d]` is the portfolio NPV at `dates[d]`.
-    /// The returned `T` is the root for `backward_to_mark()`.
+    /// The returned `T` is the root for `differentiate_accumulating()`.
     fn aggregate_path(&self, npvs: &[T], dates: &[Date]) -> T;
 }
 
 /// Bundle returned by an [`XvaAggregatorFactory`]: the aggregator together
-/// with tracked `DualFwd` leaves whose adjoints carry sensitivities after
-/// the backward pass.
+/// with tracked `Recorded` leaves whose adjoints carry sensitivities after
+/// the differentiate pass.
 pub struct AggregatorBundle {
-    /// The aggregator instance (lives on the current thread's tape).
-    pub aggregator: Box<dyn XvaAggregator<DualFwd>>,
-    /// Tracked leaves: `(label, leaf)` pairs whose `.adjoint()` can be read
+    /// The aggregator instance (lives on the current thread's capture).
+    pub aggregator: Box<dyn XvaAggregator<Recorded>>,
+    /// Tracked leaves: `(label, leaf)` pairs whose `.derivative()` can be read
     /// after `propagate_mark_to_start`.
-    pub leaves: Vec<(String, DualFwd)>,
+    pub leaves: Vec<(String, Recorded)>,
 }
 
 /// Factory for creating per-thread [`XvaAggregator`] instances.
 ///
 /// Each rayon thread calls [`create_aggregator`](Self::create_aggregator) to
-/// build its own aggregator with `DualFwd` leaves on the thread-local tape
+/// build its own aggregator with `Recorded` leaves on the thread-local capture
 /// (pre-mark).
 pub trait XvaAggregatorFactory: Send + Sync {
     /// Human-readable name for the XVA measure (e.g. `"CVA"`).
     fn name(&self) -> &'static str;
 
     /// Creates an aggregator and its tracked leaves on the current thread's
-    /// tape.  Must be called **before** `set_mark`.
+    /// capture.  Must be called **before** `set_mark`.
     fn create_aggregator(&self, ref_date: Date, dates: &[Date]) -> AggregatorBundle;
 }
 
@@ -82,7 +89,7 @@ impl<T: Scalar> CvaAggregator<T> {
     /// finite inputs with `0 <= recovery < 1` and nonnegative spread; this
     /// constructor does not validate them.
     ///
-    /// If `credit_spread` and `recovery` are `DualFwd` leaves on the tape,
+    /// If `credit_spread` and `recovery` are `Recorded` leaves on the capture,
     /// credit sensitivities propagate automatically.  For no credit
     /// sensitivities, pass `T::scalar(val)` constants.
     pub fn new(
@@ -137,6 +144,29 @@ impl<T: Scalar> CvaAggregator<T> {
 }
 
 impl<T: Scalar> XvaAggregator<T> for CvaAggregator<T> {
+    /// Builds the numerical exposure transform and current adjustment coefficients.
+    fn compiled_plan(&self, dates: &[Date]) -> Option<AggregationPlan<T>> {
+        let weights = dates
+            .iter()
+            .enumerate()
+            .map(|(d, _)| {
+                if d == 0 {
+                    T::zero()
+                } else {
+                    let probability = self.survival_probs[d - 1].sub_val(self.survival_probs[d]);
+                    self.system_discounts
+                        .as_ref()
+                        .map_or(probability, |dfs| probability.mul_val(T::scalar(dfs[d])))
+                }
+            })
+            .collect();
+        Some(AggregationPlan::new(
+            ExposureTransform::Positive,
+            weights,
+            self.lgd.mul_val(T::scalar(self.inv_n)),
+        ))
+    }
+
     fn name(&self) -> &'static str {
         "CVA"
     }
@@ -208,6 +238,29 @@ impl<T: Scalar> DvaAggregator<T> {
 }
 
 impl<T: Scalar> XvaAggregator<T> for DvaAggregator<T> {
+    /// Builds the numerical exposure transform and current adjustment coefficients.
+    fn compiled_plan(&self, dates: &[Date]) -> Option<AggregationPlan<T>> {
+        let weights = dates
+            .iter()
+            .enumerate()
+            .map(|(d, _)| {
+                if d == 0 {
+                    T::zero()
+                } else {
+                    let probability = self.survival_probs[d - 1].sub_val(self.survival_probs[d]);
+                    self.system_discounts
+                        .as_ref()
+                        .map_or(probability, |dfs| probability.mul_val(T::scalar(dfs[d])))
+                }
+            })
+            .collect();
+        Some(AggregationPlan::new(
+            ExposureTransform::Negative,
+            weights,
+            self.lgd.mul_val(T::scalar(self.inv_n)),
+        ))
+    }
+
     fn name(&self) -> &'static str {
         "DVA"
     }
@@ -288,6 +341,34 @@ impl<T: Scalar> FvaAggregator<T> {
 }
 
 impl<T: Scalar> XvaAggregator<T> for FvaAggregator<T> {
+    /// Builds the numerical exposure transform and current adjustment coefficients.
+    fn compiled_plan(&self, dates: &[Date]) -> Option<AggregationPlan<T>> {
+        let weights = dates
+            .iter()
+            .enumerate()
+            .map(|(d, date)| {
+                if d == 0 {
+                    return T::zero();
+                }
+                let spread = match &self.spread {
+                    FundingSpreadTerm::Flat(s) => *s,
+                    FundingSpreadTerm::PerDate(v) => v[d],
+                };
+                let weight = spread.mul_val(T::scalar(
+                    DayCounter::Actual365.year_fraction(dates[d - 1], *date),
+                ));
+                self.system_discounts
+                    .as_ref()
+                    .map_or(weight, |dfs| weight.mul_val(T::scalar(dfs[d])))
+            })
+            .collect();
+        Some(AggregationPlan::new(
+            ExposureTransform::Signed,
+            weights,
+            T::scalar(self.inv_n),
+        ))
+    }
+
     fn name(&self) -> &'static str {
         "FVA"
     }
@@ -329,8 +410,8 @@ impl XvaAggregatorFactory for CvaFactory {
     }
 
     fn create_aggregator(&self, ref_date: Date, dates: &[Date]) -> AggregatorBundle {
-        let cs = DualFwd::new(self.credit_spread);
-        let rec = DualFwd::new(self.recovery);
+        let cs = Recorded::new(self.credit_spread);
+        let rec = Recorded::new(self.recovery);
         let mut agg = CvaAggregator::new(cs, rec, self.n_paths, ref_date, dates);
         if let Some(dfs) = &self.system_dfs {
             agg = agg.with_system_discounts(dfs.clone());
@@ -377,15 +458,15 @@ pub struct CreditCurveCvaFactory {
 impl CreditCurveCvaFactory {
     /// Log-linear survival interpolation at time `t` (year fraction from the
     /// reference date), with flat-hazard extrapolation beyond the last pillar.
-    fn survival_at(t: f64, pillar_times: &[f64], leaves: &[DualFwd]) -> DualFwd {
+    fn survival_at(t: f64, pillar_times: &[f64], leaves: &[Recorded]) -> Recorded {
         let n = pillar_times.len();
         if t <= 0.0 || n == 0 {
-            return DualFwd::scalar(1.0);
+            return Recorded::scalar(1.0);
         }
         // Before or at the first pillar: interpolate between (0, S=1) and t_1.
         if t <= pillar_times[0] {
             let w = t / pillar_times[0];
-            return leaves[0].ln().mul_val(DualFwd::scalar(w)).exp();
+            return leaves[0].ln().mul_val(Recorded::scalar(w)).exp();
         }
         // Between pillars.
         for k in 1..n {
@@ -395,7 +476,7 @@ impl CreditCurveCvaFactory {
                     leaves[k]
                         .ln()
                         .sub_val(leaves[k - 1].ln())
-                        .mul_val(DualFwd::scalar(w)),
+                        .mul_val(Recorded::scalar(w)),
                 );
                 return ln_s.exp();
             }
@@ -405,15 +486,15 @@ impl CreditCurveCvaFactory {
         let (t_prev, ln_prev) = if n >= 2 {
             (pillar_times[last - 1], leaves[last - 1].ln())
         } else {
-            (0.0, DualFwd::scalar(0.0))
+            (0.0, Recorded::scalar(0.0))
         };
         let dt_bucket = pillar_times[last] - t_prev;
         let hazard = ln_prev
             .sub_val(leaves[last].ln())
-            .div_val(DualFwd::scalar(dt_bucket));
+            .div_val(Recorded::scalar(dt_bucket));
         leaves[last]
             .ln()
-            .sub_val(hazard.mul_val(DualFwd::scalar(t - pillar_times[last])))
+            .sub_val(hazard.mul_val(Recorded::scalar(t - pillar_times[last])))
             .exp()
     }
 }
@@ -425,12 +506,12 @@ impl XvaAggregatorFactory for CreditCurveCvaFactory {
 
     fn create_aggregator(&self, ref_date: Date, dates: &[Date]) -> AggregatorBundle {
         // Tracked leaves: one per pillar survival + recovery.
-        let pillar_leaves: Vec<DualFwd> = self
+        let pillar_leaves: Vec<Recorded> = self
             .pillar_survivals
             .iter()
-            .map(|s| DualFwd::new(*s))
+            .map(|s| Recorded::new(*s))
             .collect();
-        let rec = DualFwd::new(self.recovery);
+        let rec = Recorded::new(self.recovery);
 
         let pillar_times: Vec<f64> = self
             .pillar_dates
@@ -438,7 +519,7 @@ impl XvaAggregatorFactory for CreditCurveCvaFactory {
             .map(|d| self.day_counter.year_fraction(ref_date, *d))
             .collect();
 
-        let survival_probs: Vec<DualFwd> = dates
+        let survival_probs: Vec<Recorded> = dates
             .iter()
             .map(|d| {
                 let t = self.day_counter.year_fraction(ref_date, *d);
@@ -451,7 +532,7 @@ impl XvaAggregatorFactory for CreditCurveCvaFactory {
             agg = agg.with_system_discounts(dfs.clone());
         }
 
-        let mut leaves: Vec<(String, DualFwd)> = self
+        let mut leaves: Vec<(String, Recorded)> = self
             .pillar_labels
             .iter()
             .zip(&pillar_leaves)
@@ -482,8 +563,8 @@ impl XvaAggregatorFactory for DvaFactory {
     }
 
     fn create_aggregator(&self, ref_date: Date, dates: &[Date]) -> AggregatorBundle {
-        let sp = DualFwd::new(self.own_spread);
-        let rec = DualFwd::new(self.own_recovery);
+        let sp = Recorded::new(self.own_spread);
+        let rec = Recorded::new(self.own_recovery);
         let agg = DvaAggregator::new(sp, rec, self.n_paths, ref_date, dates);
         AggregatorBundle {
             aggregator: Box::new(agg),
@@ -511,7 +592,7 @@ impl XvaAggregatorFactory for FvaFactory {
     }
 
     fn create_aggregator(&self, _ref_date: Date, _dates: &[Date]) -> AggregatorBundle {
-        let fs = DualFwd::new(self.funding_spread);
+        let fs = Recorded::new(self.funding_spread);
         let mut agg = FvaAggregator::new(fs, self.n_paths);
         if let Some(dfs) = &self.system_dfs {
             agg = agg.with_system_discounts(dfs.clone());
@@ -554,10 +635,10 @@ pub struct FundingCurveFvaFactory {
 impl FundingCurveFvaFactory {
     /// Linear spread interpolation at time `t` (year fraction from the
     /// reference date), with flat extrapolation on both sides.
-    fn spread_at(t: f64, pillar_times: &[f64], leaves: &[DualFwd]) -> DualFwd {
+    fn spread_at(t: f64, pillar_times: &[f64], leaves: &[Recorded]) -> Recorded {
         let n = pillar_times.len();
         if n == 0 {
-            return DualFwd::scalar(0.0);
+            return Recorded::scalar(0.0);
         }
         if t <= pillar_times[0] {
             return leaves[0];
@@ -565,8 +646,11 @@ impl FundingCurveFvaFactory {
         for k in 1..n {
             if t <= pillar_times[k] {
                 let w = (t - pillar_times[k - 1]) / (pillar_times[k] - pillar_times[k - 1]);
-                return leaves[k - 1]
-                    .add_val(leaves[k].sub_val(leaves[k - 1]).mul_val(DualFwd::scalar(w)));
+                return leaves[k - 1].add_val(
+                    leaves[k]
+                        .sub_val(leaves[k - 1])
+                        .mul_val(Recorded::scalar(w)),
+                );
             }
         }
         leaves[n - 1]
@@ -580,10 +664,10 @@ impl XvaAggregatorFactory for FundingCurveFvaFactory {
 
     fn create_aggregator(&self, ref_date: Date, dates: &[Date]) -> AggregatorBundle {
         // Tracked leaves: one per pillar spread (base curve + overlay).
-        let pillar_leaves: Vec<DualFwd> = self
+        let pillar_leaves: Vec<Recorded> = self
             .pillar_spreads
             .iter()
-            .map(|s| DualFwd::new(*s))
+            .map(|s| Recorded::new(*s))
             .collect();
         let spread_curve = self
             .spread_curve
@@ -595,7 +679,7 @@ impl XvaAggregatorFactory for FundingCurveFvaFactory {
             .iter()
             .map(|d| self.day_counter.year_fraction(ref_date, *d))
             .collect();
-        let spreads: Vec<DualFwd> = dates
+        let spreads: Vec<Recorded> = dates
             .iter()
             .map(|d| {
                 let t = self.day_counter.year_fraction(ref_date, *d);
@@ -613,7 +697,7 @@ impl XvaAggregatorFactory for FundingCurveFvaFactory {
             agg = agg.with_system_discounts(dfs.clone());
         }
 
-        let leaves: Vec<(String, DualFwd)> = self
+        let leaves: Vec<(String, Recorded)> = self
             .pillar_labels
             .iter()
             .zip(&pillar_leaves)
@@ -636,12 +720,14 @@ impl XvaAggregatorFactory for FundingCurveFvaFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ad::tape::Tape, time::enums::TimeUnit};
+    use crate::{ad::Recording, time::enums::TimeUnit, utils::errors::Result as QSResult};
+    use std::iter::once;
 
     const DC: DayCounter = DayCounter::Actual365;
 
+    /// Checks funding curve reuses zero rate interpolation.
     #[test]
-    fn funding_curve_reuses_zero_rate_interpolation() -> crate::utils::errors::Result<()> {
+    fn funding_curve_reuses_zero_rate_interpolation() -> QSResult<()> {
         use crate::{
             math::interpolation::interpolator::Interpolator, rates::interestrate::RateDefinition,
         };
@@ -662,7 +748,7 @@ mod tests {
                     .zero_rate(pair[1])
                     .map(|spread| 1_000.0 * spread * DC.year_fraction(pair[0], pair[1]))
             })
-            .sum::<crate::utils::errors::Result<f64>>()?;
+            .sum::<QSResult<f64>>()?;
         let factory = FundingCurveFvaFactory {
             pillar_dates: vec![],
             pillar_spreads: vec![],
@@ -672,23 +758,23 @@ mod tests {
             day_counter: DC,
             system_dfs: None,
         };
-        Tape::start_recording_fwd();
+        Recording::start();
         let bundle = factory.create_aggregator(reference, &dates);
-        let npvs = vec![DualFwd::scalar(1_000.0); dates.len()];
+        let npvs = vec![Recorded::scalar(1_000.0); dates.len()];
         let result = bundle.aggregator.aggregate_path(&npvs, &dates);
-        let _ = result.backward();
+        let _ = result.differentiate();
         assert!((result.value() - expected).abs() < 1e-12);
         assert_eq!(bundle.leaves.len(), 2);
         assert!(bundle
             .leaves
             .iter()
-            .all(|(_, leaf)| leaf.adjoint().is_ok_and(|value| value > 0.0)));
-        Tape::stop_recording_fwd();
+            .all(|(_, leaf)| leaf.derivative().is_ok_and(|value| value > 0.0)));
+        Recording::stop();
         Ok(())
     }
 
     fn sim_dates(ref_date: Date, months: &[i32]) -> Vec<Date> {
-        std::iter::once(ref_date)
+        once(ref_date)
             .chain(months.iter().map(|m| {
                 ref_date
                     .advance(*m, TimeUnit::Months)
@@ -844,18 +930,18 @@ mod tests {
             system_dfs: None,
         };
 
-        Tape::start_recording_fwd();
+        Recording::start();
         let curve_bundle = curve_factory.create_aggregator(ref_date, &dates);
         let flat_bundle = flat_factory.create_aggregator(ref_date, &dates);
-        Tape::set_mark_fwd();
+        Recording::checkpoint();
 
-        let npvs: Vec<DualFwd> = dates.iter().map(|_| DualFwd::scalar(1_000.0)).collect();
+        let npvs: Vec<Recorded> = dates.iter().map(|_| Recorded::scalar(1_000.0)).collect();
         let from_curve = curve_bundle
             .aggregator
             .aggregate_path(&npvs, &dates)
             .value();
         let from_flat = flat_bundle.aggregator.aggregate_path(&npvs, &dates).value();
-        Tape::stop_recording_fwd();
+        Recording::stop();
 
         assert!(from_curve > 0.0);
         assert!(
@@ -896,17 +982,17 @@ mod tests {
             system_dfs: None,
         };
 
-        Tape::start_recording_fwd();
+        Recording::start();
         let curve_bundle = factory.create_aggregator(ref_date, &dates);
         let flat_bundle = flat.create_aggregator(ref_date, &dates);
-        Tape::set_mark_fwd();
-        let npvs: Vec<DualFwd> = dates.iter().map(|_| DualFwd::scalar(500.0)).collect();
+        Recording::checkpoint();
+        let npvs: Vec<Recorded> = dates.iter().map(|_| Recorded::scalar(500.0)).collect();
         let from_curve = curve_bundle
             .aggregator
             .aggregate_path(&npvs, &dates)
             .value();
         let from_flat = flat_bundle.aggregator.aggregate_path(&npvs, &dates).value();
-        Tape::stop_recording_fwd();
+        Recording::stop();
 
         assert!(
             (from_curve - from_flat).abs() < 1e-10 * from_flat,
@@ -944,17 +1030,17 @@ mod tests {
             system_dfs: None,
         };
 
-        Tape::start_recording_fwd();
+        Recording::start();
         let curve_bundle = curve_factory.create_aggregator(ref_date, &dates);
         let flat_bundle = flat_factory.create_aggregator(ref_date, &dates);
-        Tape::set_mark_fwd();
-        let npvs: Vec<DualFwd> = dates.iter().map(|_| DualFwd::scalar(2_000.0)).collect();
+        Recording::checkpoint();
+        let npvs: Vec<Recorded> = dates.iter().map(|_| Recorded::scalar(2_000.0)).collect();
         let from_curve = curve_bundle
             .aggregator
             .aggregate_path(&npvs, &dates)
             .value();
         let from_flat = flat_bundle.aggregator.aggregate_path(&npvs, &dates).value();
-        Tape::stop_recording_fwd();
+        Recording::stop();
 
         assert!(
             (from_curve - from_flat).abs() < 1e-12 * from_flat.abs(),
@@ -987,12 +1073,12 @@ mod tests {
             system_dfs: None,
         };
 
-        Tape::start_recording_fwd();
+        Recording::start();
         let bundle = factory.create_aggregator(ref_date, &dates);
-        Tape::set_mark_fwd();
-        let npvs: Vec<DualFwd> = dates.iter().map(|_| DualFwd::scalar(exposure)).collect();
+        Recording::checkpoint();
+        let npvs: Vec<Recorded> = dates.iter().map(|_| Recorded::scalar(exposure)).collect();
         let fva = bundle.aggregator.aggregate_path(&npvs, &dates).value();
-        Tape::stop_recording_fwd();
+        Recording::stop();
 
         // Expected: sum over buckets of E · s(t_d) · Δt with s linearly
         // interpolated between the pillars (flat outside).

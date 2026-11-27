@@ -16,7 +16,7 @@ use quantsupport::prelude::{
     CallScheduleEntry as QsCallScheduleEntry, CapFloor as QsCapFloor, CapFloorTrade, CapFloorType,
     CapletFloorlet as QsCapletFloorlet, CapletFloorletTrade, CapletFloorletType, CdsTrade,
     Compounding, ContingentClaim, CreditDefaultSwap as QsCreditDefaultSwap, Currency, Date,
-    DateGenerationRule, DayCounter, DualFwd, EquityEuropeanOption as QsEquityEuropeanOption,
+    DateGenerationRule, DayCounter, EquityEuropeanOption as QsEquityEuropeanOption,
     EquityEuropeanOptionTrade, EuroOptionType, FixFloatCrossCurrencySwap as QsFixFloatXccy,
     FixFloatCrossCurrencySwapTrade, FixedRateBond as QsFixedRateBond, FixedRateBondTrade,
     FixedRateDeposit as QsFixedRateDeposit, FixedRateDepositTrade, FloatFloatCrossCurrencySwap,
@@ -26,7 +26,7 @@ use quantsupport::prelude::{
     MakeFixedRateDeposit, MakeFloatFloatCrossCurrencySwap, MakeFloatingRateNote,
     MakeFxEuropeanOption, MakeFxForward, MakeInstrument, MakeRateFutures, MakeSteppedCouponBond,
     MakeSwap, MarketIndex, PaymentStructure, RateDefinition, RateFutures as QsRateFutures,
-    RateFuturesTrade, SteppedCouponBondTrade, Strike, Swap as QsSwap, SwapTrade,
+    RateFuturesTrade, Recorded, SteppedCouponBondTrade, Strike, Swap as QsSwap, SwapTrade,
 };
 
 macro_rules! product_dict_constructors {
@@ -115,8 +115,8 @@ macro_rules! build_swap_instrument {
 
 impl Swap {
     /// Builds an AD-enabled trade for pricing.
-    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<SwapTrade<DualFwd>> {
-        let instrument: QsSwap<DualFwd> = build_swap_instrument!(self, position, DualFwd)?;
+    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<SwapTrade<Recorded>> {
+        let instrument: QsSwap<Recorded> = build_swap_instrument!(self, position, Recorded)?;
         Ok(SwapTrade::new(
             instrument,
             position.trade_date()?,
@@ -302,9 +302,9 @@ impl CrossCurrencySwap {
     pub fn build_trade_dual(
         &self,
         position: &Trade,
-    ) -> PyResult<FloatFloatCrossCurrencySwapTrade<DualFwd>> {
-        let instrument: FloatFloatCrossCurrencySwap<DualFwd> =
-            build_xccy_instrument!(self, position, DualFwd)?;
+    ) -> PyResult<FloatFloatCrossCurrencySwapTrade<Recorded>> {
+        let instrument: FloatFloatCrossCurrencySwap<Recorded> =
+            build_xccy_instrument!(self, position, Recorded)?;
         Ok(FloatFloatCrossCurrencySwapTrade::new(
             instrument,
             position.trade_date()?,
@@ -473,9 +473,9 @@ macro_rules! build_basis_swap_instrument {
 
 impl BasisSwap {
     /// Builds an AD-enabled trade for pricing.
-    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<BasisSwapTrade<DualFwd>> {
-        let instrument: QsBasisSwap<DualFwd> =
-            build_basis_swap_instrument!(self, position, DualFwd)?;
+    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<BasisSwapTrade<Recorded>> {
+        let instrument: QsBasisSwap<Recorded> =
+            build_basis_swap_instrument!(self, position, Recorded)?;
         Ok(BasisSwapTrade::new(
             instrument,
             position.trade_date()?,
@@ -615,9 +615,9 @@ impl FixFloatCrossCurrencySwap {
     pub fn build_trade_dual(
         &self,
         position: &Trade,
-    ) -> PyResult<FixFloatCrossCurrencySwapTrade<DualFwd>> {
-        let instrument: QsFixFloatXccy<DualFwd> =
-            build_fix_float_xccy_instrument!(self, position, DualFwd)?;
+    ) -> PyResult<FixFloatCrossCurrencySwapTrade<Recorded>> {
+        let instrument: QsFixFloatXccy<Recorded> =
+            build_fix_float_xccy_instrument!(self, position, Recorded)?;
         Ok(FixFloatCrossCurrencySwapTrade::new(
             instrument,
             position.trade_date()?,
@@ -884,9 +884,9 @@ macro_rules! build_fixed_rate_bond_instrument {
 
 impl FixedRateBond {
     /// Builds an AD-enabled trade for pricing.
-    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<FixedRateBondTrade<DualFwd>> {
-        let instrument: QsFixedRateBond<DualFwd> =
-            build_fixed_rate_bond_instrument!(self, position, DualFwd)?;
+    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<FixedRateBondTrade<Recorded>> {
+        let instrument: QsFixedRateBond<Recorded> =
+            build_fixed_rate_bond_instrument!(self, position, Recorded)?;
         let mut trade = FixedRateBondTrade::new(
             instrument,
             position.trade_date()?,
@@ -1051,8 +1051,8 @@ pub struct SteppedCouponBond {
 
 impl SteppedCouponBond {
     /// Builds the AD-enabled native trade consumed by the callable engines.
-    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<SteppedCouponBondTrade<DualFwd>> {
-        let mut builder = MakeSteppedCouponBond::<DualFwd>::default()
+    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<SteppedCouponBondTrade<Recorded>> {
+        let mut builder = MakeSteppedCouponBond::<Recorded>::default()
             .with_identifier(self.identifier.clone())
             .with_start_date(self.start_date)
             .with_maturity_date(self.maturity_date)
@@ -1296,9 +1296,9 @@ macro_rules! build_frn_instrument {
 
 impl FloatingRateNote {
     /// Builds an AD-enabled trade for pricing.
-    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<FloatingRateNoteTrade<DualFwd>> {
-        let instrument: QsFloatingRateNote<DualFwd> =
-            build_frn_instrument!(self, position, DualFwd)?;
+    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<FloatingRateNoteTrade<Recorded>> {
+        let instrument: QsFloatingRateNote<Recorded> =
+            build_frn_instrument!(self, position, Recorded)?;
         Ok(FloatingRateNoteTrade::new(
             instrument,
             position.trade_date()?,
@@ -1428,9 +1428,9 @@ macro_rules! build_deposit_instrument {
 
 impl FixedRateDeposit {
     /// Builds an AD-enabled trade for pricing.
-    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<FixedRateDepositTrade<DualFwd>> {
-        let instrument: QsFixedRateDeposit<DualFwd> =
-            build_deposit_instrument!(self, position, DualFwd)?;
+    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<FixedRateDepositTrade<Recorded>> {
+        let instrument: QsFixedRateDeposit<Recorded> =
+            build_deposit_instrument!(self, position, Recorded)?;
         Ok(FixedRateDepositTrade::new(
             instrument,
             position.trade_date()?,
@@ -2194,10 +2194,10 @@ impl EuropeanSwaption {
     pub fn build_trade_dual(
         &self,
         position: &Trade,
-    ) -> PyResult<quantsupport::prelude::EuropeanSwaptionTrade<DualFwd>> {
+    ) -> PyResult<quantsupport::prelude::EuropeanSwaptionTrade<Recorded>> {
         let amount = position.notional().unwrap_or(self.notional);
         // Unit underlying: the trade carries the position notional applied by the pricer.
-        let mut builder = quantsupport::prelude::MakeSwaption::<DualFwd>::default()
+        let mut builder = quantsupport::prelude::MakeSwaption::<Recorded>::default()
             .with_identifier(self.identifier.clone())
             .with_expiry(self.expiry_date)
             .with_swap_tenor_date(self.maturity_date)

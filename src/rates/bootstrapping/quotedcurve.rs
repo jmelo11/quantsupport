@@ -1,5 +1,5 @@
 use crate::{
-    ad::dual::DualFwd,
+    ad::Recorded,
     core::elements::curveelement::ADCurveElement,
     quotes::quote::{Level, Quote, QuoteInstrument},
     rates::{
@@ -164,11 +164,11 @@ impl QuotedCurve {
         let values: Vec<_> = self
             .values
             .iter()
-            .map(|value| DualFwd::new(*value))
+            .map(|value| Recorded::new(*value))
             .collect();
-        let curve = DiscountTermStructure::<DualFwd>::new(
+        let curve = DiscountTermStructure::<Recorded>::new(
             dates.clone(),
-            factors.iter().map(|value| DualFwd::new(*value)).collect(),
+            factors.iter().map(|value| Recorded::new(*value)).collect(),
             spec.day_counter(),
             spec.interpolator(),
             spec.enable_extrapolation(),

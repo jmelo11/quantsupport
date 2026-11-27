@@ -2,9 +2,9 @@
 //!
 //! Error types, helper functions, and other cross-cutting concerns.
 
-/// Error types and utilities for the utils module.
+/// Defines the error categories returned by financial calculations and data loading.
 pub mod errors;
-/// Plotting trait and utilities.
+/// Provides the plotting interface used to display numerical results.
 pub mod plot;
-/// Tools and helper functions for the utils module.
+/// Sorts reporting labels and market sensitivities for presentation.
 pub mod tools;

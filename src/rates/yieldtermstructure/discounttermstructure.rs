@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    ad::{constant::Const, dual::DualFwd, expr::FloatExt, forward::ADForward, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
@@ -115,7 +115,7 @@ where
         Ok(self)
     }
 
-    /// Stores the IFT sensitivity matrix so that `put_pillars_on_tape` can
+    /// Stores the IFT sensitivity matrix so that `register_pillars` can
     /// rebuild AD-connected discount factors.
     ///
     /// Rows correspond to discount-factor nodes excluding the reference node;
@@ -217,7 +217,7 @@ impl DiscountTermStructure<f64> {
     }
 }
 
-impl DiscountTermStructure<DualFwd> {
+impl DiscountTermStructure<Recorded> {
     /// Creates a new `DiscountTermStructure` with the given dates, discount factors, day counter, interpolator, and extrapolation setting.
     ///
     /// # Arguments
@@ -239,7 +239,7 @@ impl DiscountTermStructure<DualFwd> {
     /// knot grid; linear/loglinear queries generally require at least two nodes.
     pub fn new(
         dates: Vec<Date>,
-        discount_factors: Vec<DualFwd>,
+        discount_factors: Vec<Recorded>,
         day_counter: DayCounter,
         interpolator: Interpolator,
         enable_extrapolation: bool,
@@ -254,10 +254,10 @@ impl DiscountTermStructure<DualFwd> {
         // order dates y discount_factors
         let mut zipped = dates.into_iter().zip(discount_factors).collect::<Vec<_>>();
         zipped.sort_by_key(|a| a.0);
-        let (dates, discount_factors): (Vec<Date>, Vec<DualFwd>) = zipped.into_iter().unzip();
+        let (dates, discount_factors): (Vec<Date>, Vec<Recorded>) = zipped.into_iter().unzip();
 
         // discount_factors[0] needs to be 1.0
-        if (discount_factors[0] - Const::one()).abs() > 1e-12 {
+        if (discount_factors[0] - 1.0_f64).abs() > 1e-12 {
             return Err(QSError::InvalidValueErr(
                 "First discount factor needs to be 1.0".to_string(),
             ));
@@ -283,8 +283,9 @@ impl DiscountTermStructure<DualFwd> {
     }
 }
 
-impl Pillars<DualFwd> for DiscountTermStructure<DualFwd> {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl Pillars<Recorded> for DiscountTermStructure<Recorded> {
+    /// Returns the labelled inputs used to report market sensitivities.
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.pillar_labels.as_ref().map(|labels| {
             let values = self
                 .pillar_values
@@ -298,12 +299,13 @@ impl Pillars<DualFwd> for DiscountTermStructure<DualFwd> {
         self.pillar_labels.clone()
     }
 
-    fn put_pillars_on_tape(&mut self) {
+    /// Registers current labelled market pillars as independent compiler inputs.
+    fn register_pillars(&mut self) {
         if let Some(pillar_values) = self.pillar_values.as_mut() {
-            pillar_values.iter_mut().for_each(DualFwd::put_on_tape);
+            pillar_values.iter_mut().for_each(Recorded::register_input);
 
             // When IFT sensitivities are stored, rebuild discount_factors as
-            // tape-connected expressions:
+            // capture-connected expressions:
             //   DF(i+1) = df_val + Σ_j S[i][j] * (q_j - q_j_val)
             // The numeric result is exact (delta evaluates to 0) but the AD
             // graph now connects discount_factors → pillar_values.
@@ -312,15 +314,15 @@ impl Pillars<DualFwd> for DiscountTermStructure<DualFwd> {
             if let Some(ref sens) = self.ift_sensitivities {
                 let n_pillars = pillar_values.len();
                 let mut new_dfs = Vec::with_capacity(sens.len() + 1);
-                new_dfs.push(DualFwd::new(1.0)); // DF(0) = 1
+                new_dfs.push(Recorded::new(1.0)); // DF(0) = 1
                 for (i, sens_row) in sens.iter().enumerate() {
-                    let mut df_ad = DualFwd::new(self.discount_factors[i + 1].value());
+                    let mut df_ad = Recorded::new(self.discount_factors[i + 1].value());
                     for j in 0..n_pillars {
                         let s = sens_row[j];
                         if s.abs() > 1e-16 {
-                            let delta: DualFwd =
-                                (pillar_values[j] - DualFwd::new(pillar_values[j].value())).into();
-                            df_ad = (df_ad + DualFwd::new(s) * delta).into();
+                            let delta: Recorded =
+                                pillar_values[j] - Recorded::new(pillar_values[j].value());
+                            df_ad += Recorded::new(s) * delta;
                         }
                     }
                     new_dfs.push(df_ad);
@@ -330,7 +332,7 @@ impl Pillars<DualFwd> for DiscountTermStructure<DualFwd> {
         } else {
             self.discount_factors
                 .iter_mut()
-                .for_each(DualFwd::put_on_tape);
+                .for_each(Recorded::register_input);
         }
     }
 }
@@ -340,6 +342,7 @@ impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
         self.reference_date
     }
 
+    /// Returns the discount factor at a date under the curve conventions.
     fn discount_factor(&self, date: Date) -> Result<f64> {
         if date < self.reference_date() {
             return Err(QSError::InvalidValueErr(
@@ -382,6 +385,7 @@ impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
         )
     }
 
+    /// Returns the curve nodes in their interpolation order.
     fn nodes(&self) -> Option<Vec<(Date, f64)>> {
         Some(
             self.dates
@@ -396,6 +400,7 @@ impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
         Some(self.day_counter)
     }
 
+    /// Returns the discount factor for a day-count year fraction.
     fn discount_factor_from_time(&self, t: f64) -> Result<f64> {
         if t < 0.0 {
             return Err(QSError::InvalidValueErr(
@@ -413,6 +418,7 @@ impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
         )
     }
 
+    /// Returns the forward rate between two day-count year fractions.
     fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<f64> {
         let dt = end - start;
         let (s, e, dt) = if dt.abs() < 1e-10 {
@@ -428,21 +434,22 @@ impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
     }
 }
 
-impl InterestRatesTermStructure<DualFwd> for DiscountTermStructure<DualFwd> {
+impl InterestRatesTermStructure<Recorded> for DiscountTermStructure<Recorded> {
     fn reference_date(&self) -> Date {
         self.reference_date
     }
-    fn discount_factor(&self, date: Date) -> Result<DualFwd> {
+    /// Returns the discount factor at a date under the curve conventions.
+    fn discount_factor(&self, date: Date) -> Result<Recorded> {
         if date < self.reference_date() {
             return Err(QSError::InvalidValueErr(
                 "Date needs to be greater than reference date".to_string(),
             ));
         }
         if date == self.reference_date() {
-            return Ok(DualFwd::one());
+            return Ok(Recorded::one());
         }
 
-        let year_fraction = DualFwd::new(
+        let year_fraction = Recorded::new(
             self.day_counter()
                 .year_fraction(self.reference_date(), date),
         );
@@ -451,8 +458,8 @@ impl InterestRatesTermStructure<DualFwd> for DiscountTermStructure<DualFwd> {
             .year_fractions
             .iter()
             .copied()
-            .map(DualFwd::new)
-            .collect::<Vec<DualFwd>>();
+            .map(Recorded::new)
+            .collect::<Vec<Recorded>>();
 
         let discount_factor = self.interpolator.interpolate(
             year_fraction,
@@ -469,24 +476,21 @@ impl InterestRatesTermStructure<DualFwd> for DiscountTermStructure<DualFwd> {
         end_date: Date,
         comp: Compounding,
         freq: Frequency,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let discount_factor_to_star = self.discount_factor(start_date)?;
         let discount_factor_to_end = self.discount_factor(end_date)?;
 
         let comp_factor = discount_factor_to_star / discount_factor_to_end;
         let t = self.day_counter().year_fraction(start_date, end_date);
 
-        Ok(InterestRate::<DualFwd>::implied_rate(
-            comp_factor.into(),
-            self.day_counter(),
-            comp,
-            freq,
-            t,
-        )?
-        .rate())
+        Ok(
+            InterestRate::<Recorded>::implied_rate(comp_factor, self.day_counter(), comp, freq, t)?
+                .rate(),
+        )
     }
 
-    fn nodes(&self) -> Option<Vec<(Date, DualFwd)>> {
+    /// Returns the curve nodes in their interpolation order.
+    fn nodes(&self) -> Option<Vec<(Date, Recorded)>> {
         Some(
             self.dates
                 .iter()
@@ -500,21 +504,22 @@ impl InterestRatesTermStructure<DualFwd> for DiscountTermStructure<DualFwd> {
         Some(self.day_counter)
     }
 
-    fn discount_factor_from_time(&self, t: f64) -> Result<DualFwd> {
+    /// Returns the discount factor for a day-count year fraction.
+    fn discount_factor_from_time(&self, t: f64) -> Result<Recorded> {
         if t < 0.0 {
             return Err(QSError::InvalidValueErr(
                 "Time must be non-negative".to_string(),
             ));
         }
         if t == 0.0 {
-            return Ok(DualFwd::one());
+            return Ok(Recorded::one());
         }
-        let yf = DualFwd::new(t);
-        let tmp_yfs: Vec<DualFwd> = self
+        let yf = Recorded::new(t);
+        let tmp_yfs: Vec<Recorded> = self
             .year_fractions
             .iter()
             .copied()
-            .map(DualFwd::new)
+            .map(Recorded::new)
             .collect();
         self.interpolator.interpolate(
             yf,
@@ -524,7 +529,8 @@ impl InterestRatesTermStructure<DualFwd> for DiscountTermStructure<DualFwd> {
         )
     }
 
-    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
+    /// Returns the forward rate between two day-count year fractions.
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<Recorded> {
         let dt = end - start;
         let (s, e, dt) = if dt.abs() < 1e-10 {
             let eps = 1e-6;
@@ -535,19 +541,19 @@ impl InterestRatesTermStructure<DualFwd> for DiscountTermStructure<DualFwd> {
         let df_start = self.discount_factor_from_time(s)?;
         let df_end = self.discount_factor_from_time(e)?;
         let fwd = (df_start / df_end - 1.0) / dt;
-        Ok(fwd.into())
+        Ok(fwd)
     }
 }
 
-impl ADCurveElement for DiscountTermStructure<DualFwd> {
+impl ADCurveElement for DiscountTermStructure<Recorded> {
     fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
         let mut curve = self.clone();
         for value in &mut curve.discount_factors {
-            *value = DualFwd::constant(ADForward::constant(value.value()));
+            *value = Recorded::constant(value.value());
         }
         if let Some(values) = &mut curve.pillar_values {
             for value in values {
-                *value = DualFwd::constant(ADForward::constant(value.value()));
+                *value = Recorded::constant(value.value());
             }
         }
         Ok(Box::new(curve))

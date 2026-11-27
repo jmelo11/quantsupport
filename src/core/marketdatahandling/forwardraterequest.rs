@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::marketdatahandling::marketdata::MarketData,
     rates::interestrate::InterestRate,
     utils::errors::{QSError, Result},
@@ -7,7 +7,7 @@ use crate::{
 use crate::{indices::marketindex::MarketIndex, time::date::Date};
 
 /// Request for a forward rate between two dates for a given market index.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ForwardRateRequest {
     market_index: MarketIndex,
     fixing_date: Date,
@@ -31,14 +31,14 @@ impl ForwardRateRequest {
         data: &MarketData,
         evaluation_date: Date,
         anchor_fixings: bool,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         if anchor_fixings && self.fixing_date < evaluation_date {
             if let Some(fixing) = data
                 .fixings()
                 .get(&self.market_index)
                 .and_then(|dates| dates.get(&self.fixing_date))
             {
-                return Ok(DualFwd::scalar(*fixing));
+                return Ok(Recorded::scalar(*fixing));
             }
             return Err(QSError::NotFoundErr(format!(
                 "Missing {} fixing for {}",
@@ -68,7 +68,7 @@ impl ForwardRateRequest {
             .discount_factor(start)?
             .div_val(curve.discount_factor(end)?);
         let definition = self.market_index.rate_index_details()?.rate_definition();
-        Ok(InterestRate::<DualFwd>::implied_rate(
+        Ok(InterestRate::<Recorded>::implied_rate(
             growth,
             definition.day_counter(),
             definition.compounding(),

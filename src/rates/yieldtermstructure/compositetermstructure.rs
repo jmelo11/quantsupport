@@ -1,7 +1,7 @@
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     rates::{
         compounding::Compounding, interestrate::InterestRate,
@@ -63,6 +63,7 @@ impl<C: InterestRatesTermStructure<f64>> InterestRatesTermStructure<f64>
         self.reference_date
     }
 
+    /// Returns the discount factor at a date under the curve conventions.
     fn discount_factor(&self, date: Date) -> Result<f64> {
         let spread_df = self.spread_curve.discount_factor(date)?;
         let base_df = self.base_curve.discount_factor(date)?;
@@ -84,6 +85,7 @@ impl<C: InterestRatesTermStructure<f64>> InterestRatesTermStructure<f64>
         Ok(InterestRate::<f64>::implied_rate(comp_factor, dc, comp, freq, t)?.rate())
     }
 
+    /// Returns the curve nodes in their interpolation order.
     fn nodes(&self) -> Option<Vec<(Date, f64)>> {
         None
     }
@@ -92,12 +94,14 @@ impl<C: InterestRatesTermStructure<f64>> InterestRatesTermStructure<f64>
         self.base_curve.day_counter()
     }
 
+    /// Returns the discount factor for a day-count year fraction.
     fn discount_factor_from_time(&self, t: f64) -> Result<f64> {
         let spread_df = self.spread_curve.discount_factor_from_time(t)?;
         let base_df = self.base_curve.discount_factor_from_time(t)?;
         Ok(spread_df * base_df)
     }
 
+    /// Returns the forward rate between two day-count year fractions.
     fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<f64> {
         let dt = end - start;
         let (s, e, dt) = if dt.abs() < 1e-10 {
@@ -113,17 +117,18 @@ impl<C: InterestRatesTermStructure<f64>> InterestRatesTermStructure<f64>
     }
 }
 
-impl<C: InterestRatesTermStructure<DualFwd>> InterestRatesTermStructure<DualFwd>
-    for CompositeTermStructure<DualFwd, C>
+impl<C: InterestRatesTermStructure<Recorded>> InterestRatesTermStructure<Recorded>
+    for CompositeTermStructure<Recorded, C>
 {
     fn reference_date(&self) -> Date {
         self.reference_date
     }
 
-    fn discount_factor(&self, date: Date) -> Result<DualFwd> {
+    /// Returns the discount factor at a date under the curve conventions.
+    fn discount_factor(&self, date: Date) -> Result<Recorded> {
         let spread_df = self.spread_curve.discount_factor(date)?;
         let base_df = self.base_curve.discount_factor(date)?;
-        Ok((spread_df * base_df).into())
+        Ok(spread_df * base_df)
     }
 
     fn forward_rate(
@@ -132,16 +137,17 @@ impl<C: InterestRatesTermStructure<DualFwd>> InterestRatesTermStructure<DualFwd>
         end_date: Date,
         comp: Compounding,
         freq: Frequency,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let df_start = self.discount_factor(start_date)?;
         let df_end = self.discount_factor(end_date)?;
         let comp_factor = df_start / df_end;
         let dc = self.day_counter().unwrap_or(DayCounter::Actual365);
         let t = dc.year_fraction(start_date, end_date);
-        Ok(InterestRate::<DualFwd>::implied_rate(comp_factor.into(), dc, comp, freq, t)?.rate())
+        Ok(InterestRate::<Recorded>::implied_rate(comp_factor, dc, comp, freq, t)?.rate())
     }
 
-    fn nodes(&self) -> Option<Vec<(Date, DualFwd)>> {
+    /// Returns the curve nodes in their interpolation order.
+    fn nodes(&self) -> Option<Vec<(Date, Recorded)>> {
         None
     }
 
@@ -149,13 +155,15 @@ impl<C: InterestRatesTermStructure<DualFwd>> InterestRatesTermStructure<DualFwd>
         self.base_curve.day_counter()
     }
 
-    fn discount_factor_from_time(&self, t: f64) -> Result<DualFwd> {
+    /// Returns the discount factor for a day-count year fraction.
+    fn discount_factor_from_time(&self, t: f64) -> Result<Recorded> {
         let spread_df = self.spread_curve.discount_factor_from_time(t)?;
         let base_df = self.base_curve.discount_factor_from_time(t)?;
-        Ok((spread_df * base_df).into())
+        Ok(spread_df * base_df)
     }
 
-    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
+    /// Returns the forward rate between two day-count year fractions.
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<Recorded> {
         let dt = end - start;
         let (s, e, dt) = if dt.abs() < 1e-10 {
             let eps = 1e-6;
@@ -165,13 +173,14 @@ impl<C: InterestRatesTermStructure<DualFwd>> InterestRatesTermStructure<DualFwd>
         };
         let df_start = self.discount_factor_from_time(s)?;
         let df_end = self.discount_factor_from_time(e)?;
-        let fwd = (df_start / df_end - DualFwd::one()) / DualFwd::new(dt);
-        Ok(fwd.into())
+        let fwd = (df_start / df_end - Recorded::one()) / Recorded::new(dt);
+        Ok(fwd)
     }
 }
 
-impl<C: Pillars<DualFwd>> Pillars<DualFwd> for CompositeTermStructure<DualFwd, C> {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl<C: Pillars<Recorded>> Pillars<Recorded> for CompositeTermStructure<Recorded, C> {
+    /// Returns the labelled inputs used to report market sensitivities.
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         let mut pillars = self.base_curve.pillars().unwrap_or_default();
         pillars.extend(self.spread_curve.pillars().unwrap_or_default());
         Some(pillars)
@@ -183,13 +192,14 @@ impl<C: Pillars<DualFwd>> Pillars<DualFwd> for CompositeTermStructure<DualFwd, C
         Some(labels)
     }
 
-    fn put_pillars_on_tape(&mut self) {
-        self.base_curve.put_pillars_on_tape();
-        self.spread_curve.put_pillars_on_tape();
+    /// Registers current labelled market pillars as independent compiler inputs.
+    fn register_pillars(&mut self) {
+        self.base_curve.register_pillars();
+        self.spread_curve.register_pillars();
     }
 }
 
-impl<C: ADCurveElement> ADCurveElement for CompositeTermStructure<DualFwd, C> {
+impl<C: ADCurveElement> ADCurveElement for CompositeTermStructure<Recorded, C> {
     fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
         Ok(Box::new(CompositeTermStructure::from_curves(
             self.spread_curve.clone_curve()?,

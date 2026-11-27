@@ -114,6 +114,10 @@ warnings. Pull requests validate without deploying. Main-branch publication
 uploads the combined `book/html` artifact to
 <https://jmelo11.github.io/quantsupport/>.
 
+The Rust Book checker and API reference use the pinned Rust toolchain.
+Compiled AD is built as part of the library, so first/second-order examples
+execute during ordinary documentation validation without a feature flag.
+
 Pushes to main also validate documentation, but automatic deployment waits for
 the **Release** workflow to finish successfully. Pages resolves that run's
 reserved version, builds the site and workbooks from its tagged source, and
@@ -128,3 +132,9 @@ blank selects the latest published release.
 Release-triggered deployments queue independently of push/PR validation, with
 `queue: max` preserving pending runs. The skipped Release triggered by a version
 commit must not replace the deployment triggered by the successful release.
+
+## Pricing and AD benchmarks
+
+[Benchmark methodology and results](benchmarks.md) documents cross-branch pricing,
+Monte Carlo and XVA comparisons. Drivers and fixtures live in the `benchmarks`
+workspace crate; application examples contain no benchmark modes.

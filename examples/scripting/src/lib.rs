@@ -2,21 +2,26 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use quantsupport::prelude::*;
+use quantsupport::{prelude::*, time::calendars::nullcalendar::NullCalendar};
 
+/// Principal shared by the native swap and the scripted payments.
 pub const NOTIONAL: f64 = 10_000_000.0;
+/// Annual fixed coupon shared by both representations.
 pub const FIXED_RATE: f64 = 0.035;
 
+/// Returns the common valuation and swap start date.
 #[must_use]
 pub fn reference_date() -> Date {
     Date::new(2025, 1, 1)
 }
 
+/// Returns the final payment date for both representations.
 #[must_use]
 pub fn maturity_date() -> Date {
     Date::new(2026, 1, 1)
 }
 
+/// Returns the four unadjusted quarterly accrual intervals used by the script.
 #[must_use]
 pub fn accrual_periods() -> [(Date, Date); 4] {
     [
@@ -28,8 +33,8 @@ pub fn accrual_periods() -> [(Date, Date); 4] {
 }
 
 /// Curve shared by both valuation routes.
-pub fn discount_curve() -> Result<DiscountTermStructure<DualFwd>> {
-    DiscountTermStructure::<DualFwd>::new(
+pub fn discount_curve() -> Result<DiscountTermStructure<Recorded>> {
+    DiscountTermStructure::<Recorded>::new(
         vec![
             reference_date(),
             Date::new(2025, 4, 1),
@@ -38,11 +43,11 @@ pub fn discount_curve() -> Result<DiscountTermStructure<DualFwd>> {
             maturity_date(),
         ],
         vec![
-            DualFwd::one(),
-            DualFwd::from(0.9900),
-            DualFwd::from(0.9795),
-            DualFwd::from(0.9685),
-            DualFwd::from(0.9570),
+            Recorded::one(),
+            Recorded::from(0.9900),
+            Recorded::from(0.9795),
+            Recorded::from(0.9685),
+            Recorded::from(0.9570),
         ],
         DayCounter::Actual360,
         Interpolator::LogLinear,
@@ -57,7 +62,11 @@ pub fn discount_curve() -> Result<DiscountTermStructure<DualFwd>> {
     ])
 }
 
-/// Native receive-fixed, pay-SOFR swap.
+/// Builds the native receive-fixed, pay-SOFR swap on the script's schedule.
+///
+/// The comparison deliberately uses unadjusted dates in both representations.
+/// Index-default holiday adjustments would change the native contract and its
+/// exposure timeline relative to the explicit dates in the script.
 pub fn native_swap() -> Result<SwapTrade<f64>> {
     let rate_definition = RateDefinition::new(
         DayCounter::Actual360,
@@ -76,6 +85,9 @@ pub fn native_swap() -> Result<SwapTrade<f64>> {
         .with_side(Side::LongReceive)
         .with_fixed_leg_frequency(Frequency::Quarterly)
         .with_floating_leg_frequency(Frequency::Quarterly)
+        .with_floating_day_counter(DayCounter::Actual360)
+        .with_calendar(Calendar::NullCalendar(NullCalendar::new()))
+        .with_business_day_convention(BusinessDayConvention::Unadjusted)
         .build()?;
 
     Ok(SwapTrade::new(
@@ -112,8 +124,9 @@ pub fn scripted_swap_events() -> std::result::Result<EventStream, QSError> {
     EventStream::try_from(events)
 }
 
+/// Supplies the shared discount curve and empty fixing store to the native pricer.
 #[must_use]
-pub fn pricing_context(curve: &DiscountTermStructure<DualFwd>) -> PricingContext {
+pub fn pricing_context(curve: &DiscountTermStructure<Recorded>) -> PricingContext {
     let mut elements = ConstructedElementStore::default();
     elements.discount_curves_mut().insert(
         MarketIndex::SOFR,

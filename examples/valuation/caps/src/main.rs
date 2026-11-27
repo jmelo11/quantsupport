@@ -2,6 +2,8 @@
 
 use quantsupport::prelude::*;
 
+type ExampleResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 #[derive(serde::Deserialize)]
 struct CurveFile {
     curve_specs: Vec<CurveConfiguration>,
@@ -12,14 +14,11 @@ struct VolatilityFile {
     volatility_surfaces: Vec<VolatilitySurfaceConfiguration>,
 }
 
-/// Prices a SOFR cap and caplet with the example's curves and volatility surface.
+/// Evaluates a SOFR caplet and cap using the example's curves and volatility surface.
 ///
 /// # Errors
 /// Propagates input decoding, contract, market construction, and pricing errors.
-///
-/// # Panics
-/// Panics if the cap/caplet PV checks fail.
-fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+fn evaluate_caplet_and_cap() -> ExampleResult<(EvaluationResults, EvaluationResults)> {
     // These illustrative inputs are also used by the Python caps walkthrough.
     let records: QuoteStoreRecords =
         serde_json::from_str(include_str!("../../../hullwhite/data/quotes.json"))?;
@@ -67,15 +66,25 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let caplet_result =
         ClosedFormBlackCapletPricer::new().evaluate(&caplet_trade, &requests, &context)?;
     let cap_result = ClosedFormBlackCapPricer::new().evaluate(&cap_trade, &requests, &context)?;
+    Ok((caplet_result, cap_result))
+}
+
+/// Displays prices and quote sensitivities for a SOFR caplet and cap.
+///
+/// # Errors
+/// Propagates market construction and pricing errors, or a missing price result.
+fn main() -> ExampleResult<()> {
+    let (caplet_result, cap_result) = evaluate_caplet_and_cap()?;
     let caplet_pv = caplet_result
         .price()
         .ok_or_else(|| QSError::ValueNotSetErr("Caplet value".into()))?;
     let cap_pv = cap_result
         .price()
         .ok_or_else(|| QSError::ValueNotSetErr("Cap value".into()))?;
-    assert!(caplet_pv > 0.0);
-    assert!(cap_pv > caplet_pv);
-    println!("Illustrative SOFR market as of {reference}");
+    println!(
+        "Illustrative SOFR market as of {}",
+        caplet_result.evaluation_date()
+    );
     println!("Single caplet PV: USD {caplet_pv:.4}");
     println!("Quarterly cap PV: USD {cap_pv:.4}");
     if let Some(risk) = caplet_result.sensitivities() {
@@ -86,4 +95,24 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     }
     println!("\nScale rate derivatives by 1e-4 for +1bp P&L; Black volatility derivatives by 0.01 for +1 vol point.");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Checks that the example's multi-period cap is worth more than its first caplet.
+    #[test]
+    fn cap_value_exceeds_its_positive_first_caplet() -> ExampleResult<()> {
+        let (caplet, cap) = evaluate_caplet_and_cap()?;
+        let caplet_pv = caplet
+            .price()
+            .ok_or_else(|| QSError::ValueNotSetErr("Caplet value".into()))?;
+        let cap_pv = cap
+            .price()
+            .ok_or_else(|| QSError::ValueNotSetErr("Cap value".into()))?;
+        assert!(caplet_pv > 0.0);
+        assert!(cap_pv > caplet_pv);
+        Ok(())
+    }
 }

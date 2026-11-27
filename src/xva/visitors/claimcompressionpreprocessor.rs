@@ -1,6 +1,6 @@
 //! Claim compression preprocessor.
 //!
-//! [`ClaimCompressionPreprocessor`] merges claims with identical
+//! [`ClaimCompressionPreprocessor`](crate::xva::visitors::claimcompressionpreprocessor::ClaimCompressionPreprocessor) merges claims with identical
 //! characteristics into single combined claims, reducing the number
 //! of evaluations in the Monte Carlo loop.
 //!

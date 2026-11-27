@@ -12,6 +12,10 @@ publish = false
 
 [dependencies]
 quantsupport = { path = ".." }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 pprof = { version = "0.15", features = ["prost-codec", "criterion"] }
 
@@ -21,4 +25,8 @@ harness = false
 
 [[bench]]
 name = "ad_core"
+harness = false
+
+[[bench]]
+name = "xva_pricing"
 harness = false

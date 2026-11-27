@@ -125,14 +125,14 @@ mod tests {
         registry::{CellId, QsObject},
     };
     use super::*;
-    use quantsupport::{ad::tape::TapeHolder, prelude::*};
+    use quantsupport::prelude::*;
     use std::{cell::RefCell, rc::Rc};
 
     fn setup() -> (Registry, String, String, String) {
         let date = Date::new(2026, 2, 24);
         let curve = FlatForwardTermStructure::new(
             date,
-            DualFwd::from(0.03),
+            Recorded::from(0.03),
             RateDefinition::new(
                 DayCounter::Actual360,
                 Compounding::Continuous,
@@ -154,7 +154,7 @@ mod tests {
         )
         .unwrap();
         let pricer = PricerObject::new("DiscountedCashflowPricer", Some(&policy), &vec![]).unwrap();
-        let deposit = MakeFixedRateDeposit::<DualFwd>::default()
+        let deposit = MakeFixedRateDeposit::<Recorded>::default()
             .with_identifier("Deposit".into())
             .with_start_date(date)
             .with_maturity_date(Date::new(2027, 2, 24))
@@ -213,7 +213,7 @@ mod tests {
                 registry.pricing_context(&context).unwrap(),
             )
             .unwrap();
-        let nodes = ADForward::with_tape(|tape| tape.book.len());
+        let nodes = Recording::operation_count();
         let members = 2000;
         let portfolio = create(&registry, "TEST-PORTFOLIO".into(), vec![trade; members]).unwrap();
         let handle = registry
@@ -239,7 +239,7 @@ mod tests {
             "member results must not accumulate in the registry"
         );
         assert!(
-            ADForward::with_tape(|tape| tape.book.len()) <= nodes,
+            Recording::operation_count() <= nodes,
             "AD graph must remain bounded by one trade"
         );
         assert!((result.price().unwrap() - single.price().unwrap() * members as f64).abs() < 1e-7);

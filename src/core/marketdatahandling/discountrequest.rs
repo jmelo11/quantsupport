@@ -1,7 +1,7 @@
 use crate::{indices::marketindex::MarketIndex, time::date::Date};
 
 /// Request for a discount factor for a given market index and date.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct DiscountRequest {
     market_index: MarketIndex,
     date: Date,

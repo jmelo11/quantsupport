@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     indices::marketindex::MarketIndex,
     instruments::cashflows::payoffops::PayoffOps,
 };
@@ -45,18 +45,18 @@ where
     }
 }
 
-impl From<OptionEmbeddedCashflow<f64>> for OptionEmbeddedCashflow<DualFwd> {
+impl From<OptionEmbeddedCashflow<f64>> for OptionEmbeddedCashflow<Recorded> {
     fn from(value: OptionEmbeddedCashflow<f64>) -> Self {
         Self::new(
             value.payoff_ops.clone(),
             value.market_index.clone(),
-            DualFwd::new(value.value),
+            Recorded::new(value.value),
         )
     }
 }
 
-impl From<OptionEmbeddedCashflow<DualFwd>> for OptionEmbeddedCashflow<f64> {
-    fn from(value: OptionEmbeddedCashflow<DualFwd>) -> Self {
+impl From<OptionEmbeddedCashflow<Recorded>> for OptionEmbeddedCashflow<f64> {
+    fn from(value: OptionEmbeddedCashflow<Recorded>) -> Self {
         Self::new(
             value.payoff_ops.clone(),
             value.market_index.clone(),

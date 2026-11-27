@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    ad::dual::DualFwd,
+    ad::Recorded,
     core::elements::curveelement::ADCurveElement,
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::{Interpolate, Interpolator},
@@ -32,9 +32,9 @@ pub struct BootstrappedCurve {
     discount_factors: Vec<f64>,
     day_counter: DayCounter,
     interpolator: Interpolator,
-    pillar_values: Option<Vec<DualFwd>>,
+    pillar_values: Option<Vec<Recorded>>,
     pillar_labels: Option<Vec<String>>,
-    output_discount_factors: Option<Vec<DualFwd>>,
+    output_discount_factors: Option<Vec<Recorded>>,
     ift_sensitivities: Option<Vec<Vec<f64>>>,
     source: Option<CurveSource>,
 }
@@ -107,7 +107,7 @@ impl BootstrappedCurve {
         let values = curve
             .rates()
             .iter()
-            .map(|rate| DualFwd::new(*rate))
+            .map(|rate| Recorded::new(*rate))
             .collect();
         let labels = curve.labels().unwrap_or_default().to_vec();
         let mut result = Self::new(
@@ -205,7 +205,7 @@ impl BootstrappedCurve {
         self.pillar_values
             .as_mut()
             .ok_or_else(|| QSError::ValueNotSetErr("Parent curve pillars".into()))?[index] =
-            DualFwd::new(bumped);
+            Recorded::new(bumped);
         if self.source.is_some() {
             self.discount_factors = self
                 .times
@@ -230,7 +230,7 @@ impl BootstrappedCurve {
 
     /// Attaches AD-tracked pillar values (typically market quotes).
     #[must_use]
-    pub fn with_pillar_values(mut self, pillar_values: Vec<DualFwd>) -> Self {
+    pub fn with_pillar_values(mut self, pillar_values: Vec<Recorded>) -> Self {
         self.pillar_values = Some(pillar_values);
         self
     }
@@ -250,7 +250,7 @@ impl BootstrappedCurve {
 
     /// Attaches AD-tracked discount factors at the pillar dates.
     #[must_use]
-    pub fn with_output_discount_factors(mut self, output_discount_factors: Vec<DualFwd>) -> Self {
+    pub fn with_output_discount_factors(mut self, output_discount_factors: Vec<Recorded>) -> Self {
         self.output_discount_factors = Some(output_discount_factors);
         self
     }
@@ -272,7 +272,7 @@ impl BootstrappedCurve {
     ///
     /// # Errors
     /// Returns an error if the pillar values have not been set, which typically indicates that the curve has not been fully bootstrapped or that there is an issue with the AD linkage during bootstrapping.
-    pub fn pillar_values(&self) -> Result<&[DualFwd]> {
+    pub fn pillar_values(&self) -> Result<&[Recorded]> {
         self.pillar_values
             .as_deref()
             .ok_or_else(|| QSError::InvalidValueErr("Pillar values not set".into()))
@@ -319,7 +319,7 @@ impl BootstrappedCurve {
     ///
     /// # Errors
     /// Returns an error if the output discount factors have not been set, which typically indicates that the curve has not been fully bootstrapped or that there is an issue with the AD linkage during bootstrapping.
-    pub fn output_discount_factors(&self) -> Result<&[DualFwd]> {
+    pub fn output_discount_factors(&self) -> Result<&[Recorded]> {
         self.output_discount_factors
             .as_deref()
             .ok_or_else(|| QSError::InvalidValueErr("Output discount factors not set".into()))

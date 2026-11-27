@@ -33,7 +33,8 @@ html_baseurl = "https://jmelo11.github.io/quantsupport/api/"
 html_show_sourcelink = False
 html_static_path = ["_static"]
 html_css_files = ["notebook-tables.css"]
-exclude_patterns = ["_build", "_templates/**", "README.md", "requirements.txt"]
+# Maintainer instructions and measurement reports are separate from binding guides.
+exclude_patterns = ["_build", "_templates/**", "README.md", "benchmarks.md", "requirements.txt"]
 nb_execution_mode = "off"
 myst_enable_extensions = ["dollarmath", "amsmath"]
 

@@ -3,25 +3,27 @@
 //! Interpolated volatility surfaces, volatility cubes, and
 //! quote-indexing types for equity and rates vol.
 
-/// Interpolated three-dimensional volatility cube.
+/// Provides the interpolated three-dimensional volatility cube.
 pub mod interpolatedvolatilitycube;
-/// Interpolated two-dimensional volatility surface.
+/// Provides the interpolated two-dimensional volatility surface.
 pub mod interpolatedvolatilitysurface;
-/// Model calibration configuration.
+/// Provides the model calibration configuration.
 pub mod modelcalibration;
+/// Reorients FX volatility requests between the canonical and requested currency pairs.
 pub mod orientedfxvolsurface;
-/// Volatility-cube interface.
+/// Defines the query interface for three-dimensional volatility data.
 pub mod volatilitycube;
-/// Volatility-cube construction from market data.
+/// Constructs volatility cubes from market quotes and configuration.
 pub mod volatilitycubebuilder;
-/// Serializable volatility-cube configuration.
+/// Provides the serializable volatility-cube configuration.
 pub mod volatilitycubeconfiguration;
-/// Quote coordinates used to address volatility data.
+/// Provides the quote coordinates used to address volatility data.
 pub mod volatilityindexing;
+/// Supplies the volatility data required by a valuation.
 pub mod volatilitysource;
-/// Volatility-surface interface.
+/// Defines the query interface for two-dimensional volatility data.
 pub mod volatilitysurface;
-/// Volatility-surface construction from market data.
+/// Constructs volatility surfaces from market quotes and configuration.
 pub mod volatilitysurfacebuilder;
-/// Serializable volatility-surface configuration.
+/// Provides the serializable volatility-surface configuration.
 pub mod volatilitysurfaceconfiguration;

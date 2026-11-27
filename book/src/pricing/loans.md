@@ -86,7 +86,7 @@ are supplied by the surrounding application.
 use quantsupport::prelude::*;
 use quantsupport::time::calendars::target::TARGET;
 
-let loan = MakeLoan::<DualFwd>::default()
+let loan = MakeLoan::<Recorded>::default()
     .with_identifier("EUR-MORTGAGE".into())
     .with_start_date(Date::new(2026, 2, 24))
     .with_maturity_date(Date::new(2056, 2, 24))
@@ -136,21 +136,21 @@ A `Loan<T>` carries a `PrepaymentModel<T>` function independently of its
 contractual cashflows. `PrepaymentModelConfiguration::Cpr`, `CprCurve`, and
 `Refinancing` implement that function for any supported scalar. Custom models
 passed to `MakeLoan<T>::with_custom_prepayment_model` use the same `T` as the
-coupon templates. For a `MakeLoan<DualFwd>` already containing the
+coupon templates. For a `MakeLoan<Recorded>` already containing the
 contract terms, a custom function can be
 attached as in this Rust fragment:
 
 ```rust,ignore
 let loan = builder.with_custom_prepayment_model(
-    |state: &PrepaymentModelState<DualFwd>| -> Result<DualFwd> {
+    |state: &PrepaymentModelState<Recorded>| -> Result<Recorded> {
         // Illustrative annual CPR converted to this interval's probability.
-        Ok(DualFwd::scalar(1.0 - 0.88_f64.powf(state.interval_year_fraction())))
+        Ok(Recorded::scalar(1.0 - 0.88_f64.powf(state.interval_year_fraction())))
     },
 ).build()?;
 ```
 
 Changing a loan's scalar type requires an explicit target-scalar prepayment
-model. Use `loan.into_scalar::<DualFwd>(Arc::new(model))`, and the same method on
+model. Use `loan.into_scalar::<Recorded>(Arc::new(model))`, and the same method on
 `LoanTrade<T>` to preserve its date and side. For portable configurations, pass
 the same configuration again. For custom models, supply an equivalent
 implementation for the target scalar; converting an arbitrary model
@@ -317,7 +317,12 @@ a trial rate would produce invalid amortization. It reports unbracketed
 solutions as errors. To reprice a preserving-mode solution through the builder,
 retain the original initial amortization rate while changing the coupon/spread.
 To reprice a rebuilding-mode solution, use the candidate all-in rate for
-amortization.
+amortization. In both modes, retain the original coupon's day count,
+compounding and frequency when inserting the solved rate. For example, the
+mortgage example uses an Actual/360 fixed coupon, whereas
+`CashflowType::fixed(rate)` creates an Actual/365 coupon. Using that convenience
+constructor to reprice this mortgage would change the contract and would no
+longer reproduce the par target.
 
 Runnable examples remain in their separate product directories:
 

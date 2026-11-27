@@ -37,7 +37,7 @@
 //! # fn main() -> Result<()> {
 //! let valuation_date = Date::new(2024, 1, 15);
 //! let notional = 10_000_000.0;
-//! let maker = MakeSwap::<DualFwd>::default()
+//! let maker = MakeSwap::<Recorded>::default()
 //!     .with_identifier("USD_IRS_5Y".to_string())
 //!     .with_start_tenor(Period::new(0, TimeUnit::Days))
 //!     .with_tenor(Period::new(5, TimeUnit::Years))
@@ -56,7 +56,7 @@
 //!
 //! let curve = FlatForwardTermStructure::new(
 //!     valuation_date,
-//!     DualFwd::from(0.03),
+//!     Recorded::from(0.03),
 //!     RateDefinition::new(
 //!         DayCounter::Actual360,
 //!         Compounding::Continuous,
@@ -75,7 +75,7 @@
 //! let swap = maker.build_using(&context)?;
 //! let trade = SwapTrade::new(swap, valuation_date, notional, Side::LongReceive);
 //!
-//! let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
+//! let pricer = DiscountedCashflowPricer::<Swap<Recorded>, SwapTrade<Recorded>>::new();
 //! let results = pricer.evaluate(
 //!     &trade,
 //!     &[Request::Value, Request::FairRate(0), Request::Sensitivities],

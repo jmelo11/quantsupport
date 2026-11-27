@@ -17,23 +17,27 @@ application can construct its curves from quoted instruments.
 
 ## Scalars and ownership
 
-Many mathematical types are generic over `T: Scalar`. Plain `f64` supports
-numerical work without derivative recording. `Fwd<T>` carries a value and a
-forward derivative seed, and nesting it raises the derivative order.
-`Dual<T>` records reverse-mode operations. Standard deterministic pricing and
-constructed-market wrappers generally use
-`DualFwd = Dual<Fwd2>`, with `Fwd2 = Fwd<Fwd<f64>>`.
+Many mathematical types are generic over `T: Scalar`. Use `f64` for numerical
+calculations that do not need derivatives. Differentiable instruments and
+market objects use `Recorded`, which is available through the prelude. For
+example, the discounted-cashflow pricer consumes trades that implement
+`LegsProvider<Recorded>`.
 
-Choose a scalar supported by the full valuation workflow. The generic
-discounted-cashflow pricer, for example, requires trades implementing
-`LegsProvider<DualFwd>`, even though many underlying mathematical types also
-support `f64` and other scalars.
+During an ordinary valuation, the pricer registers its labelled market pillars
+and captures the arithmetic that depends on them. A sensitivity request runs
+compiled first derivatives of that calculation. The application continues to
+call the same pricing method; it does not manage captures or intermediate
+derivatives. The [AD workflow](../risk/aad.md) explains those stages and the
+optional kernel interface for second derivatives.
+The [implementation chapter](../implementation/ad-jit.md) follows the recorded
+operations through reverse differentiation and Cranelift native compilation.
 
-Constructed curves commonly use `Rc<RefCell<dyn ADCurveElement>>`. They share
-market objects within a workflow and permit controlled mutation such as pillar
-registration. Their underlying AD values refer to thread-local tape state.
-Parallel scripting and exposure therefore reconstruct worker-local markets;
-they do not move a live tape graph freely between threads.
+Constructed curves commonly use `Rc<RefCell<dyn ADCurveElement>>` so that a
+workflow can share market objects and register their inputs when needed. A
+persistent object can retain numerical observations, while the expression
+identities created during valuation belong to that capture. Prepared scripting
+and exposure programs share immutable machine code across workers, but each
+worker owns the mutable input and output buffers used by its execution.
 
 ## Requests, dependencies and results
 

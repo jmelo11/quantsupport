@@ -16,8 +16,8 @@ fn reference_date() -> Date {
 ///
 /// # Errors
 /// Propagates schedule or contractual coupon/principal validation errors.
-fn trade() -> Result<SteppedCouponBondTrade<DualFwd>> {
-    let instrument = MakeSteppedCouponBond::<DualFwd>::default()
+fn trade() -> Result<SteppedCouponBondTrade<Recorded>> {
+    let instrument = MakeSteppedCouponBond::<Recorded>::default()
         .with_identifier("USD-STEP-CALL-2031".into())
         .with_start_date(reference_date())
         .with_maturity_date(Date::new(2031, 1, 1))
@@ -56,7 +56,7 @@ fn context(pricer: PricerImplementation) -> PricingContext {
         Frequency::Annual,
     );
     let curve =
-        FlatForwardTermStructure::new(reference_date(), DualFwd::from(0.03), rate_definition)
+        FlatForwardTermStructure::new(reference_date(), Recorded::from(0.03), rate_definition)
             .with_pillar_label("SOFR.flat".into());
     let mut elements = ConstructedElementStore::default();
     elements.discount_curves_mut().insert(

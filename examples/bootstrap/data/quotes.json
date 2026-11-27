@@ -34,27 +34,27 @@
             "mid": 0.0373842872
         },
         {
-            "identifier": "FixedRateBond_USD_CORP_1Y_Semiannual_0.0480_AnchorPrice",
+            "identifier": "FixedRateBond_USD_OTHER:CORP_1Y_Semiannual_0.0480_AnchorPrice",
             "mid": 100.0
         },
         {
-            "identifier": "FixedRateBond_USD_CORP_2Y_Semiannual_0.0490_AnchorPrice",
+            "identifier": "FixedRateBond_USD_OTHER:CORP_2Y_Semiannual_0.0490_AnchorPrice",
             "mid": 100.0
         },
         {
-            "identifier": "FixedRateBond_USD_CORP_3Y_Semiannual_0.0500_AnchorPrice",
+            "identifier": "FixedRateBond_USD_OTHER:CORP_3Y_Semiannual_0.0500_AnchorPrice",
             "mid": 100.0
         },
         {
-            "identifier": "FixedRateBond_USD_CORP_5Y_Semiannual_0.0510_AnchorPrice",
+            "identifier": "FixedRateBond_USD_OTHER:CORP_5Y_Semiannual_0.0510_AnchorPrice",
             "mid": 100.0
         },
         {
-            "identifier": "FixedRateBond_USD_CORP_7Y_Semiannual_0.0520_AnchorPrice",
+            "identifier": "FixedRateBond_USD_OTHER:CORP_7Y_Semiannual_0.0520_AnchorPrice",
             "mid": 100.0
         },
         {
-            "identifier": "FixedRateBond_USD_CORP_10Y_Semiannual_0.0530_AnchorPrice",
+            "identifier": "FixedRateBond_USD_OTHER:CORP_10Y_Semiannual_0.0530_AnchorPrice",
             "mid": 100.0
         },
         {

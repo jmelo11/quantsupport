@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    ad::dual::DualFwd,
+    ad::Recorded,
     core::elements::volatilitycubelement::VolatilityCubeElement,
     indices::marketindex::MarketIndex,
     quotes::{quote::Level, quoteselector::QuoteSelector},
@@ -79,7 +79,7 @@ impl VolatilityCubeBuilder {
         selector: &impl QuoteSelector,
         level: Level,
         reference_date: Date,
-    ) -> Result<(InterpolatedVolatilityCube<DualFwd>, Vec<String>)> {
+    ) -> Result<(InterpolatedVolatilityCube<Recorded>, Vec<String>)> {
         if spec.quotes().is_empty() {
             return Err(QSError::InvalidValueErr(format!(
                 "Volatility cube for {} requires at least one quote",
@@ -87,7 +87,7 @@ impl VolatilityCubeBuilder {
             )));
         }
         let mut coordinates = BTreeSet::new();
-        let mut points: BTreeMap<Period, BTreeMap<Period, BTreeMap<F64Key, DualFwd>>> =
+        let mut points: BTreeMap<Period, BTreeMap<Period, BTreeMap<F64Key, Recorded>>> =
             BTreeMap::new();
         let mut node_labels: BTreeMap<Period, BTreeMap<Period, BTreeMap<F64Key, String>>> =
             BTreeMap::new();
@@ -150,7 +150,7 @@ impl VolatilityCubeBuilder {
                 .or_default()
                 .entry(tenor)
                 .or_default()
-                .insert(key, DualFwd::from(val));
+                .insert(key, Recorded::from(val));
         }
 
         // Keep labels in exactly the same canonical coordinate order used by

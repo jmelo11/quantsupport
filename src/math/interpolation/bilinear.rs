@@ -1,4 +1,4 @@
-use crate::ad::{dual::DualFwd, scalar::Scalar};
+use crate::ad::{scalar::Scalar, Recorded};
 
 use super::extrapolation::ExtrapolationPolicy;
 
@@ -14,9 +14,9 @@ impl BilinearValue for f64 {
     }
 }
 
-impl BilinearValue for DualFwd {
+impl BilinearValue for Recorded {
     fn lerp(a: Self, b: Self, t: f64) -> Self {
-        (a + (b - a) * t).into()
+        a + (b - a) * t
     }
 }
 
@@ -76,7 +76,7 @@ impl BilinearInterpolator {
 mod tests {
     use super::ExtrapolationPolicy;
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         math::interpolation::bilinear::{BilinearInterpolator, BilinearPoint},
     };
 
@@ -191,22 +191,22 @@ mod tests {
             BilinearPoint {
                 x: 0.0,
                 y: 0.0,
-                value: DualFwd::from(1.0),
+                value: Recorded::from(1.0),
             },
             BilinearPoint {
                 x: 1.0,
                 y: 0.0,
-                value: DualFwd::from(3.0),
+                value: Recorded::from(3.0),
             },
             BilinearPoint {
                 x: 0.0,
                 y: 1.0,
-                value: DualFwd::from(2.0),
+                value: Recorded::from(2.0),
             },
             BilinearPoint {
                 x: 1.0,
                 y: 1.0,
-                value: DualFwd::from(4.0),
+                value: Recorded::from(4.0),
             },
         ];
         let out =

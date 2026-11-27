@@ -9,7 +9,7 @@ use super::{
 };
 use crate::instruments::fixedincome::bondterms::BondTerms;
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         collateral::DiscountPolicy,
         evaluationresults::EvaluationResults,
@@ -282,7 +282,7 @@ impl BondPricingEngine for TreeBasedBondPricer {
     }
     fn prepare(
         &self,
-        trade: &impl BondTerms<DualFwd>,
+        trade: &impl BondTerms<Recorded>,
         index: &MarketIndex,
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, Self::Model<f64>)> {
@@ -314,7 +314,7 @@ impl BondPricingEngine for TreeBasedBondPricer {
         &self,
         model: &Self::Model<f64>,
         market: &MarketData,
-    ) -> Result<Self::Model<DualFwd>> {
+    ) -> Result<Self::Model<Recorded>> {
         model
             .as_ref()
             .map(|model| model.ad_model(market))
@@ -340,9 +340,9 @@ impl BondPricingEngine for TreeBasedBondPricer {
         }
     }
 }
-impl<T: BondTerms<DualFwd>> HandleCashflows<T, BondState> for TreeBasedBondPricer {}
+impl<T: BondTerms<Recorded>> HandleCashflows<T, BondState> for TreeBasedBondPricer {}
 impl Pricer for TreeBasedBondPricer {
-    type Item = SteppedCouponBondTrade<DualFwd>;
+    type Item = SteppedCouponBondTrade<Recorded>;
     type Policy = dyn DiscountPolicy;
 
     fn evaluate(
@@ -395,13 +395,13 @@ pub mod test_support {
         coupon: f64,
         _structure: PaymentStructure,
         call_schedule: Vec<CallScheduleEntry>,
-    ) -> SteppedCouponBondTrade<DualFwd> {
+    ) -> SteppedCouponBondTrade<Recorded> {
         let pricing_anchor = if call_schedule.is_empty() {
             BondPricingAnchor::ZSpread(0.0)
         } else {
             BondPricingAnchor::OAS(0.0)
         };
-        let instrument = MakeSteppedCouponBond::<DualFwd>::default()
+        let instrument = MakeSteppedCouponBond::<Recorded>::default()
             .with_identifier("TEST-BOND".into())
             .with_start_date(evaluation_date)
             .with_maturity_date(maturity_date)
@@ -426,7 +426,7 @@ pub mod test_support {
     /// Returns a bond's tree value, panicking if evaluation fails.
     pub fn value(
         pricer: &TreeBasedBondPricer,
-        trade: &SteppedCouponBondTrade<DualFwd>,
+        trade: &SteppedCouponBondTrade<Recorded>,
         provider: &TestProvider,
     ) -> f64 {
         pricer
@@ -533,11 +533,13 @@ mod tests {
         let surfaces: Vec<VolatilitySurfaceConfiguration> =
             serde_json::from_value(surface_json["volatility_surfaces"].clone())
                 .map_err(|error| QSError::InvalidValueErr(error.to_string()))?;
-        let time_grid = TimeGridConfiguration::new(48, 4096, DayCounter::Actual365);
+        // Quote-risk propagation is checked against a rebuilt-market bump on
+        // the same grid. High-resolution convergence is covered separately.
+        let time_grid = TimeGridConfiguration::new(12, 4096, DayCounter::Actual365);
         let pricer = if use_fourier {
             PricerImplementation::BackwardFourierEvolution {
                 time_grid,
-                fourier_grid: FourierGridConfiguration::new(512, 10.0),
+                fourier_grid: FourierGridConfiguration::new(64, 10.0),
             }
         } else {
             PricerImplementation::TreeBased { time_grid }
@@ -721,7 +723,7 @@ mod tests {
         let bump = 1.0e-4;
         let mut prices = Vec::new();
         for use_fourier in [false, true] {
-            Tape::rewind_to_init_fwd();
+            Recording::clear();
             let context = example_calibrated_context(use_fourier, None)?;
             let market = MarketData::new(HashMap::new(), context.constructed_elements().clone())
                 .with_calibration_quotes(context.quote_store().clone())
@@ -822,19 +824,19 @@ mod tests {
                 .instrument_keys()
                 .iter()
                 .any(|label| label == "TEST-BOND.OAS"));
-            let adjoint = risk
+            let derivative = risk
                 .instrument_keys()
                 .iter()
                 .zip(risk.exposure())
                 .find_map(|(label, value)| (label == quote).then_some(*value))
                 .ok_or_else(|| QSError::NotFoundErr("Calibrated caplet quote risk".into()))?;
             assert!(
-                adjoint.abs() > 1.0e-4,
+                derivative.abs() > 1.0e-4,
                 "vol quote sensitivity must not be discarded"
             );
             let mut bumped_prices = Vec::new();
             for amount in [bump, -bump] {
-                Tape::rewind_to_init_fwd();
+                Recording::clear();
                 let bumped = example_calibrated_context(use_fourier, Some((quote, amount)))?;
                 let bumped_provider = RecordingProvider {
                     context: &bumped,
@@ -847,10 +849,10 @@ mod tests {
                 );
             }
             let finite_difference = (bumped_prices[0] - bumped_prices[1]) / (2.0 * bump);
-            eprintln!("Calibrated HullWhite Fourier={use_fourier}: PV={price:.8}, caplet AD={adjoint:.8}, rebuilt-market bump={finite_difference:.8}");
+            eprintln!("Calibrated HullWhite Fourier={use_fourier}: PV={price:.8}, caplet AD={derivative:.8}, rebuilt-market bump={finite_difference:.8}");
             assert!(
-                (adjoint - finite_difference).abs() < 0.03 * finite_difference.abs().max(0.01),
-                "Fourier={use_fourier}: AD {adjoint} vs rebuilt surface bump {finite_difference}"
+                (derivative - finite_difference).abs() < 0.03 * finite_difference.abs().max(0.01),
+                "Fourier={use_fourier}: AD {derivative} vs rebuilt surface bump {finite_difference}"
             );
         }
         assert!(
@@ -865,7 +867,7 @@ mod tests {
     #[test]
     fn calibrated_cube_native_engines_report_swaption_risk() -> Result<()> {
         for use_fourier in [false, true] {
-            Tape::rewind_to_init_fwd();
+            Recording::clear();
             let evaluation = Date::new(2025, 1, 1);
             let (base, _) = provider_with_method(evaluation, 24, use_fourier);
             let mut quotes = QuoteStore::new(evaluation);
@@ -960,7 +962,7 @@ mod tests {
                         && exposure.abs() > 1.0e-4)
             );
         }
-        Tape::rewind_to_init_fwd();
+        Recording::clear();
         Ok(())
     }
 
@@ -983,7 +985,7 @@ mod tests {
                     index,
                     Rc::new(RefCell::new(FlatForwardTermStructure::new(
                         evaluation,
-                        DualFwd::from(rate),
+                        Recorded::from(rate),
                         definition,
                     ))),
                 ),
@@ -1191,7 +1193,7 @@ mod tests {
     #[test]
     fn engines_agree_for_positional_mixed_coupons_and_amortization() {
         let evaluation_date = Date::new(2025, 1, 1);
-        let instrument = MakeSteppedCouponBond::<DualFwd>::default()
+        let instrument = MakeSteppedCouponBond::<Recorded>::default()
             .with_identifier("MIXED-STEP-BOND".into())
             .with_start_date(evaluation_date)
             .with_maturity_date(Date::new(2031, 1, 1))
@@ -1432,13 +1434,13 @@ mod tests {
             .into_contingent_claims("SHORT-CALLABLE")?
             .iter()
             .all(|claim| claim.side() == Side::PayShort));
-        let converted: SteppedCouponBondTrade<DualFwd> = scalar.into();
+        let converted: SteppedCouponBondTrade<Recorded> = scalar.into();
         assert_eq!(converted.pricing_anchor(), short.pricing_anchor());
         for use_fourier in [false, true] {
             let (provider, _) = provider_with_method(evaluation, 12, use_fourier);
             let tree = tree_pricer();
             let fourier = fourier_pricer();
-            let price = |trade: &SteppedCouponBondTrade<DualFwd>| -> Result<f64> {
+            let price = |trade: &SteppedCouponBondTrade<Recorded>| -> Result<f64> {
                 let result = if use_fourier {
                     fourier.evaluate(trade, &[Request::Value], &provider)?
                 } else {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
@@ -46,6 +46,7 @@ use crate::{
         },
         contigentclaim::ContingentClaim,
         csa::CsaTerms,
+        execution::{binding_key, XvaExecution},
         nettingset::NettingSet,
         visitors::{
             exposureevaluator::{
@@ -151,8 +152,9 @@ pub struct XvaEngineConfig {
 /// High-level XVA engine.
 ///
 /// Takes a fully initialised [`PricingContext`] (with bootstrapped curves)
-/// and an [`XvaEngineConfig`], then runs the Savine parallel AAD loop to
-/// produce exposure cubes, XVA values, and sensitivities.
+/// and an [`XvaEngineConfig`] to produce exposure cubes, XVA values and first
+/// sensitivities. Supported simulations prepare and reuse a native path program
+/// inside this engine. Other layouts capture each path and execute native gradients.
 ///
 /// [`Self::run`] accepts a mutable map of netting-set identifiers to
 /// [`NettingSet`] values, each constructed with CSA terms; it does not accept
@@ -170,6 +172,16 @@ pub struct XvaEngine {
     /// by index. Used to derive per-counterparty funding spreads when a
     /// netting set's CSA references a funding curve.
     funding_curves: HashMap<MarketIndex, CurveSnapshot>,
+    configuration: XvaEngineConfig,
+    execution: Option<XvaExecution>,
+    execution_key: Option<String>,
+    code_reused: bool,
+}
+
+struct XvaRunInputs {
+    dates: Vec<Date>,
+    factories: HashMap<String, Vec<Box<dyn XvaAggregatorFactory>>>,
+    margins: HashMap<String, VariationMarginSimulation>,
 }
 
 impl XvaEngine {
@@ -249,6 +261,7 @@ impl XvaEngine {
         selector: &impl QuoteSelector,
         config: XvaEngineConfig,
     ) -> Result<Self> {
+        let configuration = config.clone();
         let mut curves = HashMap::new();
         let mut model_params = HashMap::new();
 
@@ -329,6 +342,10 @@ impl XvaEngine {
                 requests: Vec::new(), // filled in run()
                 fixing_store: context.fixing_store().clone(),
             },
+            configuration,
+            execution: None,
+            execution_key: None,
+            code_reused: false,
             frequency: config.frequency,
             credit_curves,
             funding_curves,
@@ -338,8 +355,9 @@ impl XvaEngine {
     /// Runs the full XVA pipeline.
     ///
     /// Builds a [`PreprocessorExecutor`] with preprocessing steps (fixing resolution),
-    /// runs it on all netting sets, then launches the Savine
-    /// parallel AAD evaluation loop.
+    /// runs it on changed netting-set bindings, then evaluates the owned native
+    /// path program for supported layouts. Other layouts capture each path and
+    /// execute compiled gradients in parallel.
     ///
     /// Each [`NettingSet`] carries its own [`CsaTerms`]
     /// (collateral discounting plus credit/funding parameters), from which the
@@ -352,6 +370,96 @@ impl XvaEngine {
         &mut self,
         netting_sets: &mut HashMap<String, NettingSet>,
     ) -> Result<ExposureResult> {
+        let key = binding_key(netting_sets);
+        if key.is_some() && key == self.execution_key {
+            if let Some(execution) = &self.execution {
+                return execution.evaluate();
+            }
+        }
+        // Native path preparation also avoids repeated per-path capture in small runs.
+        if key.is_some() {
+            self.prepare(netting_sets)?;
+            if let Some(execution) = &self.execution {
+                return execution.evaluate();
+            }
+        }
+        let inputs = self.prepare_run(netting_sets)?;
+        let trades = netting_sets
+            .iter()
+            .map(|(id, set)| (id.clone(), set.claims()))
+            .collect::<HashMap<_, _>>();
+        evaluate_with_margin(
+            &inputs.dates,
+            &trades,
+            &inputs.factories,
+            &inputs.margins,
+            &self.setup,
+        )
+    }
+
+    /// Prepares the existing engine's path calculation for repeated execution.
+    ///
+    /// `run` returns the same cubes, adjustment values and first-risk labels.
+    /// Mutated claims or CSA terms invalidate the binding. Supported simulations
+    /// prepare on first use; an explicit call moves that cost before `run`.
+    ///
+    /// # Errors
+    /// Rejects unsupported scripted/path-dependent claims and propagates market,
+    /// preprocessing and native compilation errors.
+    pub fn prepare(&mut self, netting_sets: &mut HashMap<String, NettingSet>) -> Result<()> {
+        if binding_key(netting_sets).is_none() {
+            return Err(QSError::NotImplementedErr(
+                "prepared XVA claim strategy".into(),
+            ));
+        }
+        let inputs = self.prepare_run(netting_sets)?;
+        let trades = netting_sets
+            .iter()
+            .map(|(id, set)| (id.clone(), set.claims()))
+            .collect::<HashMap<_, _>>();
+        let execution = XvaExecution::prepare(
+            &inputs.dates,
+            &trades,
+            &inputs.factories,
+            &inputs.margins,
+            &self.setup,
+            self.execution.as_ref(),
+        )?;
+        self.code_reused = self
+            .execution
+            .as_ref()
+            .is_some_and(|old| execution.shares_code_with(old));
+        self.execution = Some(execution);
+        self.execution_key = binding_key(netting_sets);
+        Ok(())
+    }
+
+    /// Refreshes market snapshots and calibration, retaining compatible native code.
+    ///
+    /// The next preparation or `run` refreshes coefficients and their quote
+    /// Jacobian. No numerical binding from the previous market is evaluated.
+    ///
+    /// # Errors
+    /// Propagates construction and calibration errors from the current context.
+    pub fn update_market(&mut self, context: &PricingContext) -> Result<()> {
+        let mut refreshed = Self::new(context, self.configuration.clone())?;
+        refreshed.execution = self.execution.take();
+        *self = refreshed;
+        Ok(())
+    }
+
+    /// Whether the latest preparation reused an earlier machine-code allocation.
+    #[must_use]
+    pub const fn preparation_reused_code(&self) -> bool {
+        self.code_reused
+    }
+
+    /// Resolves claims, simulation dates, collateral and adjustment factories for one binding.
+    #[allow(clippy::too_many_lines)]
+    fn prepare_run(
+        &mut self,
+        netting_sets: &mut HashMap<String, NettingSet>,
+    ) -> Result<XvaRunInputs> {
         for ns in netting_sets.values() {
             if let Some(csa) = ns.csa_terms() {
                 csa.validate()?;
@@ -367,7 +475,9 @@ impl XvaEngine {
         let mut inspector = PreprocessorExecutor::new().with_preprocessor(Box::new(fixing_pp));
 
         // 2. Visit all netting sets in-place, assigning global indices.
-        inspector.visit(netting_sets.values_mut());
+        let mut ordered_sets = netting_sets.iter_mut().collect::<Vec<_>>();
+        ordered_sets.sort_by_key(|(id, _)| *id);
+        inspector.visit(ordered_sets.into_iter().map(|(_, set)| set));
         self.setup.requests = inspector.requests().to_vec();
 
         // 2b. Validate that every resolved discount index has a simulated
@@ -472,14 +582,11 @@ impl XvaEngine {
             factories.insert(id.clone(), vec![cva_factory, fva_factory]);
         }
 
-        // 5. Build netting-set slice map.
-        let ns_slices: HashMap<String, &[_]> = netting_sets
-            .iter()
-            .map(|(id, ns)| (id.clone(), ns.claims()))
-            .collect();
-
-        // 6. Run.
-        evaluate_with_margin(&sim_dates, &ns_slices, &factories, &margins, &self.setup)
+        Ok(XvaRunInputs {
+            dates: sim_dates,
+            factories,
+            margins,
+        })
     }
 
     /// Builds collateral remuneration requests for netting sets with variation margin enabled.
@@ -868,7 +975,7 @@ impl XvaEngine {
 }
 
 /// Snapshot of f64 curve data extracted from the `PricingContext`.
-/// Each rayon thread uses this to build a thread-local `DualFwd` curve.
+/// Each rayon thread uses this to build a thread-local `Recorded` curve.
 #[derive(Clone)]
 struct CurveSnapshot {
     dates: Vec<Date>,
@@ -911,18 +1018,18 @@ struct LgmResolvedParams {
 }
 
 impl LgmResolvedParams {
-    /// Builds the per-thread `DualFwd` sigma schedule. Calibrated sigmas are
-    /// rebuilt as tape expressions connected to vol-quote leaves via the
+    /// Builds the per-thread `Recorded` sigma schedule. Calibrated sigmas are
+    /// rebuilt as capture expressions connected to vol-quote leaves via the
     /// calibration IFT sensitivities:
     ///   `sigma_i = sigma_i0 + (dsigma/dvol)_i * (v_i - v_i0)`
-    /// so the backward pass yields dXVA/dvol. The vol leaves are appended to
+    /// so the differentiate pass yields dXVA/dvol. The vol leaves are appended to
     /// `all_leaves` under their quote labels.
-    fn dualfwd_schedule(&self, all_leaves: &mut Vec<(String, DualFwd)>) -> Vec<(f64, DualFwd)> {
+    fn recorded_schedule(&self, all_leaves: &mut Vec<(String, Recorded)>) -> Vec<(f64, Recorded)> {
         self.vol_pillars.as_ref().map_or_else(
             || {
                 self.sigma_schedule
                     .iter()
-                    .map(|&(t, s)| (t, DualFwd::scalar(s)))
+                    .map(|&(t, s)| (t, Recorded::scalar(s)))
                     .collect()
             },
             |pillars| {
@@ -930,11 +1037,11 @@ impl LgmResolvedParams {
                     .iter()
                     .zip(pillars)
                     .map(|(&(t, s), vp)| {
-                        let leaf = DualFwd::new(vp.market_vol);
+                        let leaf = Recorded::new(vp.market_vol);
                         all_leaves.push((vp.label.clone(), leaf));
-                        let delta: DualFwd = (leaf - DualFwd::scalar(vp.market_vol)).into();
-                        let sigma: DualFwd =
-                            (DualFwd::scalar(s) + DualFwd::scalar(vp.dsigma_dvol) * delta).into();
+                        let delta: Recorded = leaf - Recorded::scalar(vp.market_vol);
+                        let sigma: Recorded =
+                            Recorded::scalar(s) + Recorded::scalar(vp.dsigma_dvol) * delta;
                         (t, sigma)
                     })
                     .collect()
@@ -952,23 +1059,23 @@ struct VolPillar {
 }
 
 impl CurveSnapshot {
-    /// Build a `DiscountTermStructure<DualFwd>` on the current thread's tape.
+    /// Build a `DiscountTermStructure<Recorded>` on the current thread's capture.
     ///
     /// # Errors
     /// Returns an error if curve construction or pillar assignment fails.
-    fn build_dualfwd_curve(&self) -> Result<DiscountTermStructure<DualFwd>> {
-        let dfs: Vec<DualFwd> = self
+    fn build_recorded_curve(&self) -> Result<DiscountTermStructure<Recorded>> {
+        let dfs: Vec<Recorded> = self
             .discount_factors
             .iter()
-            .map(|&v| DualFwd::scalar(v))
+            .map(|&v| Recorded::scalar(v))
             .collect();
-        let pvs: Vec<DualFwd> = self
+        let pvs: Vec<Recorded> = self
             .pillar_values
             .iter()
-            .map(|&v| DualFwd::scalar(v))
+            .map(|&v| Recorded::scalar(v))
             .collect();
 
-        let mut curve = DiscountTermStructure::<DualFwd>::new(
+        let mut curve = DiscountTermStructure::<Recorded>::new(
             self.dates.clone(),
             dfs,
             self.day_counter,
@@ -982,7 +1089,7 @@ impl CurveSnapshot {
             curve = curve.with_ift_sensitivities(ift.clone());
         }
 
-        curve.put_pillars_on_tape();
+        curve.register_pillars();
         Ok(curve)
     }
 }
@@ -1008,30 +1115,30 @@ unsafe impl Send for InternalModelSetup {}
 unsafe impl Sync for InternalModelSetup {}
 
 impl InternalModelSetup {
-    /// Builds the LGM rate models on top of the rebuilt `DualFwd` curves and
+    /// Builds the LGM rate models on top of the rebuilt `Recorded` curves and
     /// registers them (plus any derived-curve driver links) on `model`.
     /// Returns separate rate-model instances for FX models to borrow.
     ///
     /// Sigma schedules are built once per base model; derived curves share
-    /// their driver's schedule (same tape leaves) so both curves respond to
+    /// their driver's schedule (same capture leaves) so both curves respond to
     /// the same vol quotes.
     fn add_rate_models<'c>(
         &self,
-        built_curves: &'c [(MarketIndex, DiscountTermStructure<DualFwd>)],
-        all_leaves: &mut Vec<(String, DualFwd)>,
-        model: &mut LgmMarketModel<'c, DualFwd>,
-    ) -> Result<Vec<(MarketIndex, LgmRateModel<'c, DualFwd>)>> {
-        let mut schedules: HashMap<MarketIndex, Vec<(f64, DualFwd)>> = HashMap::new();
+        built_curves: &'c [(MarketIndex, DiscountTermStructure<Recorded>)],
+        all_leaves: &mut Vec<(String, Recorded)>,
+        model: &mut LgmMarketModel<'c, Recorded>,
+    ) -> Result<Vec<(MarketIndex, LgmRateModel<'c, Recorded>)>> {
+        let mut schedules: HashMap<MarketIndex, Vec<(f64, Recorded)>> = HashMap::new();
         for (idx, _) in built_curves {
             let params = self.model_params.get(idx).ok_or_else(|| {
                 QSError::NotFoundErr(format!("Model config missing for curve {idx:?}"))
             })?;
             if params.driver.is_none() {
-                schedules.insert(idx.clone(), params.dualfwd_schedule(all_leaves));
+                schedules.insert(idx.clone(), params.recorded_schedule(all_leaves));
             }
         }
 
-        let mut fx_rate_models: Vec<(MarketIndex, LgmRateModel<'c, DualFwd>)> = Vec::new();
+        let mut fx_rate_models: Vec<(MarketIndex, LgmRateModel<'c, Recorded>)> = Vec::new();
         for (idx, curve) in built_curves {
             let params = self.model_params.get(idx).ok_or_else(|| {
                 QSError::NotFoundErr(format!("Model config missing for curve {idx:?}"))
@@ -1046,7 +1153,7 @@ impl InternalModelSetup {
                 })?
                 .clone();
             let rate_model = LgmRateModel::new_piecewise(
-                DualFwd::scalar(params.lambda),
+                Recorded::scalar(params.lambda),
                 schedule.clone(),
                 curve,
             )?;
@@ -1059,7 +1166,7 @@ impl InternalModelSetup {
             // rate model for the FX model to borrow.
             if !self.fx_configs.is_empty() {
                 let fx_rate =
-                    LgmRateModel::new_piecewise(DualFwd::scalar(params.lambda), schedule, curve)?;
+                    LgmRateModel::new_piecewise(Recorded::scalar(params.lambda), schedule, curve)?;
                 fx_rate_models.push((idx.clone(), fx_rate));
             }
         }
@@ -1073,13 +1180,15 @@ impl XvaModelSetup for InternalModelSetup {
     }
 
     fn with_model<R>(&self, dates: &[Date], callback: &mut ModelCallback<'_, R>) -> Result<R> {
-        // 1. Build DualFwd curves and collect leaves.
-        let mut built_curves: Vec<(MarketIndex, DiscountTermStructure<DualFwd>)> = Vec::new();
-        let mut all_leaves: Vec<(String, DualFwd)> = Vec::new();
+        // 1. Build Recorded curves and collect leaves.
+        let mut built_curves: Vec<(MarketIndex, DiscountTermStructure<Recorded>)> = Vec::new();
+        let mut all_leaves: Vec<(String, Recorded)> = Vec::new();
 
-        for (idx, snap) in &self.curves {
-            let curve = snap.build_dualfwd_curve()?;
-            let leaves: Vec<(String, DualFwd)> = curve
+        let mut ordered_curves: Vec<_> = self.curves.iter().collect();
+        ordered_curves.sort_by_cached_key(|(index, _)| index.to_string());
+        for (idx, snap) in ordered_curves {
+            let curve = snap.build_recorded_curve()?;
+            let leaves: Vec<(String, Recorded)> = curve
                 .pillars()
                 .unwrap_or_default()
                 .into_iter()
@@ -1144,11 +1253,11 @@ impl XvaModelSetup for InternalModelSetup {
                 ))
             })?;
 
-            // FX spot and vol are tracked tape leaves so the backward pass
+            // FX spot and vol are tracked capture leaves so the differentiate pass
             // yields dXVA/dspot and dXVA/dvol.
             let pair = format!("{}{}", fx_cfg.foreign_currency, self.domestic_currency);
-            let spot_leaf = DualFwd::new(spot);
-            let fx_vol_leaf = DualFwd::new(fx_cfg.fx_vol);
+            let spot_leaf = Recorded::new(spot);
+            let fx_vol_leaf = Recorded::new(fx_cfg.fx_vol);
             all_leaves.push((format!("FX.{pair}.spot"), spot_leaf));
             all_leaves.push((format!("FX.{pair}.vol"), fx_vol_leaf));
 
@@ -1157,7 +1266,7 @@ impl XvaModelSetup for InternalModelSetup {
                 for_rate,
                 fx_vol_leaf,
                 spot_leaf,
-                DualFwd::scalar(fx_cfg.rho),
+                Recorded::scalar(fx_cfg.rho),
             );
             model.add_fx_model(fx_cfg.foreign_currency, fx_model);
         }
@@ -1166,5 +1275,255 @@ impl XvaModelSetup for InternalModelSetup {
         model.set_requests(self.requests.clone());
 
         callback(&model, &all_leaves)
+    }
+}
+
+#[cfg(test)]
+mod preparation_tests {
+    use super::*;
+    use crate::prelude::*;
+    use crate::xva::claimevaluationstrategy::ClaimEvaluationStrategy;
+    use std::collections::BTreeMap;
+    use std::{cell::RefCell, rc::Rc};
+
+    /// Builds the XVA engine, claims and market used by preparation regressions.
+    fn fixture(
+        margin: bool,
+        discount: f64,
+    ) -> Result<(XvaEngine, HashMap<String, NettingSet>, PricingContext)> {
+        let reference = Date::new(2025, 1, 1);
+        let maturity = Date::new(2027, 1, 1);
+        let curve = DiscountTermStructure::<Recorded>::new(
+            vec![reference, Date::new(2026, 1, 1), maturity],
+            vec![
+                Recorded::one(),
+                Recorded::scalar(0.97),
+                Recorded::scalar(discount),
+            ],
+            DayCounter::Actual365,
+            Interpolator::LogLinear,
+            true,
+        )?
+        .with_pillar_values(vec![Recorded::scalar(0.97), Recorded::scalar(discount)])?
+        .with_pillar_labels(vec!["SOFR.1Y".into(), "SOFR.2Y".into()])?
+        .with_ift_sensitivities(vec![vec![1.0, 0.0], vec![0.0, 1.0]]);
+        let mut elements = ConstructedElementStore::default();
+        elements.discount_curves_mut().insert(
+            MarketIndex::SOFR,
+            DiscountCurveElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(curve))),
+        );
+        let context = PricingContext::new()
+            .with_quote_store(QuoteStore::new(reference))
+            .with_constructed_elements(elements)
+            .with_base_currency(Currency::USD)
+            .with_base_index(MarketIndex::SOFR);
+        let engine = XvaEngine::new(
+            &context,
+            XvaEngineConfig {
+                model_configs: vec![LgmModelConfig {
+                    market_index: MarketIndex::SOFR,
+                    lambda: Some(0.05),
+                    driver: None,
+                    parameter_source: Some(ParameterSource::Fixed(
+                        GaussianRateModelParameters::new(0.015),
+                    )),
+                }],
+                fx_configs: vec![],
+                n_paths: 64,
+                seed: 42,
+                frequency: Frequency::Quarterly,
+            },
+        )?;
+        let terms = CsaTerms {
+            collateral_index: MarketIndex::SOFR,
+            collateral_currency: Currency::USD,
+            variation_margin: margin,
+            counterparty_threshold: 15.0,
+            own_threshold: 20.0,
+            minimum_transfer_amount: 5.0,
+            credit_spread: 0.01,
+            recovery: 0.4,
+            funding_spread: 0.005,
+            funding_spread_curve: None,
+            funding_index: None,
+            credit_index: None,
+        };
+        let fixed = ContingentClaim::new(
+            "fixed".into(),
+            0,
+            maturity,
+            None,
+            None,
+            None,
+            Currency::USD,
+            None,
+            1.0,
+            Side::LongReceive,
+            ClaimEvaluationStrategy::Deterministic { amount: 400.0 },
+            Some(MarketIndex::SOFR),
+        );
+        let floating = ContingentClaim::new(
+            "floating".into(),
+            1,
+            maturity,
+            Some(reference),
+            Some(reference),
+            Some(maturity),
+            Currency::USD,
+            None,
+            5_000.0,
+            Side::PayShort,
+            ClaimEvaluationStrategy::LinearRate {
+                spread: 0.001,
+                day_counter: DayCounter::Actual365,
+            },
+            Some(MarketIndex::SOFR),
+        );
+        Ok((
+            engine,
+            HashMap::from([(
+                "client".into(),
+                NettingSet::with_csa_terms(vec![fixed, floating], terms),
+            )]),
+            context,
+        ))
+    }
+    /// Indexes adjustment results by netting set and measure.
+    fn values(result: &ExposureResult) -> BTreeMap<String, f64> {
+        result
+            .xva_values
+            .as_ref()
+            .into_iter()
+            .flatten()
+            .map(|value| {
+                (
+                    format!("{}.{}", value.netting_set, value.measure),
+                    value.value,
+                )
+            })
+            .collect()
+    }
+    /// Indexes every published first-risk row for exact label comparison.
+    fn risks(result: &ExposureResult) -> BTreeMap<String, f64> {
+        result
+            .sensitivities
+            .as_ref()
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect()
+    }
+    /// Compares complete prepared and per-path numerical results in the XVA fixture.
+    fn check(actual: &ExposureResult, expected: &ExposureResult) {
+        assert_eq!(actual.cubes.len(), expected.cubes.len());
+        for (actual, expected) in actual.cubes.iter().zip(&expected.cubes) {
+            assert_eq!(actual.trade_id, expected.trade_id);
+            assert_eq!(actual.dates, expected.dates);
+            assert_eq!(actual.npvs.len(), expected.npvs.len());
+            for (actual, expected) in actual
+                .npvs
+                .iter()
+                .flatten()
+                .zip(expected.npvs.iter().flatten())
+            {
+                assert!(
+                    (actual - expected).abs() <= 1e-9 * expected.abs().max(1.0),
+                    "cube {actual} vs {expected}"
+                );
+            }
+        }
+        let actual_values = values(actual);
+        let expected_values = values(expected);
+        assert_eq!(actual_values.len(), expected_values.len());
+        for (label, actual) in actual_values {
+            let expected = expected_values[&label];
+            assert!(
+                (actual - expected).abs() <= 1e-9 * expected.abs().max(1.0),
+                "{label}: {actual} vs {expected}"
+            );
+        }
+        let actual_risks = risks(actual);
+        let expected_risks = risks(expected);
+        assert_eq!(
+            actual_risks.keys().collect::<Vec<_>>(),
+            expected_risks.keys().collect::<Vec<_>>()
+        );
+        for (label, actual) in actual_risks {
+            let expected = expected_risks[&label];
+            assert!(
+                (actual - expected).abs() <= 1e-8 * expected.abs().max(1.0),
+                "risk {label}: {actual} vs {expected}"
+            );
+        }
+    }
+    /// Evaluates the per-path compiler route independently of the prepared program.
+    fn reference(
+        engine: &mut XvaEngine,
+        sets: &mut HashMap<String, NettingSet>,
+    ) -> Result<ExposureResult> {
+        let inputs = engine.prepare_run(sets)?;
+        let trades = sets
+            .iter()
+            .map(|(id, set)| (id.clone(), set.claims()))
+            .collect::<HashMap<_, _>>();
+        evaluate_with_margin(
+            &inputs.dates,
+            &trades,
+            &inputs.factories,
+            &inputs.margins,
+            &engine.setup,
+        )
+    }
+
+    /// Checks automatic preparation matches reference for small runs.
+    #[test]
+    fn automatic_preparation_matches_reference_for_small_runs() -> Result<()> {
+        for margin in [false, true] {
+            let (mut engine, mut sets, _) = fixture(margin, 0.94)?;
+            let expected = reference(&mut engine, &mut sets)?;
+            assert!(engine.setup.n_paths < 1_000);
+            check(&engine.run(&mut sets)?, &expected);
+            assert!(engine.execution.is_some());
+            assert!(!engine.preparation_reused_code());
+            check(&engine.run(&mut sets)?, &expected);
+            check(&engine.run(&mut sets)?, &expected);
+            engine.prepare(&mut sets)?;
+            assert!(engine.preparation_reused_code());
+            check(&engine.run(&mut sets)?, &expected);
+        }
+        Ok(())
+    }
+
+    /// Checks quote refresh reuses code and refreshes values and risk.
+    #[test]
+    fn quote_refresh_reuses_code_and_refreshes_values_and_risk() -> Result<()> {
+        let (mut engine, mut sets, _) = fixture(true, 0.94)?;
+        engine.prepare(&mut sets)?;
+        let old = engine.run(&mut sets)?;
+        let (mut fresh, mut fresh_sets, context) = fixture(true, 0.91)?;
+        let expected = reference(&mut fresh, &mut fresh_sets)?;
+        engine.update_market(&context)?;
+        engine.prepare(&mut sets)?;
+        assert!(engine.preparation_reused_code());
+        let current = engine.run(&mut sets)?;
+        check(&current, &expected);
+        assert_ne!(values(&old), values(&current));
+        assert_ne!(risks(&old), risks(&current));
+        Ok(())
+    }
+
+    /// Checks claim mutation invalidates prepared values.
+    #[test]
+    fn claim_mutation_invalidates_prepared_values() -> Result<()> {
+        let (mut engine, mut sets, _) = fixture(false, 0.94)?;
+        engine.prepare(&mut sets)?;
+        let old = engine.run(&mut sets)?;
+        sets.get_mut("client").unwrap().claims_vec_mut().remove(0);
+        let expected = reference(&mut engine, &mut sets)?;
+        engine.prepare(&mut sets)?;
+        let current = engine.run(&mut sets)?;
+        check(&current, &expected);
+        assert_ne!(values(&old), values(&current));
+        Ok(())
     }
 }

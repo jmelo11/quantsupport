@@ -11,14 +11,14 @@ use std::result::Result;
 
 #[derive(Clone)]
 pub enum NativeInstrument {
-    Loan(Loan<DualFwd>),
-    Swap(Swap<DualFwd>),
-    BasisSwap(BasisSwap<DualFwd>),
-    FloatFloatCrossCurrencySwap(FloatFloatCrossCurrencySwap<DualFwd>),
-    FixFloatCrossCurrencySwap(FixFloatCrossCurrencySwap<DualFwd>),
-    FixedRateBond(FixedRateBond<DualFwd>),
-    FixedRateDeposit(FixedRateDeposit<DualFwd>),
-    FloatingRateNote(FloatingRateNote<DualFwd>),
+    Loan(Loan<Recorded>),
+    Swap(Swap<Recorded>),
+    BasisSwap(BasisSwap<Recorded>),
+    FloatFloatCrossCurrencySwap(FloatFloatCrossCurrencySwap<Recorded>),
+    FixFloatCrossCurrencySwap(FixFloatCrossCurrencySwap<Recorded>),
+    FixedRateBond(FixedRateBond<Recorded>),
+    FixedRateDeposit(FixedRateDeposit<Recorded>),
+    FloatingRateNote(FloatingRateNote<Recorded>),
     FxForward(FxForward),
     FxEuropeanOption(FxEuropeanOption),
     EquityEuropeanOption(EquityEuropeanOption),
@@ -27,7 +27,7 @@ pub enum NativeInstrument {
     CapFloor(CapFloor),
     CapletFloorlet(CapletFloorlet),
     RateFutures(RateFutures),
-    EuropeanSwaption(EuropeanSwaption<DualFwd>),
+    EuropeanSwaption(EuropeanSwaption<Recorded>),
 }
 
 pub struct InstrumentObject {
@@ -333,7 +333,11 @@ impl InstrumentObject {
 }
 
 /// Position sizing and leg orientation affect a clone, preserving the contract.
-fn positioned_leg(leg: &Leg<DualFwd>, scale: f64, direction: Side) -> Result<Leg<DualFwd>, String> {
+fn positioned_leg(
+    leg: &Leg<Recorded>,
+    scale: f64,
+    direction: Side,
+) -> Result<Leg<Recorded>, String> {
     let cashflows = leg
         .cashflows()
         .iter()

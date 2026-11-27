@@ -3,12 +3,8 @@
 use core::fmt;
 use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
-/// Trait unifying plain `f64`, [`ADForward`](super::forward::ADForward), and
-/// [`Dual<T>`](super::dual::Dual) so that pricing / math code can be written
-/// generically over the scalar type.
-///
-/// Provides only construction, value access, and transcendentals.
-/// Arithmetic operators are provided by the expression template system.
+/// Numeric operations shared by plain values and compiler-recorded expressions.
+/// Arithmetic preserves the concrete scalar type.
 pub trait Scalar:
     Sized
     + Copy
@@ -63,10 +59,6 @@ pub trait Scalar:
     fn min_val(self, other: Self) -> Self;
 
     // -- Eager arithmetic (always returns `Self`) ----------------------------
-    // The expression-template operators on `Dual<T>` return `BinExpr`, not
-    // `Self`.  These methods provide guaranteed-`Self`-returning arithmetic
-    // for generic code (e.g. `Complex<T>`) that cannot work with lazy trees.
-
     /// Eager addition.
     #[must_use]
     fn add_val(self, other: Self) -> Self;
@@ -82,6 +74,17 @@ pub trait Scalar:
     /// Eager negation.
     #[must_use]
     fn neg_val(self) -> Self;
+
+    /// Selects `yes` when this value strictly exceeds `rhs`, otherwise `no`.
+    /// Comparisons carry no derivatives. Recorded scalars replay the decision.
+    #[must_use]
+    fn select_greater(self, rhs: Self, yes: Self, no: Self) -> Self {
+        if self > rhs {
+            yes
+        } else {
+            no
+        }
+    }
 }
 
 /// Backward-compatible alias for [`Scalar`].
@@ -91,90 +94,104 @@ pub trait IsReal: Scalar {}
 impl<T: Scalar> IsReal for T {}
 
 impl Scalar for f64 {
+    /// Constructs a constant from a plain numerical value.
     #[inline]
     fn scalar(v: f64) -> Self {
         v
     }
+    /// Returns the current numerical value under the scalar observation rules.
     #[inline]
     fn value(&self) -> f64 {
         *self
     }
+    /// Returns the additive identity as a constant scalar.
     #[inline]
     fn zero() -> Self {
         0.0
     }
+    /// Returns the multiplicative identity as a constant scalar.
     #[inline]
     fn one() -> Self {
         1.0
     }
+    /// Calculates the exponential with the scalar implementation.
     #[inline]
     fn exp(self) -> Self {
         Self::exp(self)
     }
+    /// Calculates the natural logarithm with the scalar implementation.
     #[inline]
     fn ln(self) -> Self {
         Self::ln(self)
     }
+    /// Calculates the square root with the scalar implementation.
     #[inline]
     fn sqrt(self) -> Self {
         Self::sqrt(self)
     }
+    /// Calculates the sine of an angle in radians.
     #[inline]
     fn sin(self) -> Self {
         Self::sin(self)
     }
+    /// Calculates the cosine of an angle in radians.
     #[inline]
     fn cos(self) -> Self {
         Self::cos(self)
     }
+    /// Calculates the absolute value under the scalar derivative convention.
     #[inline]
     fn abs(self) -> Self {
         Self::abs(self)
     }
+    /// Raises this scalar to a constant floating-point exponent.
     #[inline]
     fn powf(self, p: f64) -> Self {
         Self::powf(self, p)
     }
+    /// Raises this scalar to a scalar exponent, retaining both input dependencies.
     #[inline]
     fn pows(self, p: Self) -> Self {
         Self::powf(self, p)
     }
+    /// Selects the larger value under the library's NaN and derivative conventions.
     #[inline]
     fn max_val(self, o: Self) -> Self {
         Self::max(self, o)
     }
+    /// Selects the smaller value under the library's NaN and derivative conventions.
     #[inline]
     fn min_val(self, o: Self) -> Self {
         Self::min(self, o)
     }
+    /// Adds two scalars while retaining their numerical dependencies.
     #[inline]
     fn add_val(self, other: Self) -> Self {
         self + other
     }
+    /// Subtracts two scalars while retaining their numerical dependencies.
     #[inline]
     fn sub_val(self, other: Self) -> Self {
         self - other
     }
+    /// Multiplies two scalars while retaining their numerical dependencies.
     #[inline]
     fn mul_val(self, other: Self) -> Self {
         self * other
     }
+    /// Divides two scalars while retaining their numerical dependencies.
     #[inline]
     fn div_val(self, other: Self) -> Self {
         self / other
     }
+    /// Negates a scalar while retaining its numerical dependencies.
     #[inline]
     fn neg_val(self) -> Self {
         -self
     }
 }
 
-/// A [`Scalar`] that also supports the standard arithmetic operators.
-///
-/// Requires `Output = Self`. This is satisfied by the *inner* scalar types
-/// (`f64`, [`ADForward`](super::forward::ADForward)) but **not** by
-/// [`Dual<T>`](super::dual::Dual) (whose operators return expression-template
-/// types).
+/// A numeric scalar with closed arithmetic operator result types.
 pub trait InnerScalar:
     Scalar
     + Add<Output = Self>

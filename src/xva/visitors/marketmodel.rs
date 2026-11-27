@@ -1,13 +1,14 @@
 //! Market model trait and simulation response types.
 //!
-//! A [`MarketModel`] produces Monte Carlo paths as sequences of
-//! [`SimulationResponse`]s. Each response corresponds to one request slot
+//! A [`MarketModel`](crate::xva::visitors::marketmodel::MarketModel) produces Monte Carlo paths as sequences of
+//! [`SimulationResponse`](crate::xva::visitors::marketmodel::SimulationResponse)s. Each response corresponds to one request slot
 //! at one simulation date and carries the subset of market data declared by
-//! its [`SimulationRequest`]. Most claims occupy one slot; composite claims
+//! its [`SimulationRequest`](crate::xva::visitors::preprocessorexecutor::SimulationRequest). Most claims occupy one slot; composite claims
 //! may own a contiguous response block.
 
 #![deny(missing_docs)]
 
+use crate::models::lgm::marketpathplan::MarketPathPlan;
 use crate::{
     ad::scalar::Scalar,
     core::marketdatahandling::{
@@ -83,6 +84,13 @@ where
 /// FX, spot, and path-dependent requests only. Models must override it or
 /// populate responses separately to provide discount factors or numeraires.
 pub trait MarketModel<T: Scalar>: Send + Sync {
+    /// Prepares equivalent native path arithmetic, when supported by this model.
+    ///
+    /// # Errors
+    /// Propagates unsupported configurations and missing market dependencies.
+    fn compiled_path_plan(&self) -> Result<Option<MarketPathPlan<T>>> {
+        Ok(None)
+    }
     /// Returns the number of Monte Carlo paths.
     fn n_paths(&self) -> usize;
 

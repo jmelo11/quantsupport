@@ -154,7 +154,7 @@ mod accrual_tests {
             Date::new(2026, 3, 31),
         ];
         let mut sum = 0.0;
-        let dual: FixedRateCoupon<DualFwd> = coupon.clone().into();
+        let dual: FixedRateCoupon<Recorded> = coupon.clone().into();
         for dates in split.windows(2) {
             let value = coupon.accrued_amount(dates[0], dates[1])?;
             assert!((value - dual.accrued_amount(dates[0], dates[1])?.value()).abs() < 1e-12);

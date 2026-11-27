@@ -1,8 +1,8 @@
-/// Implementation of the Bisection method.
+/// Finds a bracketed scalar root by bisection.
 pub mod bisection;
-/// Implementation of the Newton-Raphson method.
+/// Finds a scalar root with Newton–Raphson iteration.
 pub mod newtonraphson;
-/// Solver traits module
+/// Defines the common solver interfaces and convergence results.
 pub mod solvertraits;
-/// Implementation of a vector Newton solver.
+/// Solves systems of residual equations with vector Newton iteration.
 pub mod vectornewton;

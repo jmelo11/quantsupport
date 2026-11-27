@@ -368,7 +368,7 @@ pub fn prepare(
                     if !fx_pairs.insert((record.base(), record.quote())) {
                         return Err("duplicate context FX pair".into());
                     }
-                    fx.add_fx_rate(record.base(), record.quote(), DualFwd::from(record.rate()));
+                    fx.add_fx_rate(record.base(), record.quote(), Recorded::from(record.rate()));
                 }
             }
             InputData::Credit { configuration, .. } => credit.push(configuration.clone()),
@@ -566,7 +566,7 @@ mod tests {
     }
 
     fn instrument(registry: &mut Registry) -> String {
-        let deposit = MakeFixedRateDeposit::<DualFwd>::default()
+        let deposit = MakeFixedRateDeposit::<Recorded>::default()
             .with_identifier("deposit".into())
             .with_start_date(Date::new(2025, 1, 1))
             .with_maturity_date(Date::new(2025, 7, 1))
@@ -599,7 +599,7 @@ mod tests {
         let root = root(&mut registry);
         let input = add_curve(&mut registry, &root, 0.04);
         let concrete = instrument(&mut registry);
-        let maker = MakeFixedRateDeposit::<DualFwd>::default()
+        let maker = MakeFixedRateDeposit::<Recorded>::default()
             .with_identifier("pending".into())
             .with_start_tenor(Period::new(0, TimeUnit::Days))
             .with_tenor(Period::new(6, TimeUnit::Months))
@@ -694,8 +694,8 @@ mod tests {
             )
             .unwrap();
         let mut pricer = DiscountedCashflowPricer::<
-            FixedRateDeposit<DualFwd>,
-            FixedRateDepositTrade<DualFwd>,
+            FixedRateDeposit<Recorded>,
+            FixedRateDepositTrade<Recorded>,
         >::new();
         pricer.set_discount_policy(Box::new(context.csa_policy()));
         let QsObject::FixedRateDepositTrade(trade) = trade else {

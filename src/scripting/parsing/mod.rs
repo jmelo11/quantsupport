@@ -15,7 +15,7 @@ Wiley, 2018
 This attribution and license notice must be preserved at the top of this file.
 */
 
-/// Tokenizer for the payoff scripting language.
+/// Provides the tokenizer for the payoff scripting language.
 pub mod lexer;
-/// Parser that builds scripting AST nodes from tokens.
+/// Provides the parser that builds scripting AST nodes from tokens.
 pub mod parser;

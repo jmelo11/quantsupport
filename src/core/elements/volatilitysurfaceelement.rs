@@ -1,7 +1,7 @@
 use std::cell::{Ref, RefMut};
 
 use crate::{
-    ad::dual::DualFwd,
+    ad::Recorded,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     utils::errors::{QSError, Result},
@@ -10,7 +10,7 @@ use crate::{
 
 /// [`ADVolatilitySurfaceElement`] is a trait to identify AD-enable volatility surfaces.
 pub trait ADVolatilitySurfaceElement:
-    VolatilitySurface<DualFwd> + Pillars<DualFwd> + Send + Sync
+    VolatilitySurface<Recorded> + Pillars<Recorded> + Send + Sync
 {
     /// Copies numeric inputs into an independent volatility market with detached AD nodes.
     ///

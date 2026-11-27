@@ -12,11 +12,11 @@
     "recovery": 0.40,
     "funding_index": "TermSOFR3m",
     "funding_spread_curve": {
-        "reference_date": "2026-11-11",
+        "reference_date": "2025-11-11",
         "dates": [
-            "2026-11-11",
-            "2028-11-11",
-            "2030-11-11"
+            "2025-11-11",
+            "2027-11-11",
+            "2029-11-11"
         ],
         "rates": [
             0.0040,

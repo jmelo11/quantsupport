@@ -35,7 +35,7 @@ use std::marker::PhantomData;
 ///     Frequency::Semiannual,
 /// );
 ///
-/// let bond = MakeFixedRateBond::<DualFwd>::default()
+/// let bond = MakeFixedRateBond::<Recorded>::default()
 ///     .with_identifier("UST-5Y".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2029, 1, 1))

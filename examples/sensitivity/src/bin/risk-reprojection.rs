@@ -6,7 +6,11 @@
 use quantsupport::prelude::*;
 use quantsupport::utils::tools::sort_sensitivities_by_tenor;
 
-fn main() -> Result<()> {
+/// Constructs the two-deposit EUR market used by all three reporting bases.
+///
+/// # Errors
+/// Propagates quote parsing and market initialization errors.
+fn pricing_context() -> Result<PricingContext> {
     let date = Date::new(2026, 1, 15);
     let mut quotes = QuoteStore::new(date);
     let deposits = [
@@ -29,17 +33,38 @@ fn main() -> Result<()> {
         .with_base_currency(Currency::EUR)
         .with_base_index(MarketIndex::ESTR);
     context.initialize()?;
+    Ok(context)
+}
 
+/// Builds the swap whose price and risk are reported in each basis.
+///
+/// # Errors
+/// Propagates tenor parsing and instrument construction errors.
+fn swap_trade(date: Date) -> Result<OvernightIndexSwapTrade<Recorded>> {
     let notional = 1_000_000.0;
     let swap =
-        MakeOvernightIndexSwap::<DualFwd>::new(MarketIndex::ESTR, date, "18M".parse()?, 0.035)
+        MakeOvernightIndexSwap::<Recorded>::new(MarketIndex::ESTR, date, "18M".parse()?, 0.035)
             .with_identifier("EUR_ESTR_OIS_18M".into())
             .with_notional(notional)
             .build()?;
-    let trade = OvernightIndexSwapTrade::new(swap, date, notional, Side::LongReceive);
+    Ok(OvernightIndexSwapTrade::new(
+        swap,
+        date,
+        notional,
+        Side::LongReceive,
+    ))
+}
+
+/// Displays how the same swap's risk changes with its reporting coordinates.
+///
+/// # Errors
+/// Propagates construction, pricing and risk-basis transformation errors.
+fn main() -> Result<()> {
+    let context = pricing_context()?;
+    let trade = swap_trade(context.evaluation_date())?;
     let mut pricer = DiscountedCashflowPricer::<
-        OvernightIndexSwap<DualFwd>,
-        OvernightIndexSwapTrade<DualFwd>,
+        OvernightIndexSwap<Recorded>,
+        OvernightIndexSwapTrade<Recorded>,
     >::new();
     pricer.set_discount_policy(Box::new(context.csa_policy()));
     let requests = [Request::Value, Request::Sensitivities];
@@ -77,12 +102,18 @@ fn main() -> Result<()> {
     let zero = pricer.evaluate(&trade, &requests, &zero_context)?;
     let zero_price = print_result("Post-bootstrap zero-rate risk", &zero)?;
 
-    assert_eq!(native_price, projected_price);
-    assert_eq!(native_price, zero_price);
-    println!("\nVerified: all three contexts produce exactly the same NPV.");
+    println!(
+        "\nNPV change from the original basis: OIS = {:.6} EUR, zero rates = {:.6} EUR",
+        projected_price - native_price,
+        zero_price - native_price
+    );
     Ok(())
 }
 
+/// Prints a valuation's price and labelled sensitivities, returning the price.
+///
+/// # Errors
+/// Returns an error when the valuation has no price or sensitivity result.
 fn print_result(label: &str, result: &EvaluationResults) -> Result<f64> {
     let price = result
         .price()
@@ -104,4 +135,44 @@ fn print_result(label: &str, result: &EvaluationResults) -> Result<f64> {
         println!("  {key:<65} {exposure:>16.6} {:>16.6}", exposure * 1e-4);
     }
     Ok(price)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Checks that both reporting transformations preserve the example swap's exact value.
+    #[test]
+    fn both_risk_bases_preserve_the_original_swap_price() -> Result<()> {
+        let context = pricing_context()?;
+        let trade = swap_trade(context.evaluation_date())?;
+        let mut pricer = DiscountedCashflowPricer::<
+            OvernightIndexSwap<Recorded>,
+            OvernightIndexSwapTrade<Recorded>,
+        >::new();
+        pricer.set_discount_policy(Box::new(context.csa_policy()));
+        let requests = [Request::Value, Request::Sensitivities];
+        let native = pricer.evaluate(&trade, &requests, &context)?;
+        let price = native
+            .price()
+            .ok_or_else(|| QSError::ValueNotSetErr("Original swap price".into()))?;
+        let instruments = ["OIS_EUR_ESTR_1Y", "OIS_EUR_ESTR_2Y"]
+            .iter()
+            .map(|label| label.parse())
+            .collect::<Result<Vec<_>>>()?;
+        let projected = context.reproject_risk(&instruments)?;
+        let zero = context.with_zero_rate_risk(&[ZeroRateRisk::new(
+            MarketIndex::ESTR,
+            RateDefinition::new(
+                DayCounter::Actual365,
+                Compounding::Continuous,
+                Frequency::Annual,
+            ),
+        )])?;
+        for view in [projected, zero] {
+            let result = pricer.evaluate(&trade, &requests, &view)?;
+            assert_eq!(result.price(), Some(price));
+        }
+        Ok(())
+    }
 }

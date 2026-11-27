@@ -1,4 +1,4 @@
-//! Builds Monte Carlo simulations from [`SimulationConfiguration`]s.
+//! Builds Monte Carlo simulations from [`SimulationConfiguration`](crate::models::modelconfiguration::SimulationConfiguration)s.
 //!
 //! For each configuration the builder:
 //! 1. constructs the simulation date grid (reference date → horizon),
@@ -6,7 +6,7 @@
 //!    (discount curves, volatility surfaces/cubes, fixings),
 //! 3. resolves or calibrates the model volatility,
 //! 4. generates the paths, and
-//! 5. wraps them in a [`MonteCarloSimulationElement`] keyed by market index.
+//! 5. wraps them in a [`MonteCarloSimulationElement`](crate::core::elements::montecarlosimulationelement::MonteCarloSimulationElement) keyed by market index.
 //!
 //! Curves and model paths are evaluated with `f64` using seeded pseudorandom
 //! normal draws. Stored AD wrappers do not retain path-generation sensitivities.
@@ -204,7 +204,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::elements::{
             curveelement::DiscountCurveElement, volatilitysurfaceelement::VolatilitySurfaceElement,
         },
@@ -235,12 +235,12 @@ mod tests {
         ];
         let rate = 0.03_f64;
         let dc = DayCounter::Actual365;
-        let dfs: Vec<DualFwd> = dates
+        let dfs: Vec<Recorded> = dates
             .iter()
-            .map(|d| DualFwd::new((-rate * dc.year_fraction(reference_date(), *d)).exp()))
+            .map(|d| Recorded::new((-rate * dc.year_fraction(reference_date(), *d)).exp()))
             .collect();
         let curve =
-            DiscountTermStructure::<DualFwd>::new(dates, dfs, dc, Interpolator::LogLinear, true)?;
+            DiscountTermStructure::<Recorded>::new(dates, dfs, dc, Interpolator::LogLinear, true)?;
         let mut store = ConstructedElementStore::default();
         store.discount_curves_mut().insert(
             index.clone(),
@@ -266,8 +266,8 @@ mod tests {
             "EquityCall_USD_SPX_1Y_Absolute_0.05".to_string(),
         ];
         let smile = BTreeMap::from([
-            (F64Key::new(0.0), DualFwd::from(vol)),
-            (F64Key::new(0.10), DualFwd::from(vol)),
+            (F64Key::new(0.0), Recorded::from(vol)),
+            (F64Key::new(0.10), Recorded::from(vol)),
         ]);
         let mut points = BTreeMap::new();
         points.insert(Period::new(1, TimeUnit::Months), smile.clone());

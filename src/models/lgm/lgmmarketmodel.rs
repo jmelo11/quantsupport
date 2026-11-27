@@ -10,12 +10,12 @@
 //! domestic rate factor defines the pricing measure and path numeraire.
 //! Foreign rate drifts are transformed into that domestic measure.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, f64::consts::TAU};
 
 use sobol_burley::sample as sobol_sample;
 
 use crate::{
-    ad::scalar::Scalar,
+    ad::{operation::Operation as Op, scalar::Scalar},
     core::marketdatahandling::{
         discountrequest::DiscountRequest, forwardraterequest::ForwardRateRequest,
         fxrequest::FxRequest, pathdependentrequest::PathDependentRequest, spotrequest::SpotRequest,
@@ -24,7 +24,10 @@ use crate::{
     indices::marketindex::MarketIndex,
     math::linalg::cholesky,
     math::solvers::solvertraits::Matrix,
-    models::lgm::lgmcomponents::{LgmEquityModel, LgmFxModel, LgmRateModel},
+    models::lgm::{
+        lgmcomponents::{LgmEquityModel, LgmFxModel, LgmRateModel},
+        marketpathplan::{MarketPathPlan, PathResponseLayout},
+    },
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
     xva::visitors::{
@@ -495,6 +498,23 @@ impl<'a, T: Scalar> LgmMarketModel<'a, T> {
 const SOBOL_DIMENSIONS: usize = 256;
 const SOBOL_SEQUENCE_LENGTH: usize = 1 << 16;
 
+/// Returns the model's reproducible, antithetically paired Sobol normal.
+///
+/// # Errors
+/// Returns an error if the bounded Sobol sample index cannot be represented.
+pub fn sobol_path_normal(path: usize, dimension: usize, seed: u64) -> Result<f64> {
+    let pair = path / 2;
+    let sample = u32::try_from(pair % SOBOL_SEQUENCE_LENGTH)
+        .map_err(|_| QSError::UnexpectedErr("Sobol sample index overflow".into()))?;
+    Ok(sobol_normal(
+        sample,
+        dimension,
+        pair / SOBOL_SEQUENCE_LENGTH,
+        seed,
+        if path.is_multiple_of(2) { 1.0 } else { -1.0 },
+    ))
+}
+
 /// Fold a public 64-bit simulation seed into the 32-bit scramble accepted by
 /// `sobol_burley`, preserving changes in both halves.
 const fn fold_seed(seed: u64) -> u32 {
@@ -534,7 +554,7 @@ fn sobol_normal(
         sequence_block,
         seed,
     );
-    antithetic_sign * (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
+    antithetic_sign * (-2.0 * u1.ln()).sqrt() * (TAU * u2).cos()
 }
 
 /// Read-only pre-computed data shared by all path generators.
@@ -900,7 +920,303 @@ unsafe impl<T: Scalar> Send for LgmMarketModel<'_, T> {}
 // ---------------------------------------------------------------------------
 // MarketModel implementation
 // ---------------------------------------------------------------------------
+impl<T: Scalar> LgmMarketModel<'_, T> {
+    /// Prepares state evolution and request resolution for native path execution.
+    ///
+    /// Deterministic model coefficients retain their original AD dependencies;
+    /// indexed random increments remain external inputs. No path is materialized.
+    ///
+    /// # Errors
+    /// Rejects empty layouts and propagates model/curve resolution errors.
+    #[allow(clippy::too_many_lines)] // Keep state evolution and response ordering aligned with the model.
+    pub fn prepare_path_plan(&self) -> Result<MarketPathPlan<T>> {
+        if self.dates.is_empty() || self.path_rate_indices.is_empty() {
+            return Err(QSError::InvalidValueErr(
+                "compiled LGM requires dates and a domestic rate model".into(),
+            ));
+        }
+        let roots = self
+            .path_times
+            .windows(2)
+            .map(|times| (times[1] - times[0]).sqrt())
+            .collect();
+        let mut plan = MarketPathPlan::new(roots, self.path_cholesky_l.clone(), self.seed);
+        let zero = plan.operation(Op::Constant(0.0));
+        let one = plan.operation(Op::Constant(1.0));
+        let rate_indices = &self.path_rate_indices;
+        let rate_count = rate_indices.len();
+        let domestic = &self.curve_models[&rate_indices[0]];
+        let mut rates = vec![zero; rate_count];
+        let mut fx: HashMap<_, _> = self
+            .path_fx_currencies
+            .iter()
+            .map(|currency| {
+                (
+                    *currency,
+                    plan.parameter(self.fx_models[currency].initial_spot()),
+                )
+            })
+            .collect();
+        let mut equities: HashMap<_, _> = self
+            .path_equity_names
+            .iter()
+            .map(|name| {
+                (
+                    name.clone(),
+                    plan.parameter(self.equity_models[name].initial_spot()),
+                )
+            })
+            .collect();
+        let mut fx_history = Vec::new();
+        let mut equity_history = Vec::new();
+        for step in 0..self.dates.len() {
+            let time = self.path_times[step];
+            let next_time = self.path_times[step + 1];
+            let dt = next_time - time;
+            let length = plan.operation(Op::Constant(dt));
+            if dt > 1e-14 {
+                let alpha = plan.parameter(domestic.alpha(time));
+                let draw = plan.draw(step * self.path_n_factors);
+                let increment = plan.operation(Op::Mul(alpha, draw));
+                rates[0] = plan.operation(Op::Add(rates[0], increment));
+                for (foreign_position, currency) in self.path_fx_currencies.iter().enumerate() {
+                    let index = self.rate_index_for_currency(*currency).ok_or_else(|| {
+                        QSError::NotFoundErr(format!("Rate index for {currency}"))
+                    })?;
+                    let position = rate_indices
+                        .iter()
+                        .position(|i| *i == index)
+                        .ok_or_else(|| QSError::NotFoundErr(format!("Rate factor for {index}")))?;
+                    let fx_position = rate_count + foreign_position;
+                    let rate_model = &self.curve_models[&index];
+                    let fx_model = &self.fx_models[currency];
+                    let (rate_correlation, fx_correlation) = self
+                        .correlation_matrix
+                        .as_ref()
+                        .map_or((0.0, 0.0), |matrix| {
+                            (matrix[position][0], matrix[position][fx_position])
+                        });
+                    // Preserve the existing engine's frozen FX-volatility input to foreign drift.
+                    let gamma = plan.parameter(rate_model.gamma_under_domestic_measure(
+                        time,
+                        domestic,
+                        fx_model.fx_vol().value(),
+                        fx_correlation,
+                        rate_correlation,
+                    ));
+                    let drift = plan.operation(Op::Mul(gamma, length));
+                    let drifted = plan.operation(Op::Add(rates[position], drift));
+                    let alpha = plan.parameter(rate_model.alpha(time));
+                    let draw = plan.draw(step * self.path_n_factors + position);
+                    let increment = plan.operation(Op::Mul(alpha, draw));
+                    rates[position] = plan.operation(Op::Add(drifted, increment));
+                    let base = plan.parameter(fx_model.log_fx_drift(time, T::zero(), T::zero())?);
+                    let (domestic_loading, foreign_loading) = fx_model.rate_state_loadings(time);
+                    let domestic_loading = plan.parameter(domestic_loading);
+                    let foreign_loading = plan.parameter(foreign_loading);
+                    let domestic_part = plan.operation(Op::Mul(domestic_loading, rates[0]));
+                    let foreign_part = plan.operation(Op::Mul(foreign_loading, rates[position]));
+                    let drift = plan.operation(Op::Add(base, domestic_part));
+                    let drift = plan.operation(Op::Sub(drift, foreign_part));
+                    let drift = plan.operation(Op::Mul(drift, length));
+                    let volatility = plan.parameter(fx_model.fx_vol());
+                    let draw = plan.draw(step * self.path_n_factors + fx_position);
+                    let diffusion = plan.operation(Op::Mul(volatility, draw));
+                    let exponent = plan.operation(Op::Add(drift, diffusion));
+                    let growth = plan.operation(Op::Exp(exponent));
+                    let spot = plan.operation(Op::Mul(fx[currency], growth));
+                    fx.insert(*currency, spot);
+                }
+                for (equity_position, name) in self.path_equity_names.iter().enumerate() {
+                    let model = &self.equity_models[name];
+                    let base = model
+                        .drift(time, T::zero())?
+                        .sub_val(T::scalar(0.5).mul_val(model.vol()).mul_val(model.vol()));
+                    let base = plan.parameter(base);
+                    let loading = plan.parameter(model.rate_state_loading(time));
+                    let rate = plan.operation(Op::Mul(loading, rates[0]));
+                    let drift = plan.operation(Op::Add(base, rate));
+                    let drift = plan.operation(Op::Mul(drift, length));
+                    let volatility = plan.parameter(model.vol());
+                    let draw = plan.draw(
+                        step * self.path_n_factors
+                            + rate_count
+                            + self.path_fx_currencies.len()
+                            + equity_position,
+                    );
+                    let diffusion = plan.operation(Op::Mul(volatility, draw));
+                    let exponent = plan.operation(Op::Add(drift, diffusion));
+                    let growth = plan.operation(Op::Exp(exponent));
+                    let spot = plan.operation(Op::Mul(equities[name], growth));
+                    equities.insert(name.clone(), spot);
+                }
+            }
+            fx_history.push(fx.clone());
+            equity_history.push(equities.clone());
+            let evaluation_date = self.dates[step];
+            let evaluation_time = self.time_from_date(evaluation_date);
+            let numeraire_base = plan.parameter(domestic.numeraire(next_time, T::zero())?);
+            let loading = plan.parameter(domestic.H(next_time));
+            let exponent = plan.operation(Op::Mul(loading, rates[0]));
+            let exponential = plan.operation(Op::Exp(exponent));
+            let numeraire = plan.operation(Op::Mul(numeraire_base, exponential));
+            let mut discounts = HashMap::new();
+            let mut responses = Vec::new();
+            for &request_index in &self.request_indices_by_step[step] {
+                let request = &self.requests[request_index];
+                let mut response = PathResponseLayout::default();
+                if !request.is_active_on(evaluation_date) {
+                    responses.push(response);
+                    continue;
+                }
+                if let Some(forward) = &request.forward_rate_request {
+                    let index = forward.market_index();
+                    if let Some(model) = self.curve_models.get(&index) {
+                        let position = rate_indices
+                            .iter()
+                            .position(|i| i == self.factor_index(&index))
+                            .unwrap_or(0);
+                        let start = self.time_from_date(
+                            forward
+                                .start_date()
+                                .unwrap_or_else(|| forward.fixing_date()),
+                        );
+                        let end = self.time_from_date(
+                            forward.end_date().unwrap_or_else(|| forward.fixing_date()),
+                        );
+                        let value = if (end - start).abs() < 1e-14 {
+                            let base = plan.parameter(model.instantaneous_forward_rate(
+                                evaluation_time,
+                                start,
+                                T::zero(),
+                            )?);
+                            let loading = plan.parameter(model.H_dot(start));
+                            let state = plan.operation(Op::Mul(loading, rates[position]));
+                            plan.operation(Op::Add(base, state))
+                        } else {
+                            let first = Self::planned_discount(
+                                &mut plan,
+                                model,
+                                evaluation_time,
+                                start,
+                                rates[position],
+                                &index,
+                                &mut discounts,
+                            )?;
+                            let last = Self::planned_discount(
+                                &mut plan,
+                                model,
+                                evaluation_time,
+                                end,
+                                rates[position],
+                                &index,
+                                &mut discounts,
+                            )?;
+                            let ratio = plan.operation(Op::Div(first, last));
+                            let excess = plan.operation(Op::Sub(ratio, one));
+                            let length = plan.operation(Op::Constant(end - start));
+                            plan.operation(Op::Div(excess, length))
+                        };
+                        response.set_forward_rates(Some(value));
+                    }
+                }
+                if let Some(request) = &request.fx_request {
+                    response.set_fx_rates(Some(if request.base() == self.domestic_currency {
+                        one
+                    } else {
+                        fx.get(&request.base()).copied().unwrap_or(one)
+                    }));
+                }
+                if let Some(request) = &request.discount_request {
+                    let index = request.market_index();
+                    if let Some(model) = self.curve_models.get(&index) {
+                        let position = rate_indices
+                            .iter()
+                            .position(|i| i == self.factor_index(&index))
+                            .unwrap_or(0);
+                        let maturity = self.time_from_date(request.date());
+                        response.set_discounts(Some(if maturity > evaluation_time {
+                            Self::planned_discount(
+                                &mut plan,
+                                model,
+                                evaluation_time,
+                                maturity,
+                                rates[position],
+                                &index,
+                                &mut discounts,
+                            )?
+                        } else {
+                            one
+                        }));
+                    }
+                }
+                response.set_numeraire(Some(numeraire));
+                responses.push(response);
+            }
+            plan.push_responses(responses);
+        }
+        for step in 0..self.dates.len() {
+            for (local, &request_index) in self.request_indices_by_step[step].iter().enumerate() {
+                let request = &self.requests[request_index];
+                if !request.is_active_on(self.dates[step]) {
+                    continue;
+                }
+                if let Some(spot) = &request.spot_request {
+                    let observation = self
+                        .dates
+                        .iter()
+                        .rposition(|date| *date <= spot.date())
+                        .unwrap_or(step)
+                        .min(self.dates.len() - 1);
+                    let index = spot.market_index();
+                    let operation = self.fx_spot_indices.get(&index).map_or_else(
+                        || {
+                            if let MarketIndex::Equity(name) = &index {
+                                equity_history[observation].get(name).copied()
+                            } else {
+                                None
+                            }
+                        },
+                        |currency| fx_history[observation].get(currency).copied(),
+                    );
+                    plan.responses_mut()[step][local].set_spots(operation);
+                }
+            }
+        }
+        Ok(plan)
+    }
+
+    /// Reuses a recorded discount factor for the same curve, dates and model state.
+    #[allow(clippy::too_many_arguments)]
+    fn planned_discount(
+        plan: &mut MarketPathPlan<T>,
+        model: &LgmRateModel<'_, T>,
+        time: f64,
+        maturity: f64,
+        state: usize,
+        index: &MarketIndex,
+        cache: &mut HashMap<(MarketIndex, u64), usize>,
+    ) -> Result<usize> {
+        let key = (index.clone(), maturity.to_bits());
+        if let Some(&value) = cache.get(&key) {
+            return Ok(value);
+        }
+        let base = plan.parameter(model.P_discount(time, maturity, T::zero())?);
+        let loading = plan.parameter(model.H(time).sub_val(model.H(maturity)));
+        let exponent = plan.operation(Op::Mul(loading, state));
+        let exponential = plan.operation(Op::Exp(exponent));
+        let value = plan.operation(Op::Mul(base, exponential));
+        cache.insert(key, value);
+        Ok(value)
+    }
+}
+
 impl<T: Scalar + 'static> MarketModel<T> for LgmMarketModel<'_, T> {
+    /// Builds equivalent numerical path arithmetic when the model supports preparation.
+    fn compiled_path_plan(&self) -> Result<Option<MarketPathPlan<T>>> {
+        self.prepare_path_plan().map(Some)
+    }
+
     fn n_paths(&self) -> usize {
         self.n_paths
     }

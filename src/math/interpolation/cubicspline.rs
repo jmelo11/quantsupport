@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     math::interpolation::interpolator::StaticInterpolate,
     utils::errors::{QSError, Result},
 };
@@ -132,17 +132,17 @@ fn compute_moments_f64(x: &[f64], y: &[f64]) -> Vec<f64> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  DualFwd implementation
+//  Recorded implementation
 // ═══════════════════════════════════════════════════════════════════════════
 
-impl StaticInterpolate<DualFwd> for CubicSplineInterpolator {
+impl StaticInterpolate<Recorded> for CubicSplineInterpolator {
     #[allow(clippy::many_single_char_names)]
     fn interpolate(
-        x: DualFwd,
-        x_: &[DualFwd],
-        y_: &[DualFwd],
+        x: Recorded,
+        x_: &[Recorded],
+        y_: &[Recorded],
         enable_extrapolation: bool,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let n = x_.len();
         if n < 2 {
             return Err(QSError::InterpolationErr(
@@ -192,7 +192,7 @@ impl StaticInterpolate<DualFwd> for CubicSplineInterpolator {
         let h = x_[idx + 1].sub_val(x_[idx]);
         let a = x_[idx + 1].sub_val(x).div_val(h);
         let b = x.sub_val(x_[idx]).div_val(h);
-        let six = DualFwd::from(6.0);
+        let six = Recorded::from(6.0);
         let h2 = h.mul_val(h);
 
         // S(x) = a*y_i + b*y_{i+1} + ((a³-a)*M_i + (b³-b)*M_{i+1}) * h² / 6
@@ -207,13 +207,13 @@ impl StaticInterpolate<DualFwd> for CubicSplineInterpolator {
     }
 }
 
-/// Solve the tridiagonal system for natural cubic spline second derivatives (`DualFwd`).
+/// Solve the tridiagonal system for natural cubic spline second derivatives (`Recorded`).
 #[allow(clippy::many_single_char_names)]
-fn compute_moments_dual(x: &[DualFwd], y: &[DualFwd]) -> Vec<DualFwd> {
+fn compute_moments_dual(x: &[Recorded], y: &[Recorded]) -> Vec<Recorded> {
     let n = x.len();
-    let zero = DualFwd::from(0.0);
-    let two = DualFwd::from(2.0);
-    let six = DualFwd::from(6.0);
+    let zero = Recorded::from(0.0);
+    let two = Recorded::from(2.0);
+    let six = Recorded::from(6.0);
     let mut m = vec![zero; n];
 
     if n <= 2 {
@@ -221,12 +221,12 @@ fn compute_moments_dual(x: &[DualFwd], y: &[DualFwd]) -> Vec<DualFwd> {
     }
 
     let inner = n - 2;
-    let h: Vec<DualFwd> = x.windows(2).map(|pair| pair[1].sub_val(pair[0])).collect();
+    let h: Vec<Recorded> = x.windows(2).map(|pair| pair[1].sub_val(pair[0])).collect();
 
-    let mut d: Vec<DualFwd> = Vec::with_capacity(inner);
-    let mut rhs: Vec<DualFwd> = Vec::with_capacity(inner);
-    let mut upper: Vec<DualFwd> = Vec::with_capacity(inner);
-    let mut lower: Vec<DualFwd> = Vec::with_capacity(inner);
+    let mut d: Vec<Recorded> = Vec::with_capacity(inner);
+    let mut rhs: Vec<Recorded> = Vec::with_capacity(inner);
+    let mut upper: Vec<Recorded> = Vec::with_capacity(inner);
+    let mut lower: Vec<Recorded> = Vec::with_capacity(inner);
 
     for i in 0..inner {
         let ii = i + 1;
@@ -243,8 +243,8 @@ fn compute_moments_dual(x: &[DualFwd], y: &[DualFwd]) -> Vec<DualFwd> {
         lower.push(h[ii - 1]);
     }
 
-    let mut cp: Vec<DualFwd> = vec![zero; inner];
-    let mut dp: Vec<DualFwd> = vec![zero; inner];
+    let mut cp: Vec<Recorded> = vec![zero; inner];
+    let mut dp: Vec<Recorded> = vec![zero; inner];
 
     cp[0] = upper[0].div_val(d[0]);
     dp[0] = rhs[0].div_val(d[0]);
@@ -265,7 +265,7 @@ fn compute_moments_dual(x: &[DualFwd], y: &[DualFwd]) -> Vec<DualFwd> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ad::tape::Tape;
+    use crate::ad::Recording;
 
     #[test]
     fn test_cubic_spline_exact_at_knots() {
@@ -298,20 +298,20 @@ mod tests {
     }
 
     #[test]
-    fn test_cubic_spline_dual_fwd() {
+    fn test_cubic_spline_recorded() {
         let x_ = vec![
-            DualFwd::from(0.0),
-            DualFwd::from(1.0),
-            DualFwd::from(2.0),
-            DualFwd::from(3.0),
+            Recorded::from(0.0),
+            Recorded::from(1.0),
+            Recorded::from(2.0),
+            Recorded::from(3.0),
         ];
         let y_ = vec![
-            DualFwd::from(0.0),
-            DualFwd::from(1.0),
-            DualFwd::from(4.0),
-            DualFwd::from(9.0),
+            Recorded::from(0.0),
+            Recorded::from(1.0),
+            Recorded::from(4.0),
+            Recorded::from(9.0),
         ];
-        let x = DualFwd::from(1.5);
+        let x = Recorded::from(1.5);
         let y = CubicSplineInterpolator::interpolate(x, &x_, &y_, true).unwrap();
         // Should be close to 1.5^2 = 2.25 for quadratic data
         assert!(
@@ -323,16 +323,24 @@ mod tests {
 
     #[test]
     fn test_cubic_spline_ad_sensitivities() {
-        Tape::start_recording_fwd();
-        let x_ = vec![DualFwd::from(0.0), DualFwd::from(1.0), DualFwd::from(2.0)];
-        let y_ = vec![DualFwd::from(0.0), DualFwd::from(1.0), DualFwd::from(4.0)];
-        let x = DualFwd::from(0.5);
+        Recording::start();
+        let x_ = vec![
+            Recorded::from(0.0),
+            Recorded::from(1.0),
+            Recorded::from(2.0),
+        ];
+        let y_ = vec![
+            Recorded::from(0.0),
+            Recorded::from(1.0),
+            Recorded::from(4.0),
+        ];
+        let x = Recorded::from(0.5);
         let y = CubicSplineInterpolator::interpolate(x, &x_, &y_, true).unwrap();
-        // Just check that backward doesn't panic and produces finite adjoints.
-        let _ = y.backward();
+        // Just check that differentiate doesn't panic and produces finite adjoints.
+        let _ = y.differentiate();
         for yi in &y_ {
-            if let Ok(adj) = yi.adjoint() {
-                assert!(adj.value().is_finite(), "adjoint is not finite");
+            if let Ok(adj) = yi.derivative() {
+                assert!(adj.value().is_finite(), "derivative is not finite");
             }
         }
     }

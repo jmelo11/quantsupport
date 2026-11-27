@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, tape::Tape},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -23,8 +23,8 @@ use crate::{
 #[derive(Default)]
 struct EquityForwardState {
     evaluation_date: crate::time::date::Date,
-    value: Option<DualFwd>,
-    spot: Option<DualFwd>,
+    value: Option<Recorded>,
+    spot: Option<Recorded>,
     market_data: Option<MarketData>,
 }
 
@@ -68,7 +68,7 @@ impl Default for EquityForwardPricer {
 struct RecordingGuard;
 impl Drop for RecordingGuard {
     fn drop(&mut self) {
-        Tape::stop_recording_fwd();
+        Recording::stop();
     }
 }
 
@@ -87,17 +87,17 @@ impl HandleValue<EquityForwardTrade, EquityForwardState> for EquityForwardPricer
             index.clone()
         };
 
-        Tape::start_recording_fwd();
+        Recording::start();
         let _recording_guard = RecordingGuard;
-        Tape::set_mark_fwd();
+        Recording::checkpoint();
 
         // Record spot separately to report delta alongside curve risk.
         let spot = state.get_fixing(&index, state.evaluation_date)?;
-        let mut spot_ad = DualFwd::new(spot);
-        spot_ad.put_on_tape();
+        let mut spot_ad = Recorded::new(spot);
+        spot_ad.register_input();
         state.spot = Some(spot_ad);
 
-        state.put_pillars_on_tape()?;
+        state.register_pillars()?;
 
         let df_forward = state
             .get_discount_curve_element(&index)?
@@ -110,19 +110,19 @@ impl HandleValue<EquityForwardTrade, EquityForwardState> for EquityForwardPricer
         let df_q = if let Ok(curve) = state.get_dividend_curve_element(&index) {
             curve.curve().discount_factor(forward.delivery_date())?
         } else {
-            DualFwd::one()
+            Recorded::one()
         };
 
-        let fwd: DualFwd = (spot_ad * df_q / df_forward).into();
-        let value: DualFwd =
-            (df_r * (fwd - forward.strike()) * trade.notional() * trade.side().sign()).into();
+        let fwd: Recorded = spot_ad * df_q / df_forward;
+        let value: Recorded =
+            df_r * (fwd - forward.strike()) * trade.notional() * trade.side().sign();
         let source = Discountable::currency(forward);
         let value = if let Some(target) = state
             .get_market_data_reponse()
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (value * state.get_exchange_rate(source, target)?).into()
+            value * state.get_exchange_rate(source, target)?
         } else {
             value
         };
@@ -148,7 +148,7 @@ impl HandleSensitivities<EquityForwardTrade, EquityForwardState> for EquityForwa
             })?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
         let forward = trade.instrument();
         let index = forward.market_index();
         let policy_discount_index = if let Some(policy) = &self.discount_policy {
@@ -170,7 +170,7 @@ impl HandleSensitivities<EquityForwardTrade, EquityForwardState> for EquityForwa
                         "Equity forward spot was not recorded for sensitivities".into(),
                     )
                 })?
-                .adjoint()?
+                .derivative()?
                 .value(),
         );
 
@@ -182,7 +182,7 @@ impl HandleSensitivities<EquityForwardTrade, EquityForwardState> for EquityForwa
                 .unwrap_or_default()
             {
                 ids.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
 
@@ -193,13 +193,13 @@ impl HandleSensitivities<EquityForwardTrade, EquityForwardState> for EquityForwa
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         if let Ok(curve) = state.get_dividend_curve_element(&index) {
             for (label, pillar) in curve.curve().pillars().unwrap_or_default() {
                 ids.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
 
@@ -295,7 +295,7 @@ impl Pricer for EquityForwardPricer {
                     let dividend = state
                         .get_dividend_curve_element(&forward.market_index())
                         .map_or_else(
-                            |_| Ok(DualFwd::one()),
+                            |_| Ok(Recorded::one()),
                             |e| e.curve().discount_factor(expiry),
                         )?;
                     let forward_df = state
@@ -390,7 +390,7 @@ mod tests {
         );
         let curve = |rate, label: &str| {
             Rc::new(RefCell::new(
-                FlatForwardTermStructure::new(date, DualFwd::from(rate), definition)
+                FlatForwardTermStructure::new(date, Recorded::from(rate), definition)
                     .with_pillar_label(label.into()),
             ))
         };
@@ -514,7 +514,7 @@ mod tests {
         assert!(pricer()
             .evaluate(&position, &[Request::Value], &missing)
             .is_err());
-        assert!(!Tape::<f64>::is_active());
+        assert!(!Recording::is_active());
         let unsupported = pricer().evaluate(
             &position,
             &[

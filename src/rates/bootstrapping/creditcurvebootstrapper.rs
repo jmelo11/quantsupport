@@ -1,18 +1,17 @@
 //! Credit curve bootstrapper.
 //!
 //! Strips piecewise-constant hazard rates from CDS par-spread quotes and
-//! exposes the result as a survival curve ([`DiscountTermStructure`] where the
+//! exposes the result as a survival curve ([`DiscountTermStructure`](crate::rates::yieldtermstructure::discounttermstructure::DiscountTermStructure) where the
 //! "discount factor" at a date is the survival probability). The bootstrapped
 //! curve carries the CDS spreads as pillar values together with a
-//! finite-difference IFT Jacobian so that downstream pricers obtain
+//! AD-generated implicit-function Jacobian so that downstream pricers obtain
 //! sensitivities to the original CDS quotes through the standard
-//! `put_pillars_on_tape` mechanism.
+//! `register_pillars` mechanism.
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    ad::dual::DualFwd,
-    ad::scalar::Scalar,
+    ad::{scalar::Scalar, CompiledFunction, DerivativeOrder, ImplicitDerivatives, Recorded},
     core::elements::curveelement::{CreditCurveElement, DiscountCurveElement},
     indices::marketindex::MarketIndex,
     math::solvers::{bisection::Bisection, solvertraits::ContFunc},
@@ -31,7 +30,6 @@ use crate::{
 const HAZARD_LOWER: f64 = 1e-12;
 const HAZARD_UPPER: f64 = 20.0;
 const MAX_ITERATIONS: i64 = 200;
-const SPREAD_BUMP: f64 = 1e-6;
 
 /// Bootstraps survival curves from CDS par-spread quotes.
 pub struct CreditCurveBootstrapper {
@@ -137,38 +135,30 @@ impl CreditCurveBootstrapper {
         let base_hazards = strip_ctx.strip(&spreads)?;
         let base_survivals = strip_ctx.survivals_at_pillars(&base_hazards);
 
-        // Finite-difference IFT Jacobian: rows = pillar survivals (nodes[1..]),
-        // columns = CDS spread quotes.
+        // Residual and survival derivatives come from the same scalar-generic
+        // equations used by the numeric strip. Only the implicit linear solve
+        // is separate; there is no quote bump or repeated recalibration.
         let n = pillars.len();
-        let mut jacobian = vec![vec![0.0; n]; n];
-        for j in 0..n {
-            let mut bumped_spreads = spreads.clone();
-            bumped_spreads[j] += SPREAD_BUMP;
-            let bumped_hazards = strip_ctx.strip(&bumped_spreads)?;
-            let bumped_survivals = strip_ctx.survivals_at_pillars(&bumped_hazards);
-            for i in 0..n {
-                jacobian[i][j] = (bumped_survivals[i] - base_survivals[i]) / SPREAD_BUMP;
-            }
-        }
+        let jacobian = strip_ctx.quote_jacobian(&base_hazards, &spreads)?;
 
         // Survival curve: node 0 is the reference date with S = 1.
         let mut dates = Vec::with_capacity(n + 1);
         let mut survivals = Vec::with_capacity(n + 1);
         dates.push(ref_date);
-        survivals.push(DualFwd::scalar(1.0));
+        survivals.push(Recorded::scalar(1.0));
         for (d, s) in pillar_dates.iter().zip(&base_survivals) {
             dates.push(*d);
-            survivals.push(DualFwd::scalar(*s));
+            survivals.push(Recorded::scalar(*s));
         }
 
-        let curve = DiscountTermStructure::<DualFwd>::new(
+        let curve = DiscountTermStructure::<Recorded>::new(
             dates,
             survivals,
             spec.day_counter(),
             spec.interpolator(),
             spec.enable_extrapolation(),
         )?
-        .with_pillar_values(spreads.iter().map(|s| DualFwd::scalar(*s)).collect())?
+        .with_pillar_values(spreads.iter().map(|s| Recorded::scalar(*s)).collect())?
         .with_pillar_labels(labels)?
         .with_ift_sensitivities(jacobian);
 
@@ -234,28 +224,125 @@ impl StripContext<'_> {
 
     /// Survival probability at time `t` for the given hazards, using the
     /// candidate hazard `last` beyond the last known pillar.
-    fn survival(&self, t: f64, hazards: &[f64], last: f64) -> f64 {
-        let mut integral = 0.0;
+    fn survival<S: Scalar>(&self, t: f64, hazards: &[S], last: S) -> S {
+        let mut integral = S::zero();
         let mut prev = 0.0;
         for (j, hazard) in hazards.iter().enumerate() {
             let boundary = self.time(self.pillar_dates[j]);
             if t <= boundary {
-                integral += hazard * (t - prev).max(0.0);
-                return (-integral).exp();
+                integral = integral.add_val(hazard.mul_val(S::scalar((t - prev).max(0.0))));
+                return integral.neg_val().exp();
             }
-            integral += hazard * (boundary - prev);
+            integral = integral.add_val(hazard.mul_val(S::scalar(boundary - prev)));
             prev = boundary;
         }
-        integral = last.mul_add((t - prev).max(0.0), integral);
-        (-integral).exp()
+        integral = integral.add_val(last.mul_val(S::scalar((t - prev).max(0.0))));
+        integral.neg_val().exp()
     }
 
     /// Survival probabilities at each pillar date using fully-stripped hazards.
-    fn survivals_at_pillars(&self, hazards: &[f64]) -> Vec<f64> {
+    fn survivals_at_pillars<S: Scalar>(&self, hazards: &[S]) -> Vec<S> {
         self.pillar_dates
             .iter()
-            .map(|d| self.survival(self.time(*d), hazards, *hazards.last().unwrap_or(&0.0)))
+            .map(|d| {
+                self.survival(
+                    self.time(*d),
+                    hazards,
+                    hazards.last().copied().unwrap_or_else(S::zero),
+                )
+            })
             .collect()
+    }
+
+    /// Shared CDS residual for numerical root solving and compiled AD.
+    fn residual<S: Scalar>(
+        &self,
+        hazards: &[S],
+        last: S,
+        spread: S,
+        dates: &[Date],
+        day_counter: DayCounter,
+    ) -> Result<S> {
+        let mut premium = S::zero();
+        let mut protection = S::zero();
+        let mut previous = S::one();
+        for window in dates.windows(2) {
+            let (start, end) = (window[0], window[1]);
+            if end <= self.ref_date {
+                continue;
+            }
+            let delta = day_counter.year_fraction(start, end);
+            let discount = self.discount.discount_factor(end)?;
+            let survival = self.survival(self.time(end), hazards, last);
+            let default_probability = previous.sub_val(survival);
+            let premium_weight = spread
+                .mul_val(S::scalar(delta))
+                .mul_val(S::scalar(discount));
+            premium = premium.add_val(
+                premium_weight
+                    .mul_val(survival.add_val(default_probability.mul_val(S::scalar(0.5)))),
+            );
+            protection = protection
+                .add_val(S::scalar((1.0 - self.recovery) * discount).mul_val(default_probability));
+            previous = survival;
+        }
+        Ok(premium.sub_val(protection))
+    }
+
+    /// Computes d(survival)/d(quote) with AD partials and implicit differentiation.
+    fn quote_jacobian(&self, hazards: &[f64], spreads: &[f64]) -> Result<Vec<Vec<f64>>> {
+        let derivatives = self.quote_derivatives(hazards, spreads, DerivativeOrder::First)?;
+        Ok(derivatives
+            .jacobian()
+            .chunks_exact(spreads.len())
+            .map(<[f64]>::to_vec)
+            .collect())
+    }
+
+    /// Captures the actual residual and survival equations at the requested order.
+    fn quote_derivatives(
+        &self,
+        hazards: &[f64],
+        spreads: &[f64],
+        order: DerivativeOrder,
+    ) -> Result<ImplicitDerivatives> {
+        let n = hazards.len();
+        let mut inputs = hazards.to_vec();
+        inputs.extend_from_slice(spreads);
+        let schedules = self
+            .pillar_dates
+            .iter()
+            .map(|date| {
+                MakeSchedule::new(self.ref_date, *date)
+                    .with_frequency(self.frequency)
+                    .build()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let function =
+            CompiledFunction::try_trace_with_order(&inputs, order, |inputs| -> Result<_> {
+                let (hazards, spreads) = inputs.split_at(n);
+                let mut values = Vec::with_capacity(2 * n);
+                for (index, schedule) in schedules.iter().enumerate() {
+                    let residual = self.residual(
+                        &hazards[..index],
+                        hazards[index],
+                        spreads[index],
+                        schedule.dates(),
+                        self.premium_day_counters[index],
+                    )?;
+                    // Nonpositive quotes use the strip's active lower-bound constraint.
+                    values.push(spreads[index].select_greater(
+                        0.0.into(),
+                        residual,
+                        hazards[index] - HAZARD_LOWER,
+                    ));
+                }
+                values.extend(self.survivals_at_pillars(hazards));
+                Ok(values)
+            })
+            .map_err(|error| QSError::SolverErr(format!("credit residual AD: {error}")))?;
+        ImplicitDerivatives::evaluate(&function, &inputs, n)
+            .map_err(|error| QSError::SolverErr(format!("credit implicit derivatives: {error}")))
     }
 }
 
@@ -271,25 +358,13 @@ struct HazardObjective<'a> {
 
 impl ContFunc<f64> for HazardObjective<'_> {
     fn call(&self, x: &f64) -> Result<f64> {
-        let ctx = self.ctx;
-        let mut premium = 0.0;
-        let mut protection = 0.0;
-        let mut s_prev = 1.0;
-        for w in self.schedule_dates.windows(2) {
-            let (d0, d1) = (w[0], w[1]);
-            if d1 <= ctx.ref_date {
-                continue;
-            }
-            let delta = self.premium_day_counter.year_fraction(d0, d1);
-            let df = ctx.discount.discount_factor(d1)?;
-            let s1 = ctx.survival(ctx.time(d1), self.known_hazards, *x);
-            let default_prob = s_prev - s1;
-            // Premium on survival plus accrual-on-default (half-period approx).
-            premium = (self.spread * delta * df).mul_add(0.5f64.mul_add(default_prob, s1), premium);
-            protection = ((1.0 - ctx.recovery) * df).mul_add(default_prob, protection);
-            s_prev = s1;
-        }
-        Ok(premium - protection)
+        self.ctx.residual(
+            self.known_hazards,
+            *x,
+            self.spread,
+            self.schedule_dates,
+            self.premium_day_counter,
+        )
     }
 }
 
@@ -298,6 +373,7 @@ mod tests {
     use super::*;
     use crate::{
         core::{
+            evaluationresults::EvaluationResults,
             marketdatahandling::{
                 constructedelementstore::ConstructedElementStore,
                 marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
@@ -358,15 +434,15 @@ mod tests {
                     .expect("valid date advancement")
             })
             .collect();
-        let dfs: Vec<DualFwd> = dates
+        let dfs: Vec<Recorded> = dates
             .iter()
-            .map(|d| DualFwd::scalar((-rate * dc.year_fraction(ref_date, *d)).exp()))
+            .map(|d| Recorded::scalar((-rate * dc.year_fraction(ref_date, *d)).exp()))
             .collect();
         let curve =
-            DiscountTermStructure::<DualFwd>::new(dates, dfs, dc, Interpolator::LogLinear, true)?;
+            DiscountTermStructure::<Recorded>::new(dates, dfs, dc, Interpolator::LogLinear, true)?;
         Ok(DiscountCurveElement::new(
             MarketIndex::SOFR,
-            std::rc::Rc::new(std::cell::RefCell::new(curve)),
+            Rc::new(RefCell::new(curve)),
         ))
     }
 
@@ -460,7 +536,7 @@ mod tests {
         recovery: f64,
         side: Side,
         requests: &[Request],
-    ) -> Result<crate::core::evaluationresults::EvaluationResults> {
+    ) -> Result<EvaluationResults> {
         let credit_index = MarketIndex::Credit("CORPORATE-A".to_string());
         let mut store = ConstructedElementStore::default();
         store
@@ -836,6 +912,115 @@ mod tests {
             "fair spread must scale with LGD: ratio {ratio}, expected {}",
             1.0 / 0.6
         );
+        Ok(())
+    }
+
+    /// Checks ad survival quote jacobian matches central rebootstrap bumps.
+    #[test]
+    fn ad_survival_quote_jacobian_matches_central_rebootstrap_bumps() -> Result<()> {
+        let reference = Date::new(2025, 1, 2);
+        let spreads = [
+            ("Cds_CORPORATE-A_USD_1Y", 0.010),
+            ("Cds_CORPORATE-A_USD_3Y", 0.015),
+            ("Cds_CORPORATE-A_USD_5Y", 0.020),
+        ];
+        let index = MarketIndex::Credit("CORPORATE-A".into());
+        let (curves, _) = bootstrap_with(reference, &spreads, 0.4)?;
+        let curve = curves[&index].curve();
+        let jacobian = curve
+            .ift_sensitivities()
+            .ok_or_else(|| QSError::NotFoundErr("credit quote Jacobian".into()))?;
+        let bump = 1e-6;
+        for column in 0..spreads.len() {
+            let mut up = spreads;
+            let mut down = spreads;
+            up[column].1 += bump;
+            down[column].1 -= bump;
+            let (up_curves, _) = bootstrap_with(reference, &up, 0.4)?;
+            let (down_curves, _) = bootstrap_with(reference, &down, 0.4)?;
+            let up_nodes = up_curves[&index]
+                .curve()
+                .nodes()
+                .ok_or_else(|| QSError::NotFoundErr("credit nodes".into()))?;
+            let down_nodes = down_curves[&index]
+                .curve()
+                .nodes()
+                .ok_or_else(|| QSError::NotFoundErr("credit nodes".into()))?;
+            for (row, (up, down)) in up_nodes.iter().zip(&down_nodes).skip(1).enumerate() {
+                let expected = (up.1.value() - down.1.value()) / (2.0 * bump);
+                assert!(
+                    (jacobian[row][column] - expected).abs() <= 3e-6 * expected.abs().max(1.0),
+                    "row {row}, quote {column}: AD {} vs central bump {expected}",
+                    jacobian[row][column]
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks ad credit hessians include implicit hazard curvature.
+    #[test]
+    fn ad_credit_hessians_include_implicit_hazard_curvature() -> Result<()> {
+        let reference = Date::new(2025, 1, 2);
+        let discount_element = flat_discount_element(reference, 0.03)?;
+        let discount_curve = discount_element.curve();
+        let discount = PrimalCurve::new(&*discount_curve);
+        let dates = [Date::new(2026, 1, 2), Date::new(2028, 1, 2)];
+        let day_counters = [DayCounter::Actual360; 2];
+        let context = StripContext {
+            discount: &discount,
+            ref_date: reference,
+            day_counter: DayCounter::Actual365,
+            frequency: Frequency::Quarterly,
+            recovery: 0.4,
+            pillar_dates: &dates,
+            premium_day_counters: &day_counters,
+        };
+        let spreads = [0.010, 0.015];
+        let hazards = context.strip(&spreads)?;
+        let derivatives = context.quote_derivatives(&hazards, &spreads, DerivativeOrder::Second)?;
+        let first = context.quote_derivatives(&hazards, &spreads, DerivativeOrder::First)?;
+        assert!(first.hessians().is_none());
+        for (actual, expected) in derivatives.jacobian().iter().zip(first.jacobian()) {
+            assert!((actual - expected).abs() < 1e-12);
+        }
+        let hessians = derivatives.hessians().unwrap();
+        let bump = 2e-6;
+        for column in 0..2 {
+            let mut up = spreads;
+            let mut down = spreads;
+            up[column] += bump;
+            down[column] -= bump;
+            let up_jacobian = context.quote_jacobian(&context.strip(&up)?, &up)?;
+            let down_jacobian = context.quote_jacobian(&context.strip(&down)?, &down)?;
+            for observation in 0..2 {
+                for row in 0..2 {
+                    let expected = (up_jacobian[observation][row]
+                        - down_jacobian[observation][row])
+                        / (2.0 * bump);
+                    let actual = hessians[observation * 4 + row * 2 + column];
+                    assert!(
+                        (actual - expected).abs() < 2e-5 * expected.abs().max(1.0),
+                        "survival {observation}, quotes ({row}, {column}): AD {actual}, central {expected}"
+                    );
+                    assert!((actual - hessians[observation * 4 + column * 2 + row]).abs() < 1e-10);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks zero spread uses the active hazard constraint derivative.
+    #[test]
+    fn zero_spread_uses_the_active_hazard_constraint_derivative() -> Result<()> {
+        let reference = Date::new(2025, 1, 2);
+        let spreads = [("Cds_CORPORATE-A_USD_1Y", 0.0)];
+        let (curves, _) = bootstrap_with(reference, &spreads, 0.4)?;
+        let curve = curves[&MarketIndex::Credit("CORPORATE-A".into())].curve();
+        let jacobian = curve
+            .ift_sensitivities()
+            .ok_or_else(|| QSError::NotFoundErr("credit quote Jacobian".into()))?;
+        assert_eq!(jacobian, &[vec![0.0]]);
         Ok(())
     }
 

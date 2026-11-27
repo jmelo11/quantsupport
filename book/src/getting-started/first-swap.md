@@ -33,7 +33,7 @@ use quantsupport::prelude::*;
 fn main() -> Result<()> {
     let rd = Date::new(2024, 1, 15);
     let notional = 10_000_000.0;
-    let instrument = MakeSwap::<DualFwd>::default()
+    let instrument = MakeSwap::<Recorded>::default()
         .with_identifier("USD_IRS_5Y".into())
         .with_start_date(rd)
         .with_maturity_date(Date::new(2029, 1, 15))
@@ -50,7 +50,7 @@ fn main() -> Result<()> {
         .build()?;
     let trade = SwapTrade::new(instrument, rd, notional, Side::LongReceive);
     let curve = FlatForwardTermStructure::new(
-        rd, DualFwd::from(0.03),
+        rd, Recorded::from(0.03),
         RateDefinition::new(
             DayCounter::Actual360, Compounding::Continuous, Frequency::Annual,
         ),
@@ -63,7 +63,7 @@ fn main() -> Result<()> {
     let context = PricingContext::new()
         .with_quote_store(QuoteStore::new(rd))
         .with_constructed_elements(elements);
-    let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
+    let pricer = DiscountedCashflowPricer::<Swap<Recorded>, SwapTrade<Recorded>>::new();
     let result = pricer.evaluate(
         &trade, &[Request::Value, Request::Cashflows(true), Request::Sensitivities],
         &context,

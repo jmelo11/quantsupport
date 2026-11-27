@@ -34,7 +34,7 @@ use std::marker::PhantomData;
 ///     Frequency::Annual,
 /// );
 ///
-/// let deposit = MakeFixedRateDeposit::<DualFwd>::default()
+/// let deposit = MakeFixedRateDeposit::<Recorded>::default()
 ///     .with_identifier("DEPO-3M".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2024, 4, 1))

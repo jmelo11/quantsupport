@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         collateral::Discountable,
         instrument::{AssetClass, Instrument},
@@ -189,7 +189,7 @@ where
     }
 }
 
-impl From<EuropeanSwaption<f64>> for EuropeanSwaption<DualFwd> {
+impl From<EuropeanSwaption<f64>> for EuropeanSwaption<Recorded> {
     fn from(value: EuropeanSwaption<f64>) -> Self {
         Self::new(
             value.identifier,
@@ -203,8 +203,8 @@ impl From<EuropeanSwaption<f64>> for EuropeanSwaption<DualFwd> {
     }
 }
 
-impl From<EuropeanSwaption<DualFwd>> for EuropeanSwaption<f64> {
-    fn from(value: EuropeanSwaption<DualFwd>) -> Self {
+impl From<EuropeanSwaption<Recorded>> for EuropeanSwaption<f64> {
+    fn from(value: EuropeanSwaption<Recorded>) -> Self {
         Self::new(
             value.identifier,
             value.underlying.into(),
@@ -217,7 +217,7 @@ impl From<EuropeanSwaption<DualFwd>> for EuropeanSwaption<f64> {
     }
 }
 
-impl From<EuropeanSwaptionTrade<f64>> for EuropeanSwaptionTrade<DualFwd> {
+impl From<EuropeanSwaptionTrade<f64>> for EuropeanSwaptionTrade<Recorded> {
     fn from(value: EuropeanSwaptionTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -228,8 +228,8 @@ impl From<EuropeanSwaptionTrade<f64>> for EuropeanSwaptionTrade<DualFwd> {
     }
 }
 
-impl From<EuropeanSwaptionTrade<DualFwd>> for EuropeanSwaptionTrade<f64> {
-    fn from(value: EuropeanSwaptionTrade<DualFwd>) -> Self {
+impl From<EuropeanSwaptionTrade<Recorded>> for EuropeanSwaptionTrade<f64> {
+    fn from(value: EuropeanSwaptionTrade<Recorded>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

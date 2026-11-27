@@ -1,0 +1,288 @@
+{
+  "compiler": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-apple-darwin\nrelease: 1.100.0\nLLVM version: 23.1.5\n",
+  "machine": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "threads": 10,
+  "fixture_hashes": {
+    "baseline": {
+      "benchmarks/src/pfe_fixture.rs": "38b58a041977309cd7cab040d2f6a2bb7538431f080f463093503af04a3552de",
+      "benchmarks/src/bin/pfe_benchmark.rs": "7aed7ea295799877ab5e7807ac64a5132277c3c5baab8cd4266a6c46ee510c22"
+    },
+    "candidate": {
+      "benchmarks/src/pfe_fixture.rs": "38b58a041977309cd7cab040d2f6a2bb7538431f080f463093503af04a3552de",
+      "benchmarks/src/bin/pfe_benchmark.rs": "7aed7ea295799877ab5e7807ac64a5132277c3c5baab8cd4266a6c46ee510c22"
+    }
+  },
+  "timing_boundary": "full decomposition, inspection, simulation and per-trade cubes",
+  "samples": 0,
+  "cases": {
+    "all-100": {
+      "trades": 100,
+      "paths": 500,
+      "expire_requests": false,
+      "rounds": 1,
+      "summary": {
+        "baseline": {
+          "setup_ms": 1.423792,
+          "first_ms": 7986.248333,
+          "pipeline_setup_ms": 1.4893750000000001,
+          "evaluation_ms": 7984.642625,
+          "claims": 3284,
+          "requests": 3284,
+          "observed_ms": 7986.248333,
+          "round_ms": [
+            7986.248333
+          ],
+          "max_rss_bytes": 523354112
+        },
+        "candidate": {
+          "setup_ms": 1.3089169999999999,
+          "first_ms": 338.068417,
+          "pipeline_setup_ms": 0.969417,
+          "evaluation_ms": 337.048917,
+          "claims": 3284,
+          "requests": 101,
+          "observed_ms": 338.068417,
+          "round_ms": [
+            338.068417
+          ],
+          "max_rss_bytes": 87228416
+        }
+      },
+      "cube_entries_per_run": 6050000,
+      "fingerprints": [
+        "26797d601811694a"
+      ]
+    },
+    "expiring-100": {
+      "trades": 100,
+      "paths": 500,
+      "expire_requests": true,
+      "rounds": 1,
+      "summary": {
+        "baseline": {
+          "setup_ms": 1.0423749999999998,
+          "first_ms": 3658.241208,
+          "pipeline_setup_ms": 1.419834,
+          "evaluation_ms": 3656.751167,
+          "claims": 3284,
+          "requests": 3284,
+          "observed_ms": 3658.241208,
+          "round_ms": [
+            3658.241208
+          ],
+          "max_rss_bytes": 446758912
+        },
+        "candidate": {
+          "setup_ms": 1.0579999999999998,
+          "first_ms": 253.241875,
+          "pipeline_setup_ms": 0.9896670000000001,
+          "evaluation_ms": 252.19962499999997,
+          "claims": 3284,
+          "requests": 101,
+          "observed_ms": 253.241875,
+          "round_ms": [
+            253.241875
+          ],
+          "max_rss_bytes": 85524480
+        }
+      },
+      "cube_entries_per_run": 6050000,
+      "fingerprints": [
+        "26797d601811694a"
+      ]
+    },
+    "all-1000": {
+      "trades": 1000,
+      "paths": 500,
+      "expire_requests": false,
+      "rounds": 1,
+      "summary": {
+        "baseline": {
+          "setup_ms": 9.469415999999999,
+          "first_ms": 80862.587417,
+          "pipeline_setup_ms": 14.274708,
+          "evaluation_ms": 80846.0815,
+          "claims": 32804,
+          "requests": 32804,
+          "observed_ms": 80862.587417,
+          "round_ms": [
+            80862.587417
+          ],
+          "max_rss_bytes": 3411607552
+        },
+        "candidate": {
+          "setup_ms": 10.316291999999999,
+          "first_ms": 1498.9252079999999,
+          "pipeline_setup_ms": 8.007041,
+          "evaluation_ms": 1490.5345,
+          "claims": 32804,
+          "requests": 101,
+          "observed_ms": 1498.9252079999999,
+          "round_ms": [
+            1498.9252079999999
+          ],
+          "max_rss_bytes": 678445056
+        }
+      },
+      "cube_entries_per_run": 60500000,
+      "fingerprints": [
+        "d89c472fd890f272"
+      ]
+    },
+    "expiring-1000": {
+      "trades": 1000,
+      "paths": 500,
+      "expire_requests": true,
+      "rounds": 1,
+      "summary": {
+        "baseline": {
+          "setup_ms": 9.168958,
+          "first_ms": 40332.772292,
+          "pipeline_setup_ms": 11.935583,
+          "evaluation_ms": 40318.821042,
+          "claims": 32804,
+          "requests": 32804,
+          "observed_ms": 40332.772292,
+          "round_ms": [
+            40332.772292
+          ],
+          "max_rss_bytes": 2862366720
+        },
+        "candidate": {
+          "setup_ms": 10.356375,
+          "first_ms": 1379.1225419999998,
+          "pipeline_setup_ms": 8.107292000000001,
+          "evaluation_ms": 1370.644542,
+          "claims": 32804,
+          "requests": 101,
+          "observed_ms": 1379.1225419999998,
+          "round_ms": [
+            1379.1225419999998
+          ],
+          "max_rss_bytes": 673595392
+        }
+      },
+      "cube_entries_per_run": 60500000,
+      "fingerprints": [
+        "d89c472fd890f272"
+      ]
+    }
+  },
+  "date": "2026-11-15",
+  "measurement": "one complete first-call diagnostic per branch and case; no warm samples",
+  "sources": {
+    "baseline": {
+      "branch": "benchmark/old-ad-tape",
+      "commit": "f3b5e6123e5eda67e71399047daef1d19cf6dac3",
+      "tracked_diff_sha256": "b2ff3460d0aad0fb6d39818af8a367d372da2fac2e08640a0c80660de62a6f6a",
+      "untracked_sha256": {
+        "benchmarks/data/xva/credit_curve_specs.json": "ae4234472022a22e8bc4b3fd785740cd8a27c9fda0a60fcd02fcd3b7b327be84",
+        "benchmarks/data/xva/csa_terms.json": "e651108d845c6b61dfef424c9808767d01c80451dd6b9214d9adf448cb940858",
+        "benchmarks/data/xva/curve_specs.json": "eb70fdba3083b63b3ba2fed90206d6b0ca1702414099bb04a9a3d2c890ea0dce",
+        "benchmarks/data/xva/quotes.json": "897f1001fa0704f2ad93f3cda57fd1f218998d8bf798be5713ff054804aadfbb",
+        "benchmarks/data/xva/vol_specs.json": "46162ae856837909c701f7ef345d464b8a56e9b74b0e7a394a9e9afeb631ff8c",
+        "benchmarks/data/xva/xva_config.json": "3fc5a4e3c4388b30288b396f0fd2514824ecf828a20121dbb97d8eedf0e7ac40",
+        "benchmarks/src/bin/engine_benchmark.rs": "960ab65d6086df6bedd1db0a387670842c58971cd2848e2abdcd6e95147ea822",
+        "benchmarks/src/bin/monte_carlo_benchmark.rs": "71fe1ee2c06dece6f5ed4fbb65443a2a80ec9b167e1fecd0ad50992ff98d8f5f",
+        "benchmarks/src/bin/pfe_benchmark.rs": "7aed7ea295799877ab5e7807ac64a5132277c3c5baab8cd4266a6c46ee510c22",
+        "benchmarks/src/bin/pricing_benchmark.rs": "250993d10412983220756e83f8601a958ac9971abc9761925d5d1a09fe573ad7",
+        "benchmarks/src/bin/xva_benchmark.rs": "6b121e2f970eb0e3f0579ad4eb061f17dbd920e3add63062370b02093f07bde7",
+        "benchmarks/src/lib.rs": "527c9975ef259367704efd056ae48ac9813989498b155a14ef6443bacfe5a75c",
+        "benchmarks/src/pfe_fixture.rs": "38b58a041977309cd7cab040d2f6a2bb7538431f080f463093503af04a3552de",
+        "benchmarks/src/xva_fixture.rs": "2978de35e135c044ec70ea5a8d3d56e6c2b672befab3455f151c2616527577b0"
+      },
+      "lock_sha256": "1eb58d7c26eae17d4dcb90eacba6d8d35d477fee08e30f27b7cc5f8c7cdb78cd"
+    },
+    "candidate": {
+      "branch": "feature/cranelift-parallel-ad",
+      "commit": "94aab62b1889a23941f29712d1a0e8b96219852b",
+      "tracked_diff_sha256": "429ee3d90dd6a576055bfc1703fd6565f70aa9e3650c8e7fb7dfb9e014398bde",
+      "untracked_sha256": {
+        "benchmarks/compiled_pipeline_results.json": "a25516615246b414169430b1db88996f89e8309f051d4315d305815b01d74d2c",
+        "benchmarks/data/xva/credit_curve_specs.json": "ae4234472022a22e8bc4b3fd785740cd8a27c9fda0a60fcd02fcd3b7b327be84",
+        "benchmarks/data/xva/csa_terms.json": "e651108d845c6b61dfef424c9808767d01c80451dd6b9214d9adf448cb940858",
+        "benchmarks/data/xva/curve_specs.json": "eb70fdba3083b63b3ba2fed90206d6b0ca1702414099bb04a9a3d2c890ea0dce",
+        "benchmarks/data/xva/quotes.json": "897f1001fa0704f2ad93f3cda57fd1f218998d8bf798be5713ff054804aadfbb",
+        "benchmarks/data/xva/vol_specs.json": "46162ae856837909c701f7ef345d464b8a56e9b74b0e7a394a9e9afeb631ff8c",
+        "benchmarks/data/xva/xva_config.json": "3fc5a4e3c4388b30288b396f0fd2514824ecf828a20121dbb97d8eedf0e7ac40",
+        "benchmarks/src/bin/engine_benchmark.rs": "18efde9cae349b2ff6e017e2669c3306ec785fa09220c6083b3588e438a9eb2b",
+        "benchmarks/src/bin/monte_carlo_benchmark.rs": "14721a65b31996d2a4689b7a60383b07105d6cc31f53cca3ac75ea96c1f4b349",
+        "benchmarks/src/bin/pfe_benchmark.rs": "7aed7ea295799877ab5e7807ac64a5132277c3c5baab8cd4266a6c46ee510c22",
+        "benchmarks/src/bin/pricing_benchmark.rs": "ef30bc528dd5cfa8f9ebf878b66a2bbbc1b88a816a88c43af6c638788ace9a04",
+        "benchmarks/src/bin/xva_benchmark.rs": "4e169f7caad0b30d01d76e1dc09b4c375be11ac2eeae20317fc89ca6259ea707",
+        "benchmarks/src/lib.rs": "8ae4e5be5a94af3cca03e9b7b2ffd4f8727095ad9f980594f67462dd5d44979e",
+        "benchmarks/src/pfe_fixture.rs": "38b58a041977309cd7cab040d2f6a2bb7538431f080f463093503af04a3552de",
+        "benchmarks/src/xva_fixture.rs": "2978de35e135c044ec70ea5a8d3d56e6c2b672befab3455f151c2616527577b0",
+        "docs/benchmarks.md": "cb7dcec7d77b336f5b7fe1ad8ea9a74ea0a760506ca8d31cb39017df77032253",
+        "examples/compiled_pricing_walkthrough.rs": "666a33147f1d953f8a001832b1083a21217b38c91b17dc7cc11dafd330ebba5b",
+        "rust-toolchain.toml": "d4580150cd6aec323fffc3d1b193cbbf262855081a3e1fb330c18b7ba8a98dff",
+        "src/ad/compiled/comparisonguard.rs": "6dc305c2a71d2bb68a7eabc2dc357e6d96c21c23035aeb1e1b37e462332007bd",
+        "src/ad/compiled/compiledfunction.rs": "af0dd6a2aa8df5af66f0e3d108dd61d686bb42705dda93ee2062d0f456fb7bb1",
+        "src/ad/compiled/compiledkernel.rs": "23f4e988ffff80edd4e42bc77192201a368e51ecba72827db2b3cc9e94c5b155",
+        "src/ad/compiled/compiledprogram.rs": "31a5b54f9ffa77bcac3dfb0bfac0ba6ed0cb539ef39144c84d3354aad5a30df8",
+        "src/ad/compiled/compileerror.rs": "c40ae9e3455ae9b146abb6f3de867304dfb2f0f317584850a9e2cf01583b0f1c",
+        "src/ad/compiled/derivativeorder.rs": "7cb691ad74e0ff166a08aeb0696e731658384d6219dee229930fd20c724a4069",
+        "src/ad/compiled/gradientkernel.rs": "6f91331fad6fac0468dac30076f307066ba12daa66d5257f645d517e14d3f28a",
+        "src/ad/compiled/implicitderivatives.rs": "398dcd08f6ddb848d8bc8fc905b368006f9d18cb0831102dd7d1af578bbe5ce8",
+        "src/ad/compiled/nativekernel.rs": "f0fa4e8bb23072027b937e118051200dafb7abaaea2803815efd84bd8100944f",
+        "src/ad/compiled/operands.rs": "73ad444eb0944669161759926a63028644584420aa93470658eb0ff0421366a2",
+        "src/ad/compiled/operation.rs": "2e820790550ca408e9450560a037fd72b4ce92eb076823ba7e9ed8a7082ae104",
+        "src/ad/compiled/pathsums.rs": "9e86f4c99c65eedda165c23419807594002f5fc36e30737c8fa03f11a79f28cc",
+        "src/ad/compiled/recorded.rs": "41869590e07519fcf8eb852a8146fe3d7797cc4b634d87112b6ea490e8da885e",
+        "src/ad/compiled/recording.rs": "940f193effc7a9f563800497c0e279c3f839f949786f7bf200e22e01cf055671",
+        "src/models/lgm/marketpathplan.rs": "a50ac9ab2cd5238ed01d2f62e6acccc889119e25e8ce43dd07b1b7a350a46ce1",
+        "src/scripting/execution.rs": "6c2f99343d5d4329ae7a9f2ce64067f61798397d4adaeec8212cccdfca340ed6",
+        "src/xva/aggregationplan.rs": "7fd391164383dfafba6cbd764bfb4147ecdd6a12779c4a86b028261a59b73432",
+        "src/xva/execution.rs": "03db4d9ebe953e743821e4cfc2f10f175738b79ac00187818cb884e7bf6c36ef",
+        "tools/benchmarks/compare_branches.py": "ee833ee0a1ede455048cc33bc8fbfdd9b89bd74832c4c94d1f5d9bbe01bf6ff7",
+        "tools/benchmarks/compare_xva.py": "3348644138bfe2407d9feadcae3a0392a963e11919c9549e96db2be0dde3e7be",
+        "tools/benchmarks/engines.py": "74f7382ea26640ffd193cbe3dc03dabedffbc4c10d7df357e321e3cd6733d01f",
+        "tools/benchmarks/monte_carlo.py": "21eb4e2cb77b5b931f963648e4e0ca619fdb7ee588deaccb735a4255cff14590",
+        "tools/benchmarks/pfe.py": "7a33cc396e89735c9c00612d4a591a193736a90f26ce76c494cc9aea542f212a",
+        "tools/benchmarks/prepared_xva.py": "dcbaf74957170a62c8320ed0af403c994678c63cdf8ddd13945aa2b94466a6ab"
+      },
+      "lock_sha256": "6d126184614751f82368cd48470476682c688937fb900bd7bc8886496a228c44"
+    }
+  },
+  "criterion_after": {
+    "all_requests/100": {
+      "mean_ms": 396.9416855,
+      "confidence_interval_ms": {
+        "confidence_level": 0.95,
+        "lower_bound": 385.6266917,
+        "upper_bound": 407.03141465
+      }
+    },
+    "all_requests/1000": {
+      "mean_ms": 1578.5611793,
+      "confidence_interval_ms": {
+        "confidence_level": 0.95,
+        "lower_bound": 1551.0902659649998,
+        "upper_bound": 1617.5604795025001
+      }
+    },
+    "expiring_requests/100": {
+      "mean_ms": 298.89511239999996,
+      "confidence_interval_ms": {
+        "confidence_level": 0.95,
+        "lower_bound": 291.44516193625003,
+        "upper_bound": 306.058979
+      }
+    },
+    "expiring_requests/1000": {
+      "mean_ms": 1429.7821292,
+      "confidence_interval_ms": {
+        "confidence_level": 0.95,
+        "lower_bound": 1404.4083985875,
+        "upper_bound": 1457.4797657274999
+      }
+    }
+  },
+  "validation": {
+    "xva_tests": 31,
+    "scripted_product_tests": 2,
+    "full_criterion_cases": 4,
+    "all_cube_fingerprints_match": true,
+    "same_trades_paths_dates": true
+  }
+}

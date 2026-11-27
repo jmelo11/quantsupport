@@ -12,12 +12,12 @@ use std::{
 };
 
 use quantsupport::prelude::{
-    BasisSwapTrade, CapFloorTrade, CapletFloorletTrade, CdsTrade, DiscountCurveElement, DualFwd,
+    BasisSwapTrade, CapFloorTrade, CapletFloorletTrade, CdsTrade, DiscountCurveElement,
     EquityEuropeanOptionTrade, EquityForwardTrade, EuropeanSwaptionTrade,
     FixFloatCrossCurrencySwapTrade, FixedRateBondTrade, FixedRateDepositTrade,
     FloatFloatCrossCurrencySwapTrade, FloatingRateNoteTrade, FxEuropeanOptionTrade, FxForwardTrade,
-    MarketSnapshot, MarketSnapshotStore, PricingContext, RateFuturesTrade, SnapshotSelector,
-    SwapTrade,
+    MarketSnapshot, MarketSnapshotStore, PricingContext, RateFuturesTrade, Recorded,
+    SnapshotSelector, SwapTrade,
 };
 #[cfg(test)]
 use quantsupport::prelude::{
@@ -47,7 +47,7 @@ pub enum QsObject {
     /// Results of an explicit native valuation request.
     EvaluationResults(Box<quantsupport::prelude::EvaluationResults>),
     /// Native loan position, independent of pricer settings.
-    LoanTrade(Box<quantsupport::prelude::LoanTrade<DualFwd>>),
+    LoanTrade(Box<quantsupport::prelude::LoanTrade<Recorded>>),
     /// Market quote collection.
     #[cfg(test)]
     QuoteStore(Box<QuoteStore>),
@@ -80,19 +80,19 @@ pub enum QsObject {
     /// Deliverable or non-deliverable FX-forward trade.
     FxForwardTrade(Box<FxForwardTrade>),
     /// Vanilla fixed/floating swap trade.
-    SwapTrade(Box<SwapTrade<DualFwd>>),
+    SwapTrade(Box<SwapTrade<Recorded>>),
     /// Same-currency floating/floating basis swap trade.
-    BasisSwapTrade(Box<BasisSwapTrade<DualFwd>>),
+    BasisSwapTrade(Box<BasisSwapTrade<Recorded>>),
     /// Floating/floating cross-currency swap trade.
-    FloatFloatCrossCurrencySwapTrade(Box<FloatFloatCrossCurrencySwapTrade<DualFwd>>),
+    FloatFloatCrossCurrencySwapTrade(Box<FloatFloatCrossCurrencySwapTrade<Recorded>>),
     /// Fixed/floating cross-currency swap trade.
-    FixFloatCrossCurrencySwapTrade(Box<FixFloatCrossCurrencySwapTrade<DualFwd>>),
+    FixFloatCrossCurrencySwapTrade(Box<FixFloatCrossCurrencySwapTrade<Recorded>>),
     /// Fixed-rate bond trade.
-    FixedRateBondTrade(Box<FixedRateBondTrade<DualFwd>>),
+    FixedRateBondTrade(Box<FixedRateBondTrade<Recorded>>),
     /// Fixed-rate deposit trade.
-    FixedRateDepositTrade(Box<FixedRateDepositTrade<DualFwd>>),
+    FixedRateDepositTrade(Box<FixedRateDepositTrade<Recorded>>),
     /// Floating-rate note trade.
-    FloatingRateNoteTrade(Box<FloatingRateNoteTrade<DualFwd>>),
+    FloatingRateNoteTrade(Box<FloatingRateNoteTrade<Recorded>>),
     /// FX European option trade.
     FxEuropeanOptionTrade(Box<FxEuropeanOptionTrade>),
     /// Equity European option trade.
@@ -100,7 +100,7 @@ pub enum QsObject {
     /// Equity-forward position.
     EquityForwardTrade(Box<EquityForwardTrade>),
     /// European swaption position.
-    EuropeanSwaptionTrade(Box<EuropeanSwaptionTrade<DualFwd>>),
+    EuropeanSwaptionTrade(Box<EuropeanSwaptionTrade<Recorded>>),
     /// Credit-default-swap trade.
     CdsTrade(Box<CdsTrade>),
     /// Cap/floor strip trade.
@@ -299,7 +299,7 @@ enum MutationUndo {
     Fx {
         base: Currency,
         quote: Currency,
-        previous: Option<DualFwd>,
+        previous: Option<Recorded>,
     },
     Element {
         index: MarketIndex,
@@ -1628,7 +1628,7 @@ pub fn close_workbook(workbook: u64) {
             .values()
             .all(|registry| registry.objects.is_empty())
         {
-            release_tapes();
+            release_recordings();
         }
     });
 }
@@ -1638,7 +1638,7 @@ pub fn clear_workbooks() {
     super::engine::bridge::reset();
     browser_changed();
     REGISTRIES.with(|registries| registries.borrow_mut().clear());
-    release_tapes();
+    release_recordings();
 }
 
 #[cfg(windows)]
@@ -1798,13 +1798,11 @@ mod definition_pass_tests {
     }
 }
 
-fn release_tapes() {
-    use quantsupport::ad::{
-        forward::ADForward,
-        tape::{Tape, TapeHolder},
-    };
-    f64::with_tape(|tape| *tape = Tape::new());
-    ADForward::with_tape(|tape| *tape = Tape::new());
+/// Releases compiler captures when the worksheet registry transaction finishes.
+fn release_recordings() {
+    use quantsupport::ad::Recording;
+    Recording::stop();
+    Recording::clear();
 }
 
 pub fn workbook_cells_in_rectangles(
@@ -1866,7 +1864,7 @@ pub fn release_workbook_cell_if_changed(
             .values()
             .all(|registry| registry.objects.is_empty())
         {
-            release_tapes();
+            release_recordings();
         }
     });
 }
@@ -1990,7 +1988,7 @@ mod tests {
             .expect("valid name");
         let first_update = registry
             .update_fx_store_if_changed(&created, "EUR/USD", "1.1", |store| {
-                store.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::from(1.1));
+                store.add_fx_rate(Currency::EUR, Currency::USD, Recorded::from(1.1));
             })
             .expect("first update");
         let recalculated = registry
@@ -2003,7 +2001,7 @@ mod tests {
             .expect("same constructor inputs");
         let changed = registry
             .update_fx_store_if_changed(&created, "EUR/USD", "1.2", |store| {
-                store.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::from(1.2));
+                store.add_fx_rate(Currency::EUR, Currency::USD, Recorded::from(1.2));
             })
             .expect("Excel may recalculate with the original handle");
 
@@ -2641,7 +2639,7 @@ mod ownership_tests {
         registry.begin_cell(cell(5));
         registry
             .update_fx_store_if_changed(&fx_handle, "fx:EUR:USD", "1.1", |store| {
-                store.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::from(1.1))
+                store.add_fx_rate(Currency::EUR, Currency::USD, Recorded::from(1.1))
             })
             .unwrap();
         registry.finish_cell(true);
@@ -2696,7 +2694,7 @@ mod ownership_tests {
             MarketIndex::SOFR,
             Rc::new(RefCell::new(FlatForwardTermStructure::new(
                 Date::new(2026, 1, 15),
-                DualFwd::from(0.03),
+                Recorded::from(0.03),
                 RateDefinition::new(
                     DayCounter::Actual360,
                     Compounding::Continuous,

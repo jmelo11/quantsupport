@@ -1,5 +1,6 @@
 use crate::{
-    ad::{dual::DualFwd, tape::Tape}, core::{
+    ad::{Recorded, Recording},
+    core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::{AssetClass, Instrument},
@@ -14,7 +15,12 @@ use crate::{
         pricerstate::PricerState,
         request::{HandleFairRate, HandleSensitivities, HandleValue, Request},
         trade::Trade,
-    }, currencies::currency::Currency, indices::{fxpair::FxPair, marketindex::MarketIndex}, instruments::fx::fxforward::{FxForward, FxForwardTrade}, time::date::Date, utils::errors::{QSError, Result},
+    },
+    currencies::currency::Currency,
+    indices::{fxpair::FxPair, marketindex::MarketIndex},
+    instruments::fx::fxforward::{FxForward, FxForwardTrade},
+    time::date::Date,
+    utils::errors::{QSError, Result},
 };
 use std::collections::HashSet;
 
@@ -82,7 +88,7 @@ impl Default for FxForwardPricer {
 #[derive(Default)]
 struct FxForwardState {
     evaluation_date: Date,
-    value: Option<DualFwd>,
+    value: Option<Recorded>,
     market_data: Option<MarketData>,
 }
 
@@ -118,20 +124,18 @@ impl FxForwardState {
         instrument: &FxForward,
         base_index: &MarketIndex,
         quote_index: &MarketIndex,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let fixing = instrument.fixing_date();
         if self
             .get_market_data_reponse()
             .is_some_and(MarketData::anchor_fixings)
         {
             if let Some(date) = fixing.filter(|date| *date < self.evaluation_date) {
-                let pair = MarketIndex::FxPair(
-                    FxPair::new(
-                        instrument.base_currency(),
-                        instrument.quote_currency(),
-                    )?,
-                );
-                return self.get_fixing(&pair, date).map(DualFwd::from);
+                let pair = MarketIndex::FxPair(FxPair::new(
+                    instrument.base_currency(),
+                    instrument.quote_currency(),
+                )?);
+                return self.get_fixing(&pair, date).map(Recorded::from);
             }
         }
         let date = fixing.unwrap_or_else(|| instrument.delivery_date());
@@ -144,19 +148,17 @@ impl FxForwardState {
             .curve()
             .discount_factor(date)?;
         Ok(
-            (self.get_exchange_rate(instrument.base_currency(), instrument.quote_currency())?
-                * base
-                / quote)
-                .into(),
+            self.get_exchange_rate(instrument.base_currency(), instrument.quote_currency())? * base
+                / quote,
         )
     }
 }
 
 impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
     fn handle_value(&self, trade: &FxForwardTrade, state: &mut FxForwardState) -> Result<f64> {
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
-        state.put_pillars_on_tape()?;
+        Recording::start();
+        Recording::checkpoint();
+        state.register_pillars()?;
 
         let inst = trade.instrument();
         let base = inst.base_currency();
@@ -182,7 +184,7 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
         let factor = if source == quote {
             df_quote
         } else if source == base {
-            (df_base / forward).into()
+            df_base / forward
         } else {
             return Err(QSError::InvalidValueErr(
                 "NDF settlement currency must be the base or quote currency".into(),
@@ -190,12 +192,12 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
         };
 
         // NPV = notional * (F_model - K) * DF_quote * side
-        let notional = DualFwd::new(trade.notional());
-        let npv: DualFwd = inst.forward_price().map_or_else(
-            || (notional * forward * factor).into(),
+        let notional = Recorded::new(trade.notional());
+        let npv: Recorded = inst.forward_price().map_or_else(
+            || notional * forward * factor,
             |k| {
-                let side = DualFwd::new(trade.side().sign());
-                (notional * (forward - k) * factor * side).into()
+                let side = Recorded::new(trade.side().sign());
+                notional * (forward - k) * factor * side
             },
         );
         let npv = if let Some(target) = state
@@ -203,13 +205,13 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (npv * state.get_exchange_rate(source, target)?).into()
+            npv * state.get_exchange_rate(source, target)?
         } else {
             npv
         };
         state.value = Some(npv);
 
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(npv.value())
     }
 }
@@ -258,7 +260,7 @@ impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
                 .ok_or_else(|| QSError::UnexpectedErr("Missing value in FX forward state".into()))?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
 
         let inst = trade.instrument();
         let policy = self.discount_policy.as_ref().ok_or_else(|| {
@@ -278,14 +280,14 @@ impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
             let element = state.get_discount_curve_element(&idx)?;
             for (label, value) in element.curve().pillars().into_iter().flatten() {
                 ids.push(label);
-                exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
+                exposures.push(value.derivative().map_or(0.0, |a| a.value()));
             }
         }
 
         if let Some(store) = state.get_fx_store() {
             for (label, value) in store.pillars().into_iter().flatten() {
                 ids.push(label);
-                exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
+                exposures.push(value.derivative().map_or(0.0, |a| a.value()));
             }
         }
 
@@ -423,7 +425,7 @@ impl Pricer for FxForwardPricer {
 mod tests {
     use super::FxForwardPricer;
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::{
             collateral::DiscountPolicy,
             elements::curveelement::DiscountCurveElement,
@@ -522,13 +524,13 @@ mod tests {
     ) -> Result<MarketData> {
         let base_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(base_rate),
+            Recorded::from(base_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("base_rate".to_string());
         let quote_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(quote_rate),
+            Recorded::from(quote_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("quote_rate".to_string());
@@ -544,7 +546,7 @@ mod tests {
         );
 
         let mut fx_store = FxStore::new();
-        fx_store.add_fx_rate(BASE_CCY, QUOTE_CCY, DualFwd::new(spot));
+        fx_store.add_fx_rate(BASE_CCY, QUOTE_CCY, Recorded::new(spot));
 
         Ok(MarketData::new(HashMap::new(), constructed_elements).with_fx_store(fx_store))
     }
@@ -593,12 +595,12 @@ mod tests {
     ) -> Result<(f64, f64)> {
         let base_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(base_rate),
+            Recorded::from(base_rate),
             RateDefinition::default(),
         );
         let quote_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(quote_rate),
+            Recorded::from(quote_rate),
             RateDefinition::default(),
         );
         Ok((

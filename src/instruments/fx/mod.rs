@@ -1,8 +1,8 @@
-/// FX option instruments.
+/// Provides the FX option instruments.
 pub mod fxeuropeanoption;
-/// FX forward instruments.
+/// Provides the FX forward instruments.
 pub mod fxforward;
-/// FX option builder.
+/// Provides the FX option builder.
 pub mod makefxeuropeanoption;
-/// FX forward builder.
+/// Provides the FX forward builder.
 pub mod makefxforward;

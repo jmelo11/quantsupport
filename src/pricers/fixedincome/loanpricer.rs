@@ -2,13 +2,7 @@
 //! prepayment into a separate pricing state.
 
 use crate::{
-    ad::{
-        dual::DualFwd,
-        forward::ADForward,
-        node::TapeNode,
-        scalar::Scalar,
-        tape::{Tape, TapeHolder},
-    },
+    ad::{scalar::Scalar, Recorded, Recording},
     core::{
         collateral::DiscountPolicy,
         elements::curveelement::{CreditCurveElement, DiscountCurveElement},
@@ -75,6 +69,7 @@ pub struct LoanPricer {
     refinancing_benchmark_index: Option<MarketIndex>,
     rebuild_amortization_for_fair_rate: bool,
 }
+
 impl LoanPricer {
     /// Creates a pricer that preserves contractual amortization in fair-rate trials.
     #[must_use]
@@ -157,7 +152,7 @@ impl LoanPricer {
     /// errors, including missing historical fixings from origination.
     fn load_loan_valuation_state(
         &self,
-        trade: &LoanTrade<DualFwd>,
+        trade: &LoanTrade<Recorded>,
         ctx: &impl MarketDataProvider,
     ) -> Result<LoanValuationState> {
         self.select_discount_curve_index(trade.instrument())?;
@@ -195,7 +190,7 @@ impl LoanPricer {
     /// # Errors
     /// Propagates missing historical fixings, incomplete observation dates,
     /// unavailable index curves/conventions, and implied-rate conversion errors.
-    fn resolve_index_rate_observation<N: Scalar + From<DualFwd>>(
+    fn resolve_index_rate_observation<N: Scalar + From<Recorded>>(
         state: &LoanValuationState,
         request: &ForwardRateRequest,
     ) -> Result<N> {
@@ -219,7 +214,7 @@ impl LoanPricer {
     ///
     /// # Errors
     /// Rejects missing floating observation entries and propagates forecast errors.
-    fn clone_cashflows_with_resolved_fixings<N: Scalar + From<DualFwd>>(
+    fn clone_cashflows_with_resolved_fixings<N: Scalar + From<Recorded>>(
         loan: &Loan<N>,
         state: &LoanValuationState,
     ) -> Result<Vec<CashflowType<N>>> {
@@ -276,7 +271,7 @@ impl LoanPricer {
     /// # Errors
     /// Rejects an unset refinancing index or unsupported index frequency, and
     /// propagates observation-resolution errors.
-    fn observe_refinancing_benchmark_rate<N: Scalar + From<DualFwd>>(
+    fn observe_refinancing_benchmark_rate<N: Scalar + From<Recorded>>(
         &self,
         state: &LoanValuationState,
         date: Date,
@@ -303,8 +298,8 @@ impl LoanPricer {
 struct LoanValuationState {
     market_data: Option<MarketData>,
     evaluation_date: Date,
-    value: Option<DualFwd>,
-    legs: Vec<Leg<DualFwd>>,
+    value: Option<Recorded>,
+    legs: Vec<Leg<Recorded>>,
     record_sensitivities: bool,
     report_cashflows: bool,
 }
@@ -320,16 +315,16 @@ impl PricerState for LoanValuationState {
     }
 }
 
-impl LegsProvider<DualFwd> for LoanValuationState {
+impl LegsProvider<Recorded> for LoanValuationState {
     /// Returns projected scheduled, prepayment, and recovery reporting legs.
-    fn legs(&self) -> &[Leg<DualFwd>] {
+    fn legs(&self) -> &[Leg<Recorded>] {
         &self.legs
     }
 }
 
-impl HandleCashflows<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {}
+impl HandleCashflows<LoanTrade<Recorded>, LoanValuationState> for LoanPricer {}
 
-impl HandleValue<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
+impl HandleValue<LoanTrade<Recorded>, LoanValuationState> for LoanPricer {
     /// Computes signed receipt PV once and caches the value and reporting legs.
     ///
     /// Records market pillars and projection operations only when sensitivities
@@ -340,21 +335,21 @@ impl HandleValue<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
     /// Propagates missing pillars, observation-resolution, and projection errors.
     fn handle_value(
         &self,
-        trade: &LoanTrade<DualFwd>,
+        trade: &LoanTrade<Recorded>,
         state: &mut LoanValuationState,
     ) -> Result<f64> {
         if let Some(value) = state.value {
             return Ok(value.value());
         }
         if state.record_sensitivities {
-            Tape::start_recording_fwd();
-            Tape::set_mark_fwd();
+            Recording::start();
+            Recording::checkpoint();
         } else {
-            Tape::stop_recording_fwd();
+            Recording::stop();
         }
         let result = (|| {
             if state.record_sensitivities {
-                state.put_pillars_on_tape()?;
+                state.register_pillars()?;
             }
             let cashflows = Self::clone_cashflows_with_resolved_fixings(trade.instrument(), state)?;
             let (value, legs) = self.project_expected_receipts(
@@ -371,7 +366,7 @@ impl HandleValue<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
                 .and_then(MarketData::base_currency)
                 .filter(|target| *target != source)
             {
-                (value * state.get_exchange_rate(source, target)?).into()
+                value * state.get_exchange_rate(source, target)?
             } else {
                 value
             };
@@ -379,12 +374,12 @@ impl HandleValue<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
             state.legs = legs;
             Ok(value.value())
         })();
-        Tape::stop_recording_fwd();
+        Recording::stop();
         result
     }
 }
 
-impl HandleSensitivities<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
+impl HandleSensitivities<LoanTrade<Recorded>, LoanValuationState> for LoanPricer {
     /// Differentiates cached receipt PV with respect to labelled market pillars.
     ///
     /// Shared pillar nodes are counted once; distinct nodes with the same quote
@@ -393,19 +388,19 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer 
     /// prepayment, survival and rate-dependent amortization.
     ///
     /// # Errors
-    /// Propagates valuation, AD backpropagation, and missing pillar-adjoint errors.
+    /// Propagates valuation, AD backpropagation, and missing pillar-derivative errors.
     fn handle_sensitivities(
         &self,
-        trade: &LoanTrade<DualFwd>,
+        trade: &LoanTrade<Recorded>,
         state: &mut LoanValuationState,
     ) -> Result<SensitivityMap> {
         self.handle_value(trade, state)?;
-        // A repeated request reuses the value graph, but needs a fresh backward pass.
-        Tape::reset_adjoints_fwd();
+        // A repeated request reuses the value graph, but needs a fresh differentiate pass.
+        Recording::reset_derivatives();
         state
             .value
             .ok_or_else(|| QSError::ValueNotSetErr("Loan value".into()))?
-            .backward_to_mark()?;
+            .differentiate_accumulating()?;
         let market_data = state
             .get_market_data_reponse()
             .ok_or_else(|| QSError::ValueNotSetErr("Loan market data".into()))?;
@@ -426,8 +421,8 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer 
                     .map(|(label, pillar)| {
                         (
                             label,
-                            pillar.node_ptr(),
-                            pillar.adjoint().map(|value| value.value()),
+                            pillar.identity(),
+                            pillar.derivative().map(|value| value.value()),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -446,8 +441,8 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer 
                             .map(|(label, pillar)| {
                                 (
                                     label,
-                                    pillar.node_ptr(),
-                                    pillar.adjoint().map(|value| value.value()),
+                                    pillar.identity(),
+                                    pillar.derivative().map(|value| value.value()),
                                 )
                             })
                             .collect::<Vec<_>>()
@@ -502,7 +497,7 @@ where
 }
 
 impl Pricer for LoanPricer {
-    type Item = LoanTrade<DualFwd>;
+    type Item = LoanTrade<Recorded>;
     type Policy = dyn DiscountPolicy;
     /// Evaluates requested results against a fresh market-data state.
     ///
@@ -550,7 +545,7 @@ impl Pricer for LoanPricer {
             )
         });
         if !state.record_sensitivities {
-            Tape::stop_recording_fwd();
+            Recording::stop();
         }
         if requests
             .iter()
@@ -786,7 +781,7 @@ struct ProjectionCurves<'a, N: Scalar> {
     evaluation: Date,
 }
 
-impl<'a, N: Scalar + From<DualFwd>> ProjectionCurves<'a, N> {
+impl<'a, N: Scalar + From<Recorded>> ProjectionCurves<'a, N> {
     /// Loads optional curves without allocating date maps or copied curve nodes.
     fn new(
         pricer: &LoanPricer,
@@ -861,7 +856,7 @@ impl<'a, N: Scalar + From<DualFwd>> ProjectionCurves<'a, N> {
 }
 
 /// Scalars supporting reset installments without recording each annuity step.
-trait LoanAmortizationScalar: Scalar + From<DualFwd> {
+trait LoanAmortizationScalar: Scalar + From<Recorded> {
     /// Discounts the actual remaining accrual fractions at the current reset rate.
     fn reset_installment(
         principal: Self,
@@ -886,60 +881,18 @@ impl LoanAmortizationScalar for f64 {
     }
 }
 
-impl LoanAmortizationScalar for DualFwd {
+impl LoanAmortizationScalar for Recorded {
     fn reset_installment(
         principal: Self,
         residual: Self,
         rate: Self,
         fractions: impl Iterator<Item = f64>,
     ) -> Result<Self> {
-        if !ADForward::with_tape(|tape| tape.active) {
-            return level_installment(
-                principal.inner(),
-                residual.inner(),
-                fractions.map(|fraction| rate.inner() * fraction),
-            )
-            .map(Self::constant);
-        }
-        // Evaluate the annuity and its rate partial using the nested forward
-        // scalar, then record one reverse node for the complete installment.
-        // Forward seeds remain intact, including mixed higher derivatives.
-        let mut discount = ADForward::one();
-        let mut annuity = ADForward::zero();
-        let mut discount_partial = ADForward::zero();
-        let mut annuity_partial = ADForward::zero();
-        for fraction in fractions {
-            let compound = ADForward::one() + rate.inner() * fraction;
-            if !compound.value().is_finite() || compound.value() <= 0.0 {
-                return Err(QSError::InvalidValueErr(
-                    "Invalid loan amortization rate".into(),
-                ));
-            }
-            discount /= compound;
-            discount_partial = (discount_partial - discount * fraction) / compound;
-            annuity += discount;
-            annuity_partial += discount_partial;
-        }
-        let value = (principal.inner() - residual.inner() * discount) / annuity;
-        if !value.value().is_finite() || annuity.value() <= 0.0 {
-            return Err(QSError::InvalidValueErr(
-                "Invalid loan annuity factor".into(),
-            ));
-        }
-        let rate_partial =
-            (-residual.inner() * discount_partial - value * annuity_partial) / annuity;
-        let mut node = TapeNode::default();
-        for (input, partial) in [
-            (principal, ADForward::one() / annuity),
-            (residual, -discount / annuity),
-            (rate, rate_partial),
-        ] {
-            if let Some(child) = input.node_ptr() {
-                node.push_child(child, partial);
-            }
-        }
-        let node = ADForward::with_tape(|tape| tape.record(node));
-        Ok(Self::from_raw(value, node))
+        level_installment(
+            principal,
+            residual,
+            fractions.map(|fraction| rate * fraction),
+        )
     }
 }
 
@@ -1133,7 +1086,7 @@ impl LoanPricer {
     }
 
     /// Advances a single interval, including past prepayment but only future PV.
-    fn project_period<N: Scalar + From<DualFwd>>(
+    fn project_period<N: Scalar + From<Recorded>>(
         &self,
         loan: &Loan<N>,
         state: &LoanValuationState,
@@ -1188,7 +1141,7 @@ impl LoanPricer {
     }
 
     /// Converts the model's origination-based interval probability to expected principal.
-    fn prepayment_probability<N: Scalar + From<DualFwd>>(
+    fn prepayment_probability<N: Scalar + From<Recorded>>(
         &self,
         loan: &Loan<N>,
         state: &LoanValuationState,
@@ -1258,9 +1211,9 @@ struct LoanCouponSegment {
 /// Fair-rate objective holding resolved coupons and the discounted advance target.
 struct LoanFairRateObjective<'a> {
     pricer: &'a LoanPricer,
-    trade: &'a LoanTrade<DualFwd>,
+    trade: &'a LoanTrade<Recorded>,
     state: &'a LoanValuationState,
-    cashflows: &'a [CashflowType<DualFwd>],
+    cashflows: &'a [CashflowType<Recorded>],
     adjustable_segment: Range<usize>,
     redemption_date: Date,
     target: f64,
@@ -1305,7 +1258,7 @@ impl LoanFairRateObjective<'_> {
     fn build_cashflows_for_trial_coupon_or_spread(
         &self,
         candidate: f64,
-    ) -> Result<Vec<CashflowType<DualFwd>>> {
+    ) -> Result<Vec<CashflowType<Recorded>>> {
         let mut coupons = Vec::new();
         let mut position = 0;
         for cashflow in self.cashflows {
@@ -1330,7 +1283,7 @@ impl LoanFairRateObjective<'_> {
                     coupons.push(CashflowType::FixedRateCoupon(FixedRateCoupon::new(
                         coupon.notional(),
                         Box::new(InterestRate::from_rate_definition(
-                            DualFwd::scalar(candidate),
+                            Recorded::scalar(candidate),
                             coupon.rate().rate_definition(),
                         )),
                         coupon.accrual_start_date(),
@@ -1341,7 +1294,7 @@ impl LoanFairRateObjective<'_> {
                 CashflowType::FloatingRateCoupon(coupon) => {
                     let trial = FloatingRateCoupon::new(
                         coupon.notional(),
-                        DualFwd::scalar(candidate),
+                        Recorded::scalar(candidate),
                         coupon.market_index().clone(),
                         coupon.accrual_start_date(),
                         coupon.accrual_end_date(),
@@ -1380,8 +1333,8 @@ impl LoanFairRateObjective<'_> {
     /// Regenerates the contractual trial schedule from the chosen initial rate.
     fn rebuild_trial_cashflows(
         &self,
-        coupons: &[CashflowType<DualFwd>],
-    ) -> Result<Vec<CashflowType<DualFwd>>> {
+        coupons: &[CashflowType<Recorded>],
+    ) -> Result<Vec<CashflowType<Recorded>>> {
         let repayment =
             self.trade
                 .instrument()
@@ -1501,7 +1454,7 @@ impl ContFunc<f64> for LoanFairRateObjective<'_> {
 
 impl LoanPricer {
     /// Identifies contiguous coupon levels, ignoring intervening principal flows.
-    fn coupon_segments(cashflows: &[CashflowType<DualFwd>]) -> Vec<LoanCouponSegment> {
+    fn coupon_segments(cashflows: &[CashflowType<Recorded>]) -> Vec<LoanCouponSegment> {
         let mut previous = None;
         let mut segments: Vec<LoanCouponSegment> = Vec::new();
         let mut position = 0;
@@ -1538,7 +1491,7 @@ impl LoanPricer {
     }
 }
 
-impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
+impl HandleFairRate<LoanTrade<Recorded>, LoanValuationState> for LoanPricer {
     /// Bootstraps contiguous coupon/spread segments to par successively.
     ///
     /// Each prefix repays its remaining capital at its final payment date.
@@ -1554,7 +1507,7 @@ impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
     /// Propagates market/trial errors and reports unbracketed or unconverged solves.
     fn handle_fair_rate(
         &self,
-        trade: &LoanTrade<DualFwd>,
+        trade: &LoanTrade<Recorded>,
         state: &mut LoanValuationState,
         target_segment: usize,
     ) -> Result<f64> {
@@ -1563,7 +1516,7 @@ impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
                 "Loan fair rate requires valuation at or before origination".into(),
             ));
         }
-        Tape::stop_recording_fwd();
+        Recording::stop();
         let mut cashflows = Self::clone_cashflows_with_resolved_fixings(trade.instrument(), state)?;
         if cashflows
             .iter()
@@ -1677,7 +1630,7 @@ mod tests {
         ] {
             let curve = FlatForwardTermStructure::new(
                 date,
-                DualFwd::scalar(rate),
+                Recorded::scalar(rate),
                 RateDefinition::new(
                     DayCounter::Actual365,
                     Compounding::Continuous,
@@ -1692,7 +1645,7 @@ mod tests {
         }
         let curve = FlatForwardTermStructure::new(
             date,
-            DualFwd::scalar(hazard),
+            Recorded::scalar(hazard),
             RateDefinition::new(
                 DayCounter::Actual365,
                 Compounding::Continuous,
@@ -1724,60 +1677,41 @@ mod tests {
         pricer
     }
 
+    /// Checks reset installments preserve compiled market derivatives.
     #[test]
-    fn reset_installments_preserve_reverse_and_mixed_derivatives() -> Result<()> {
+    fn reset_installments_preserve_compiled_market_derivatives() -> Result<()> {
         for rate in [-0.02, 0.0, 0.06] {
-            for residual in [0.0, 25_000.0] {
+            for residual_value in [0.0, 25_000.0] {
                 let fractions: Vec<_> = (0..360)
                     .map(|month| [31.0, 28.0, 31.0, 30.0][month % 4] / 360.0)
                     .collect();
-                let evaluate = |compact: bool| -> Result<([f64; 8], usize)> {
-                    Tape::start_recording_fwd();
-                    let principal = DualFwd::new(100_000.0);
-                    let residual = DualFwd::new(residual);
-                    let rate = DualFwd::new_from_inner(ADForward::var(rate));
-                    let payment = if compact {
-                        DualFwd::reset_installment(
-                            principal,
-                            residual,
-                            rate,
-                            fractions.iter().copied(),
-                        )?
-                    } else {
-                        level_installment(
-                            principal,
-                            residual,
-                            fractions
-                                .iter()
-                                .map(|fraction| rate.mul_val(DualFwd::scalar(*fraction))),
-                        )?
-                    };
-                    Tape::stop_recording_fwd();
-                    payment.backward()?;
-                    let derivative = rate.adjoint()?;
-                    Ok((
-                        [
-                            payment.value(),
-                            payment.inner().first_derivative(),
-                            payment.inner().second_derivative(),
-                            derivative.value(),
-                            derivative.first_derivative(),
-                            derivative.second_derivative(),
-                            principal.adjoint()?.value(),
-                            residual.adjoint()?.value(),
-                        ],
-                        ADForward::with_tape(|tape| tape.book.len()),
-                    ))
+                Recording::start();
+                let principal = Recorded::new(100_000.0);
+                let residual = Recorded::new(residual_value);
+                let rate_input = Recorded::new(rate);
+                let payment = Recorded::reset_installment(
+                    principal,
+                    residual,
+                    rate_input,
+                    fractions.iter().copied(),
+                )?;
+                payment.differentiate()?;
+                let numerical = |rate| {
+                    f64::reset_installment(
+                        100_000.0,
+                        residual_value,
+                        rate,
+                        fractions.iter().copied(),
+                    )
                 };
-                let (expected, _) = evaluate(false)?;
-                let (actual, nodes) = evaluate(true)?;
-                for (actual, expected) in actual.into_iter().zip(expected) {
-                    assert!(
-                        (actual - expected).abs() <= 1e-10 * expected.abs().max(1.0),
-                        "rate={rate}, residual={residual}: {actual} != {expected}"
-                    );
-                }
-                assert_eq!(nodes, 4, "one installment node plus three inputs");
+                let bump = 1e-6;
+                let finite_difference =
+                    (numerical(rate + bump)? - numerical(rate - bump)?) / (2.0 * bump);
+                assert!((payment.value() - numerical(rate)?).abs() < 1e-9);
+                assert!((rate_input.derivative()?.value() - finite_difference).abs() < 1e-5);
+                assert!(principal.derivative()?.value() > 0.0);
+                assert!(residual.derivative()?.value() < 0.0);
+                Recording::stop();
             }
         }
         Ok(())
@@ -1785,26 +1719,26 @@ mod tests {
 
     #[test]
     fn value_and_cashflow_requests_do_not_record_a_sensitivity_graph() -> Result<()> {
-        Tape::stop_recording_fwd();
+        Recording::stop();
         let provider = build_test_market(0.03, 0.04, 0.0);
         let loan = default_loan_builder()
             .with_prepayment_configuration(PrepaymentModelConfiguration::Cpr(0.12))
             .build()?;
         let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
         let pricer = estr_loan_pricer();
-        let initial_nodes = ADForward::with_tape(|tape| tape.book.len());
+        let initial_nodes = Recording::operation_count();
         let value = pricer.evaluate(&trade, &[Request::Value], &provider)?;
-        assert_eq!(initial_nodes, ADForward::with_tape(|tape| tape.book.len()));
+        assert_eq!(initial_nodes, Recording::operation_count());
         let requests = [
             Request::Value,
             Request::Cashflows(true),
             Request::Sensitivities,
         ];
         let risk = pricer.evaluate(&trade, &requests, &provider)?;
-        let recorded_nodes = ADForward::with_tape(|tape| tape.book.len());
+        let recorded_nodes = Recording::operation_count();
         assert!(recorded_nodes > 0);
         let numeric = pricer.evaluate(&trade, &requests[..2], &provider)?;
-        assert_eq!(recorded_nodes, ADForward::with_tape(|tape| tape.book.len()));
+        assert_eq!(recorded_nodes, Recording::operation_count());
         assert_eq!(value.price(), risk.price());
         assert_eq!(numeric.price(), risk.price());
         assert_eq!(
@@ -1847,7 +1781,7 @@ mod tests {
         Ok(())
     }
     /// Builds the standard EUR loan contract used by receipt and fair-rate tests.
-    fn default_loan_builder() -> MakeLoan<DualFwd> {
+    fn default_loan_builder() -> MakeLoan<Recorded> {
         MakeLoan::default()
             .with_identifier("LOAN".into())
             .with_start_date(Date::new(2026, 1, 1))
@@ -1857,7 +1791,7 @@ mod tests {
             .with_coupons(vec![CashflowType::FixedRateCoupon(FixedRateCoupon::new(
                 1.0,
                 Box::new(InterestRate::new(
-                    DualFwd::new(0.06),
+                    Recorded::new(0.06),
                     Compounding::Simple,
                     Frequency::Annual,
                     DayCounter::Actual360,
@@ -1870,7 +1804,7 @@ mod tests {
     /// Evaluates the requested loan position and extracts its receipt PV.
     fn evaluate_loan_receipt_present_value(
         pricer: &LoanPricer,
-        trade: &LoanTrade<DualFwd>,
+        trade: &LoanTrade<Recorded>,
         market: &Provider,
     ) -> Result<f64> {
         pricer
@@ -2332,7 +2266,8 @@ mod tests {
         Ok(())
     }
 
-    fn contractual_redemptions(loan: &Loan<DualFwd>) -> Vec<f64> {
+    /// Collects the loan principal repayments in contractual order.
+    fn contractual_redemptions(loan: &Loan<Recorded>) -> Vec<f64> {
         loan.contractual_leg()
             .cashflows()
             .iter()
@@ -2416,7 +2351,7 @@ mod tests {
     #[test]
     fn custom_prepayment_function_is_used_and_invalid_probabilities_fail() -> Result<()> {
         let loan = default_loan_builder()
-            .with_custom_prepayment_model(|_: &PrepaymentModelState<DualFwd>| Ok(DualFwd::one()))
+            .with_custom_prepayment_model(|_: &PrepaymentModelState<Recorded>| Ok(Recorded::one()))
             .build()?;
         let provider = build_test_market(0.03, 0.04, 0.0);
         let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
@@ -2434,8 +2369,8 @@ mod tests {
             1
         );
         let invalid = default_loan_builder()
-            .with_custom_prepayment_model(|_: &PrepaymentModelState<DualFwd>| {
-                Ok(DualFwd::scalar(1.1))
+            .with_custom_prepayment_model(|_: &PrepaymentModelState<Recorded>| {
+                Ok(Recorded::scalar(1.1))
             })
             .build()?;
         assert!(estr_loan_pricer()
@@ -2631,7 +2566,7 @@ mod tests {
     }
 
     /// Builds five separately identified positions with identical French loan terms.
-    fn five_identical_french_loans() -> Result<Vec<LoanTrade<DualFwd>>> {
+    fn five_identical_french_loans() -> Result<Vec<LoanTrade<Recorded>>> {
         let builder = default_loan_builder()
             .with_maturity_date(Date::new(2056, 1, 1))
             .with_notional(250_000.0)
@@ -2667,7 +2602,7 @@ mod tests {
 
     /// Sums labelled exposures from separate loan evaluations without a portfolio accumulator.
     fn sum_individual_loan_sensitivities(
-        loans: &[LoanTrade<DualFwd>],
+        loans: &[LoanTrade<Recorded>],
         pricer: &LoanPricer,
         provider: &Provider,
     ) -> Result<BTreeMap<String, f64>> {
@@ -2850,9 +2785,9 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let model_calls = Arc::clone(&calls);
         let loan = default_loan_builder()
-            .with_custom_prepayment_model(move |_: &PrepaymentModelState<DualFwd>| {
+            .with_custom_prepayment_model(move |_: &PrepaymentModelState<Recorded>| {
                 model_calls.fetch_add(1, Ordering::Relaxed);
-                Ok(DualFwd::scalar(0.01))
+                Ok(Recorded::scalar(0.01))
             })
             .build()?;
         let trade = LoanTrade::new(loan, provider.date, Side::PayShort);
@@ -2912,26 +2847,23 @@ mod tests {
         Ok(())
     }
 
+    /// Checks numeric accrual preserves the capture and existing custom models.
     #[test]
-    fn numeric_accrual_preserves_the_tape_and_existing_custom_models() -> Result<()> {
-        use crate::ad::forward::TAPE_FWD;
+    fn numeric_accrual_preserves_the_capture_and_existing_custom_models() -> Result<()> {
         let provider = build_test_market(0.03, 0.04, 0.0);
         let loan = default_loan_builder()
             .with_repayment_structure(LoanRepaymentStructure::Bullet)
-            .with_custom_prepayment_model(|_: &PrepaymentModelState<DualFwd>| {
-                assert!(!TAPE_FWD.with(|tape| tape.borrow().active));
-                Ok(DualFwd::scalar(0.01))
+            .with_custom_prepayment_model(|_: &PrepaymentModelState<Recorded>| {
+                assert!(!Recording::is_active());
+                Ok(Recorded::scalar(0.01))
             })
             .build()?;
         let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
-        Tape::start_recording_fwd();
-        let sentinel = DualFwd::scalar(1.0);
-        Tape::set_mark_fwd();
-        Tape::stop_recording_fwd();
-        let before = TAPE_FWD.with(|tape| {
-            let tape = tape.borrow();
-            (tape.book.len(), tape.mark, tape.active)
-        });
+        Recording::start();
+        let sentinel = Recorded::scalar(1.0);
+        Recording::checkpoint();
+        Recording::stop();
+        let before = Recording::state();
         let result = estr_loan_pricer().evaluate(
             &trade,
             &[Request::AccruedAmount(
@@ -2945,10 +2877,7 @@ mod tests {
                 .abs()
                 < 1e-8
         );
-        let after = TAPE_FWD.with(|tape| {
-            let tape = tape.borrow();
-            (tape.book.len(), tape.mark, tape.active)
-        });
+        let after = Recording::state();
         assert_eq!(before, after);
         for from_evaluation_date in [false, true] {
             let report = estr_loan_pricer().evaluate(
@@ -2957,10 +2886,7 @@ mod tests {
                 &provider,
             )?;
             assert!(report.cashflows().is_some() && report.price().is_none());
-            let after_report = TAPE_FWD.with(|tape| {
-                let tape = tape.borrow();
-                (tape.book.len(), tape.mark, tape.active)
-            });
+            let after_report = Recording::state();
             assert_eq!(before, after_report);
         }
         assert_eq!(sentinel.value(), 1.0);
@@ -3218,7 +3144,7 @@ mod resolution_tests {
             .with_initial_amortization_rate(0.05)
             .build()?;
         // Check individual principal balances with a tolerance for implied-rate roundoff.
-        let balances = |loan: &Loan<DualFwd>| {
+        let balances = |loan: &Loan<Recorded>| {
             loan.contractual_leg()
                 .cashflows()
                 .iter()

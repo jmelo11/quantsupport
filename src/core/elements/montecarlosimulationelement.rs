@@ -1,5 +1,5 @@
 use crate::{
-    ad::dual::DualFwd,
+    ad::Recorded,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     models::hullwhite::hullwhitecalibrationquality::HullWhiteCalibrationQuality,
@@ -12,7 +12,7 @@ use crate::{
 /// simulation draws and the associated market index. This trait is used to define the structure of the simulation
 /// elements that will be stored in the `ConstructedElementStore` and used for pricing and risk calculations.
 pub trait ADMonteCarloSimulationElement:
-    MonteCarloSimulation<DualFwd> + Pillars<DualFwd> + Send + Sync
+    MonteCarloSimulation<Recorded> + Pillars<Recorded> + Send + Sync
 {
 }
 

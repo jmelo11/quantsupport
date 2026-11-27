@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     time::date::Date,
     utils::errors::Result,
 };
@@ -55,14 +55,14 @@ where
     }
 }
 
-impl From<SimpleCashflow<f64>> for SimpleCashflow<DualFwd> {
+impl From<SimpleCashflow<f64>> for SimpleCashflow<Recorded> {
     fn from(value: SimpleCashflow<f64>) -> Self {
-        Self::new(DualFwd::new(value.amount.value()), value.payment_date)
+        Self::new(Recorded::new(value.amount.value()), value.payment_date)
     }
 }
 
-impl From<SimpleCashflow<DualFwd>> for SimpleCashflow<f64> {
-    fn from(value: SimpleCashflow<DualFwd>) -> Self {
+impl From<SimpleCashflow<Recorded>> for SimpleCashflow<f64> {
+    fn from(value: SimpleCashflow<Recorded>) -> Self {
         Self::new(value.amount.value(), value.payment_date)
     }
 }

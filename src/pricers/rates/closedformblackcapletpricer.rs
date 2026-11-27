@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, tape::Tape},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -88,7 +88,7 @@ impl Default for ClosedFormBlackCapletPricer {
 /// State for Black caplet/floorlet pricing.
 #[derive(Default)]
 struct BlackCapletState {
-    value: Option<DualFwd>,
+    value: Option<Recorded>,
     market_data: Option<MarketData>,
 }
 
@@ -136,21 +136,21 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for ClosedFormBlackCaple
             .max(0.0);
 
         if payment_date < evaluation_date {
-            state.value = Some(DualFwd::zero());
+            state.value = Some(Recorded::zero());
             return Ok(0.0);
         }
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
+        Recording::start();
+        Recording::checkpoint();
 
-        state.put_pillars_on_tape()?;
+        state.register_pillars()?;
 
         // Forward rate using the conventions from the caplet's rate definition
-        let fwd: DualFwd = if fixing_date < evaluation_date
+        let fwd: Recorded = if fixing_date < evaluation_date
             && state
                 .get_market_data_reponse()
                 .is_some_and(MarketData::anchor_fixings)
         {
-            DualFwd::from(state.get_fixing(&index, fixing_date)?)
+            Recorded::from(state.get_fixing(&index, fixing_date)?)
         } else {
             state
                 .get_discount_curve_element(&index)?
@@ -177,7 +177,7 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for ClosedFormBlackCaple
             .discount_factor(payment_date)?;
 
         let vol = if tau <= 0.0 {
-            DualFwd::zero()
+            Recorded::zero()
         } else {
             state
                 .get_volatility_surface_element(&index)?
@@ -186,11 +186,11 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for ClosedFormBlackCaple
         };
 
         let undiscounted = if tau <= 0.0 || vol.value().abs() < f64::EPSILON {
-            let payoff: DualFwd = match caplet.payoff_type() {
-                CapletFloorletType::Caplet => (fwd - effective_strike).into(),
-                CapletFloorletType::Floorlet => (DualFwd::from(effective_strike) - fwd).into(),
+            let payoff: Recorded = match caplet.payoff_type() {
+                CapletFloorletType::Caplet => fwd - effective_strike,
+                CapletFloorletType::Floorlet => Recorded::from(effective_strike) - fwd,
             };
-            payoff.max(DualFwd::zero())
+            payoff.max(Recorded::zero())
         } else {
             match caplet.payoff_type() {
                 CapletFloorletType::Caplet => black_call_ad(fwd, effective_strike, vol, tau)?,
@@ -198,20 +198,20 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for ClosedFormBlackCaple
             }
         };
 
-        let value: DualFwd = (df_pay * undiscounted * yf * trade.notional()).into();
+        let value: Recorded = df_pay * undiscounted * yf * trade.notional();
         let source = Discountable::currency(caplet);
         let value = if let Some(target) = state
             .get_market_data_reponse()
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (value * state.get_exchange_rate(source, target)?).into()
+            value * state.get_exchange_rate(source, target)?
         } else {
             value
         };
         state.value = Some(value);
 
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(value.value())
     }
 }
@@ -233,7 +233,7 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for ClosedFormBl
             })?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
 
         let caplet = trade.instrument();
         let index = caplet.market_index();
@@ -254,7 +254,7 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for ClosedFormBl
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         // Forward curve sensitivities
@@ -267,7 +267,7 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for ClosedFormBl
                 .unwrap_or_default()
             {
                 ids.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
 
@@ -279,7 +279,7 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for ClosedFormBl
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         for (label, exposure) in state.get_fx_sensitivities()? {
@@ -407,7 +407,7 @@ mod tests {
     };
 
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::{
             elements::{
                 curveelement::DiscountCurveElement,
@@ -426,7 +426,7 @@ mod tests {
         instruments::rates::capletfloorlet::{
             CapletFloorlet, CapletFloorletTrade, CapletFloorletType,
         },
-        math::probability::norm_cdf::norm_cdf,
+        math::probability::normcdf::norm_cdf,
         pricers::rates::closedformblackcapletpricer::ClosedFormBlackCapletPricer,
         rates::{
             compounding::Compounding,
@@ -479,12 +479,12 @@ mod tests {
         anchor_strike: f64,
     ) -> Result<(
         MarketData,
-        FlatForwardTermStructure<DualFwd>,
-        Rc<RefCell<InterpolatedVolatilitySurface<DualFwd>>>,
+        FlatForwardTermStructure<Recorded>,
+        Rc<RefCell<InterpolatedVolatilitySurface<Recorded>>>,
     )> {
         let discount_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(risk_free_rate),
+            Recorded::from(risk_free_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("discount_rate".to_string());
@@ -503,15 +503,15 @@ mod tests {
                 TimeUnit::Days,
             ),
             BTreeMap::from([
-                (F64Key::new(strike_lo), DualFwd::from(flat_vol)),
-                (F64Key::new(strike_hi), DualFwd::from(flat_vol)),
+                (F64Key::new(strike_lo), Recorded::from(flat_vol)),
+                (F64Key::new(strike_hi), Recorded::from(flat_vol)),
             ]),
         );
         surface_points.insert(
             Period::new(i32::try_from(days_after_start).unwrap_or(0), TimeUnit::Days),
             BTreeMap::from([
-                (F64Key::new(strike_lo), DualFwd::from(flat_vol)),
-                (F64Key::new(strike_hi), DualFwd::from(flat_vol)),
+                (F64Key::new(strike_lo), Recorded::from(flat_vol)),
+                (F64Key::new(strike_hi), Recorded::from(flat_vol)),
             ]),
         );
 
@@ -752,7 +752,7 @@ mod tests {
         let closed_form_vega = notional * alpha * df_pay * fwd * phi_d1 * tau.sqrt();
 
         // AD vega = sum over all vol-pillar adjoints
-        // (bilinear weights sum to 1, so the aggregated adjoint equals total vega)
+        // (bilinear weights sum to 1, so the aggregated derivative equals total vega)
         let ad_vega_total: f64 = ["vol_t0_lo", "vol_t0_hi", "vol_t1_lo", "vol_t1_hi"]
             .iter()
             .filter_map(|&k| {
@@ -1108,7 +1108,7 @@ mod tests {
 
         let discount_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(0.04),
+            Recorded::from(0.04),
             RateDefinition::default(),
         );
         let alpha = rate_def.day_counter().year_fraction(start_date, end_date);
@@ -1150,7 +1150,7 @@ mod tests {
 
         let discount_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(0.04),
+            Recorded::from(0.04),
             RateDefinition::default(),
         );
         let alpha = rate_def.day_counter().year_fraction(start_date, end_date);

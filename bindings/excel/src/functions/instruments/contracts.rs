@@ -131,7 +131,7 @@ pub fn qs_instrument_swap(
         return Ok(handle);
     }
     let side = Side::LongReceive;
-    let instrument = MakeSwap::<DualFwd>::default()
+    let instrument = MakeSwap::<Recorded>::default()
         .with_identifier(name.to_string())
         .with_fixed_rate(fixed_rate)
         .with_spread(spread)
@@ -218,7 +218,7 @@ pub fn qs_instrument_basis_swap(
         return Ok(handle);
     }
     let side = Side::LongReceive;
-    let instrument = MakeBasisSwap::<DualFwd>::default()
+    let instrument = MakeBasisSwap::<Recorded>::default()
         .with_identifier(name.to_string())
         .with_notional(notional)
         .with_pay_market_index(parse_index(pay_index)?)
@@ -305,7 +305,7 @@ pub fn qs_instrument_xccy_float_float(
         return Ok(handle);
     }
     let side = Side::LongReceive;
-    let instrument = MakeFloatFloatCrossCurrencySwap::<DualFwd>::default()
+    let instrument = MakeFloatFloatCrossCurrencySwap::<Recorded>::default()
         .with_identifier(name.to_string())
         .with_domestic_currency(parse_currency(domestic_currency)?)
         .with_foreign_currency(parse_currency(foreign_currency)?)
@@ -398,7 +398,7 @@ pub fn qs_instrument_xccy_fix_float(
         return Ok(handle);
     }
     let side = Side::LongReceive;
-    let instrument = MakeFixFloatCrossCurrencySwap::<DualFwd>::default()
+    let instrument = MakeFixFloatCrossCurrencySwap::<Recorded>::default()
         .with_identifier(name.to_string())
         .with_domestic_currency(parse_currency(domestic_currency)?)
         .with_foreign_currency(parse_currency(foreign_currency)?)
@@ -486,7 +486,7 @@ pub fn qs_instrument_fixed_bond(
     if let Some(handle) = cached_handle(name, "FixedRateBond", &key)? {
         return Ok(handle);
     }
-    let mut builder = MakeFixedRateBond::<DualFwd>::default()
+    let mut builder = MakeFixedRateBond::<Recorded>::default()
         .with_identifier(name.to_string())
         .with_rate(coupon_rate)
         .with_notional(notional)
@@ -575,7 +575,7 @@ pub fn qs_instrument_fixed_deposit(
         return Ok(handle);
     }
     let side = Side::LongReceive;
-    let mut builder = MakeFixedRateDeposit::<DualFwd>::default()
+    let mut builder = MakeFixedRateDeposit::<Recorded>::default()
         .with_identifier(name.to_string())
         .with_rate(rate)
         .with_notional(notional)
@@ -659,7 +659,7 @@ pub fn qs_instrument_floating_note(
         return Ok(handle);
     }
     let side = Side::LongReceive;
-    let instrument = MakeFloatingRateNote::<DualFwd>::default()
+    let instrument = MakeFloatingRateNote::<Recorded>::default()
         .with_identifier(name.to_string())
         .with_currency(parse_currency(currency)?)
         .with_forward_index(parse_index(forward_index)?)
@@ -1256,7 +1256,7 @@ pub fn qs_instrument_european_swaption(
         "Receiver" => SwaptionType::Receiver,
         _ => return Err(value_error("swaption_type must be Payer or Receiver")),
     };
-    let mut builder = quantsupport::prelude::MakeSwaption::<DualFwd>::default()
+    let mut builder = quantsupport::prelude::MakeSwaption::<Recorded>::default()
         .with_identifier(name.to_string())
         .with_currency(parse_currency(currency)?)
         .with_market_index(parse_index(market_index)?)

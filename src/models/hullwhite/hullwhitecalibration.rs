@@ -665,7 +665,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::{
             elements::volatilitysurfaceelement::VolatilitySurfaceElement,
             marketdatahandling::constructedelementstore::ConstructedElementStore,
@@ -693,8 +693,8 @@ mod tests {
 
     fn flat_surface_store(reference_date: Date, labels: &[String]) -> ConstructedElementStore {
         let smile = BTreeMap::from([
-            (F64Key::new(0.0), DualFwd::from(MARKET_VOL)),
-            (F64Key::new(0.10), DualFwd::from(MARKET_VOL)),
+            (F64Key::new(0.0), Recorded::from(MARKET_VOL)),
+            (F64Key::new(0.10), Recorded::from(MARKET_VOL)),
         ]);
         let mut points = BTreeMap::new();
         points.insert(Period::new(1, TimeUnit::Months), smile.clone());

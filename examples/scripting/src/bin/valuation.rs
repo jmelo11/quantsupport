@@ -7,8 +7,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut curve = discount_curve()?;
 
     // Price the ordinary library swap with the standard cashflow pricer.
-    let native_trade: SwapTrade<DualFwd> = native_swap()?.into();
-    let native_results = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new()
+    let native_trade: SwapTrade<Recorded> = native_swap()?.into();
+    let native_results = DiscountedCashflowPricer::<Swap<Recorded>, SwapTrade<Recorded>>::new()
         .evaluate(
             &native_trade,
             &[Request::Value, Request::Sensitivities],
@@ -24,9 +24,9 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Price the equivalent script with the same curve through the LGM market model.
     // Zero volatility makes this an exact representation comparison rather than
     // a Monte Carlo convergence test.
-    Tape::start_recording_fwd();
-    curve.put_pillars_on_tape();
-    let rate_model = LgmRateModel::new(DualFwd::scalar(0.03), DualFwd::zero(), &curve);
+    Recording::start();
+    curve.register_pillars();
+    let rate_model = LgmRateModel::new(Recorded::scalar(0.03), Recorded::zero(), &curve);
     let mut model = LgmMarketModel::new(
         Currency::USD,
         MarketIndex::SOFR,
@@ -51,9 +51,13 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .pillars()
         .ok_or_else(|| QSError::ValueNotSetErr("scripted curve pillars".to_string()))?
         .into_iter()
-        .map(|(label, pillar)| pillar.adjoint().map(|adjoint| (label, adjoint.value())))
+        .map(|(label, pillar)| {
+            pillar
+                .derivative()
+                .map(|derivative| (label, derivative.value()))
+        })
         .collect::<Result<HashMap<_, _>>>()?;
-    Tape::stop_recording_fwd();
+    Recording::stop();
 
     let difference = (native_npv - scripted_npv).abs();
     println!("Native swap NPV:     {native_npv:.8}");

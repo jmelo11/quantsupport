@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, expr::FloatExt, tape::Tape},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -16,7 +16,7 @@ use crate::{
         trade::Trade,
     },
     instruments::rates::capletfloorlet::{CapletFloorletTrade, CapletFloorletType},
-    math::probability::norm_cdf::norm_cdf,
+    math::probability::normcdf::norm_cdf,
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::Strike,
 };
@@ -78,7 +78,7 @@ impl ClosedFormHullWhiteCapletPricer {
 /// State for Hull-White caplet/floorlet pricing.
 #[derive(Default)]
 struct HullWhiteCapletState {
-    value: Option<DualFwd>,
+    value: Option<Recorded>,
     market_data: Option<MarketData>,
 }
 
@@ -123,16 +123,16 @@ impl HandleValue<CapletFloorletTrade, HullWhiteCapletState> for ClosedFormHullWh
         let tau = dc.year_fraction(start_date, end_date); // accrual period
 
         // Resolve strike
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
-        state.put_pillars_on_tape()?;
+        Recording::start();
+        Recording::checkpoint();
+        state.register_pillars()?;
 
-        let fwd: DualFwd = if caplet.fixing_date() < evaluation_date
+        let fwd: Recorded = if caplet.fixing_date() < evaluation_date
             && state
                 .get_market_data_reponse()
                 .is_some_and(MarketData::anchor_fixings)
         {
-            DualFwd::from(state.get_fixing(&fwd_index, caplet.fixing_date())?)
+            Recorded::from(state.get_fixing(&fwd_index, caplet.fixing_date())?)
         } else {
             state
                 .get_discount_curve_element(&fwd_index)?
@@ -152,30 +152,30 @@ impl HandleValue<CapletFloorletTrade, HullWhiteCapletState> for ClosedFormHullWh
         };
 
         if caplet.fixing_date() <= evaluation_date {
-            let payoff: DualFwd = match caplet.payoff_type() {
-                CapletFloorletType::Caplet if fwd.value() > strike => (fwd - strike).into(),
+            let payoff: Recorded = match caplet.payoff_type() {
+                CapletFloorletType::Caplet if fwd.value() > strike => fwd - strike,
                 CapletFloorletType::Floorlet if strike > fwd.value() => {
-                    (DualFwd::from(strike) - fwd).into()
+                    Recorded::from(strike) - fwd
                 }
-                _ => DualFwd::zero(),
+                _ => Recorded::zero(),
             };
             let factor = state
                 .get_discount_curve_element(&disc_index)?
                 .curve()
                 .discount_factor(payment_date)?;
-            let value: DualFwd = (factor * payoff * tau * trade.notional()).into();
+            let value: Recorded = factor * payoff * tau * trade.notional();
             let source = Discountable::currency(caplet);
             let value = if let Some(target) = state
                 .get_market_data_reponse()
                 .and_then(MarketData::base_currency)
                 .filter(|target| *target != source)
             {
-                (value * state.get_exchange_rate(source, target)?).into()
+                value * state.get_exchange_rate(source, target)?
             } else {
                 value
             };
             state.value = Some(value);
-            Tape::stop_recording_fwd();
+            Recording::stop();
             return Ok(value.value());
         }
 
@@ -183,51 +183,49 @@ impl HandleValue<CapletFloorletTrade, HullWhiteCapletState> for ClosedFormHullWh
         let x = 1.0 / tau.mul_add(strike, 1.0); // bond strike
         let sigma_p = self.zcb_price_volatility(t, big_s); // f64
 
-        // DualFwd discount factors from the forward curve
-        let df_t: DualFwd = state
+        // Recorded discount factors from the forward curve
+        let df_t: Recorded = state
             .get_discount_curve_element(&fwd_index)?
             .curve()
             .discount_factor(start_date)?;
-        let df_s: DualFwd = state
+        let df_s: Recorded = state
             .get_discount_curve_element(&fwd_index)?
             .curve()
             .discount_factor(payment_date)?;
 
-        // d1, d2 in DualFwd: ln(df_s / (X * df_t)) lives on the AD tape
-        let d1: DualFwd = (((df_s / (DualFwd::new(x) * df_t)).ln()
-            + DualFwd::new(0.5 * sigma_p * sigma_p))
-            / DualFwd::new(sigma_p))
-        .into();
-        let d2: DualFwd = (d1 - DualFwd::new(sigma_p)).into();
+        // d1, d2 in Recorded: ln(df_s / (X * df_t)) lives on the AD capture
+        let d1: Recorded = ((df_s / (Recorded::new(x) * df_t)).ln()
+            + Recorded::new(0.5 * sigma_p * sigma_p))
+            / Recorded::new(sigma_p);
+        let d2: Recorded = d1 - Recorded::new(sigma_p);
 
-        // Bond option price in DualFwd
-        let undiscounted: DualFwd = match caplet.payoff_type() {
+        // Bond option price in Recorded
+        let undiscounted: Recorded = match caplet.payoff_type() {
             // Caplet = (1+τK) * BondPut = (1+τK) * [X·P(0,T)·Φ(−d2) − P(0,S)·Φ(−d1)]
             CapletFloorletType::Caplet => {
-                let neg_d2: DualFwd = (DualFwd::new(0.0) - d2).into();
-                let neg_d1: DualFwd = (DualFwd::new(0.0) - d1).into();
-                let put: DualFwd =
-                    (DualFwd::new(x) * df_t * norm_cdf(neg_d2) - df_s * norm_cdf(neg_d1)).into();
-                (DualFwd::new(tau.mul_add(strike, 1.0)) * put).into()
+                let neg_d2: Recorded = Recorded::new(0.0) - d2;
+                let neg_d1: Recorded = Recorded::new(0.0) - d1;
+                let put: Recorded =
+                    Recorded::new(x) * df_t * norm_cdf(neg_d2) - df_s * norm_cdf(neg_d1);
+                Recorded::new(tau.mul_add(strike, 1.0)) * put
             }
             // Floorlet = (1+τK) * BondCall = (1+τK) * [P(0,S)·Φ(d1) − X·P(0,T)·Φ(d2)]
             CapletFloorletType::Floorlet => {
-                let call: DualFwd =
-                    (df_s * norm_cdf(d1) - DualFwd::new(x) * df_t * norm_cdf(d2)).into();
-                (DualFwd::new(tau.mul_add(strike, 1.0)) * call).into()
+                let call: Recorded = df_s * norm_cdf(d1) - Recorded::new(x) * df_t * norm_cdf(d2);
+                Recorded::new(tau.mul_add(strike, 1.0)) * call
             }
         };
 
         // Dual-curve adjustment: if discount index != forward index, multiply
         // by df_disc(S) / df_fwd(S)
-        let value: DualFwd = if disc_index == fwd_index {
-            (undiscounted * DualFwd::new(trade.notional())).into()
+        let value: Recorded = if disc_index == fwd_index {
+            undiscounted * Recorded::new(trade.notional())
         } else {
-            let df_disc_s: DualFwd = state
+            let df_disc_s: Recorded = state
                 .get_discount_curve_element(&disc_index)?
                 .curve()
                 .discount_factor(payment_date)?;
-            (undiscounted * df_disc_s / df_s * DualFwd::new(trade.notional())).into()
+            undiscounted * df_disc_s / df_s * Recorded::new(trade.notional())
         };
 
         let source = Discountable::currency(caplet);
@@ -236,12 +234,12 @@ impl HandleValue<CapletFloorletTrade, HullWhiteCapletState> for ClosedFormHullWh
             .and_then(MarketData::base_currency)
             .filter(|target| *target != source)
         {
-            (value * state.get_exchange_rate(source, target)?).into()
+            value * state.get_exchange_rate(source, target)?
         } else {
             value
         };
         state.value = Some(value);
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(value.value())
     }
 }
@@ -265,7 +263,7 @@ impl HandleSensitivities<CapletFloorletTrade, HullWhiteCapletState>
             })?
         };
 
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
 
         let caplet = trade.instrument();
         let fwd_index = caplet.market_index();
@@ -287,7 +285,7 @@ impl HandleSensitivities<CapletFloorletTrade, HullWhiteCapletState>
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?.value());
+            exposures.push(pillar.derivative()?.value());
         }
 
         // Forward curve sensitivities (when different from discount)
@@ -299,7 +297,7 @@ impl HandleSensitivities<CapletFloorletTrade, HullWhiteCapletState>
                 .unwrap_or_default()
             {
                 ids.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
 
@@ -416,7 +414,7 @@ mod tests {
     use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::{
             elements::curveelement::DiscountCurveElement,
             marketdatahandling::{
@@ -464,15 +462,15 @@ mod tests {
         }
     }
 
-    /// Builds market data with a flat DualFwd discount curve.
+    /// Builds market data with a flat Recorded discount curve.
     fn setup_hw_market_data(
         trade_date: Date,
         market_index: &MarketIndex,
         risk_free_rate: f64,
-    ) -> (MarketData, FlatForwardTermStructure<DualFwd>) {
+    ) -> (MarketData, FlatForwardTermStructure<Recorded>) {
         let discount_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(risk_free_rate),
+            Recorded::from(risk_free_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("discount_rate".to_string());

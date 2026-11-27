@@ -113,7 +113,7 @@ with context:
     )
     print(result.price)
     print(result.sensitivities)
-    print(result.cashflows)  # type, market_index, fixing_index, dates, notional, rate/spread, conventions
+    print(result.cashflows)  # type, market_index, dates, notional, rate/spread, conventions
     print(result.cashflow_summary)  # payment_date, currency, interest, capital, other, total
 ```
 
@@ -133,7 +133,7 @@ Cashflow currencies remain separate. Python pricers report monetary results in
 the context base currency.
 Unsupported aggregate measures remain absent, as does any measure omitted by a
 member. Repeated entries count as repeated positions. Cashflows preserve coupon
-types, contractual and effective fixing indices (including leg overrides),
+types, effective fixing indices (including leg overrides),
 accrual dates, day counts, overnight conventions and payoffs.
 Compatible fixed coupons use notional-weighted rates; compatible linear floating
 coupons use notional-weighted spreads. Pay and receive directions remain separate;

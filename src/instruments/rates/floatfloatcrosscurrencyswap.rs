@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         instrument::Instrument,
         request::LegsProvider,
@@ -180,7 +180,7 @@ where
 }
 
 #[allow(clippy::expect_used)]
-impl From<FloatFloatCrossCurrencySwap<f64>> for FloatFloatCrossCurrencySwap<DualFwd> {
+impl From<FloatFloatCrossCurrencySwap<f64>> for FloatFloatCrossCurrencySwap<Recorded> {
     fn from(value: FloatFloatCrossCurrencySwap<f64>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
@@ -196,8 +196,8 @@ impl From<FloatFloatCrossCurrencySwap<f64>> for FloatFloatCrossCurrencySwap<Dual
 }
 
 #[allow(clippy::expect_used)]
-impl From<FloatFloatCrossCurrencySwap<DualFwd>> for FloatFloatCrossCurrencySwap<f64> {
-    fn from(value: FloatFloatCrossCurrencySwap<DualFwd>) -> Self {
+impl From<FloatFloatCrossCurrencySwap<Recorded>> for FloatFloatCrossCurrencySwap<f64> {
+    fn from(value: FloatFloatCrossCurrencySwap<Recorded>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
             value.identifier,
@@ -211,7 +211,7 @@ impl From<FloatFloatCrossCurrencySwap<DualFwd>> for FloatFloatCrossCurrencySwap<
     }
 }
 
-impl From<FloatFloatCrossCurrencySwapTrade<f64>> for FloatFloatCrossCurrencySwapTrade<DualFwd> {
+impl From<FloatFloatCrossCurrencySwapTrade<f64>> for FloatFloatCrossCurrencySwapTrade<Recorded> {
     fn from(value: FloatFloatCrossCurrencySwapTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -223,8 +223,8 @@ impl From<FloatFloatCrossCurrencySwapTrade<f64>> for FloatFloatCrossCurrencySwap
     }
 }
 
-impl From<FloatFloatCrossCurrencySwapTrade<DualFwd>> for FloatFloatCrossCurrencySwapTrade<f64> {
-    fn from(value: FloatFloatCrossCurrencySwapTrade<DualFwd>) -> Self {
+impl From<FloatFloatCrossCurrencySwapTrade<Recorded>> for FloatFloatCrossCurrencySwapTrade<f64> {
+    fn from(value: FloatFloatCrossCurrencySwapTrade<Recorded>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

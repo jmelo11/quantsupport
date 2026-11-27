@@ -1,7 +1,7 @@
 use quantsupport::prelude::*;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::PathBuf;
+use std::path::Path;
 
 #[derive(serde::Deserialize)]
 struct JsonCurveSpecs {
@@ -16,11 +16,28 @@ struct JsonCreditCurveSpecs {
 /// Volatility surface and cube configurations loaded from `vol_specs.json`.
 #[derive(serde::Deserialize)]
 pub struct VolSpecs {
-    pub volatility_surfaces: Vec<VolatilitySurfaceConfiguration>,
-    pub volatility_cubes: Vec<VolatilityCubeConfiguration>,
+    volatility_surfaces: Vec<VolatilitySurfaceConfiguration>,
+    volatility_cubes: Vec<VolatilityCubeConfiguration>,
 }
 
-pub fn load_quotes(path: &PathBuf) -> Result<QuoteStore> {
+impl VolSpecs {
+    /// Transfers the deserialized surface and cube configurations without cloning.
+    #[must_use]
+    pub fn into_configurations(
+        self,
+    ) -> (
+        Vec<VolatilitySurfaceConfiguration>,
+        Vec<VolatilityCubeConfiguration>,
+    ) {
+        (self.volatility_surfaces, self.volatility_cubes)
+    }
+}
+
+/// Loads and validates the benchmark or example's market quote records.
+///
+/// # Errors
+/// Propagates file, JSON and quote-validation errors.
+pub fn load_quotes(path: &Path) -> Result<QuoteStore> {
     let file =
         File::open(path).map_err(|e| QSError::NotFoundErr(format!("{}: {e}", path.display())))?;
     let reader = BufReader::new(file);
@@ -29,7 +46,11 @@ pub fn load_quotes(path: &PathBuf) -> Result<QuoteStore> {
     QuoteStore::try_from(records)
 }
 
-pub fn load_curve_specs(path: &PathBuf) -> Result<Vec<CurveConfiguration>> {
+/// Loads yield-curve configurations while accepting legacy currency metadata.
+///
+/// # Errors
+/// Propagates file, JSON and configuration errors.
+pub fn load_curve_specs(path: &Path) -> Result<Vec<CurveConfiguration>> {
     let file =
         File::open(path).map_err(|e| QSError::NotFoundErr(format!("{}: {e}", path.display())))?;
     let reader = BufReader::new(file);
@@ -46,7 +67,11 @@ pub fn load_curve_specs(path: &PathBuf) -> Result<Vec<CurveConfiguration>> {
         .collect()
 }
 
-pub fn load_credit_curve_specs(path: &PathBuf) -> Result<Vec<CreditCurveConfiguration>> {
+/// Loads the credit curve configurations used for calibrated CVA.
+///
+/// # Errors
+/// Propagates file and JSON configuration errors.
+pub fn load_credit_curve_specs(path: &Path) -> Result<Vec<CreditCurveConfiguration>> {
     let file =
         File::open(path).map_err(|e| QSError::NotFoundErr(format!("{}: {e}", path.display())))?;
     let reader = BufReader::new(file);
@@ -55,7 +80,11 @@ pub fn load_credit_curve_specs(path: &PathBuf) -> Result<Vec<CreditCurveConfigur
     Ok(json.credit_curve_specs)
 }
 
-pub fn load_vol_specs(path: &PathBuf) -> Result<VolSpecs> {
+/// Loads the rate volatility surfaces and cubes used for model calibration.
+///
+/// # Errors
+/// Propagates file and JSON configuration errors.
+pub fn load_vol_specs(path: &Path) -> Result<VolSpecs> {
     let file =
         File::open(path).map_err(|e| QSError::NotFoundErr(format!("{}: {e}", path.display())))?;
     let reader = BufReader::new(file);
@@ -65,11 +94,14 @@ pub fn load_vol_specs(path: &PathBuf) -> Result<VolSpecs> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
+    /// Locates the package-owned JSON market and configuration fixture.
     fn data_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data")
     }
 
+    /// Checks legacy yield curve metadata preserves funding curve.
     #[test]
     fn legacy_yield_curve_metadata_preserves_funding_curve() {
         let specs = load_curve_specs(&data_dir().join("curve_specs.json")).unwrap();
@@ -82,6 +114,7 @@ mod tests {
             .any(|spec| *spec.market_index() == MarketIndex::ICP));
     }
 
+    /// Checks credit curve and margin terms are consistent.
     #[test]
     fn credit_curve_and_margin_terms_are_consistent() {
         let specs = load_credit_curve_specs(&data_dir().join("credit_curve_specs.json")).unwrap();
@@ -119,5 +152,12 @@ mod tests {
         assert_eq!(csa.funding_index, Some(MarketIndex::TermSOFR3m));
         let funding = csa.funding_spread_curve.unwrap();
         assert_eq!(funding.rates(), &[0.004, 0.005, 0.006]);
+        let reference = load_quotes(&data_dir().join("quotes.json"))
+            .unwrap()
+            .reference_date();
+        assert!(
+            funding.zero_rate(reference).is_ok(),
+            "funding overlay must cover the market reference date"
+        );
     }
 }

@@ -3,7 +3,7 @@ use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::{dual::DualFwd, forward::ADForward, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
@@ -22,7 +22,7 @@ use crate::{
 use super::interestratestermstructure::InterestRatesTermStructure;
 
 /// A dated zero-rate curve with explicit rate conventions and interpolation.
-/// With `T = DualFwd`, zero rates retain their AD links and expose labeled
+/// With `T = Recorded`, zero rates retain their AD links and expose labeled
 /// sensitivities through the [`Pillars`] trait.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(
@@ -257,7 +257,7 @@ macro_rules! impl_zero_curve {
             /// Rolls the curve forward, preserving discount-factor ratios at shifted pillars.
             ///
             /// # Errors
-            /// Returns an error for backward rolls or unavailable shifted discount factors.
+            /// Returns an error for differentiate rolls or unavailable shifted discount factors.
             pub fn advance_to_period(
                 &self,
                 period: Period,
@@ -268,7 +268,7 @@ macro_rules! impl_zero_curve {
             /// Rolls the curve to a new reference date.
             ///
             /// # Errors
-            /// Returns an error for backward rolls or unavailable shifted discount factors.
+            /// Returns an error for differentiate rolls or unavailable shifted discount factors.
             pub fn advance_to_date(
                 &self,
                 date: Date,
@@ -416,16 +416,16 @@ macro_rules! impl_zero_curve {
 }
 
 impl_zero_curve!(f64);
-impl_zero_curve!(DualFwd);
+impl_zero_curve!(Recorded);
 
 impl ZeroRateTermStructure<f64> {
     /// Converts the zero rates to AD values while preserving conventions and labels.
     #[must_use]
-    pub fn to_dual(&self) -> ZeroRateTermStructure<DualFwd> {
+    pub fn to_dual(&self) -> ZeroRateTermStructure<Recorded> {
         ZeroRateTermStructure {
             reference_date: self.reference_date,
             dates: self.dates.clone(),
-            rates: self.rates.iter().copied().map(DualFwd::new).collect(),
+            rates: self.rates.iter().copied().map(Recorded::new).collect(),
             year_fractions: self.year_fractions.clone(),
             rate_definition: self.rate_definition,
             interpolator: self.interpolator,
@@ -435,8 +435,9 @@ impl ZeroRateTermStructure<f64> {
     }
 }
 
-impl Pillars<DualFwd> for ZeroRateTermStructure<DualFwd> {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl Pillars<Recorded> for ZeroRateTermStructure<Recorded> {
+    /// Returns the labelled inputs used to report market sensitivities.
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.pillar_labels
             .as_ref()
             .map(|labels| labels.iter().cloned().zip(self.rates.iter()).collect())
@@ -446,16 +447,17 @@ impl Pillars<DualFwd> for ZeroRateTermStructure<DualFwd> {
         self.pillar_labels.clone()
     }
 
-    fn put_pillars_on_tape(&mut self) {
-        self.rates.iter_mut().for_each(DualFwd::put_on_tape);
+    /// Registers current labelled market pillars as independent compiler inputs.
+    fn register_pillars(&mut self) {
+        self.rates.iter_mut().for_each(Recorded::register_input);
     }
 }
 
-impl ADCurveElement for ZeroRateTermStructure<DualFwd> {
+impl ADCurveElement for ZeroRateTermStructure<Recorded> {
     fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
         let mut curve = self.clone();
         for value in &mut curve.rates {
-            *value = DualFwd::constant(ADForward::constant(value.value()));
+            *value = Recorded::constant(value.value());
         }
         Ok(Box::new(curve))
     }
@@ -464,7 +466,7 @@ impl ADCurveElement for ZeroRateTermStructure<DualFwd> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ad::tape::Tape;
+    use crate::ad::Recording;
 
     fn curve_values<T: Scalar>(
         curve: &dyn InterestRatesTermStructure<T>,
@@ -523,11 +525,11 @@ mod tests {
                     )
                 };
                 let curve = make_curve(rates.clone())?.with_pillar_labels(labels.clone())?;
-                Tape::stop_recording_fwd();
-                Tape::rewind_to_init_fwd();
+                Recording::stop();
+                Recording::clear();
                 let mut dual = curve.to_dual();
-                Tape::start_recording_fwd();
-                dual.put_pillars_on_tape();
+                Recording::start();
+                dual.register_pillars();
                 let element: &dyn ADCurveElement = &dual;
                 assert_eq!(element.pillar_labels(), Some(labels.clone()));
                 assert_eq!(
@@ -542,8 +544,8 @@ mod tests {
                 expected.push(curve.zero_rate_from_time(0.25)?);
                 for (output_index, (output, expected)) in outputs.iter().zip(expected).enumerate() {
                     assert!((output.value() - expected).abs() < 1e-12);
-                    Tape::reset_adjoints_fwd();
-                    let _ = output.backward();
+                    Recording::reset_derivatives();
+                    let _ = output.differentiate();
                     for (pillar_index, (_, pillar)) in
                         element.pillars().into_iter().flatten().enumerate()
                     {
@@ -559,14 +561,14 @@ mod tests {
                             Ok(values[output_index])
                         };
                         let finite_difference = (evaluate(plus)? - evaluate(minus)?) / (2.0 * bump);
-                        let adjoint = pillar.adjoint()?;
-                        assert!((adjoint - finite_difference).abs() < 1e-7 * (1.0 + finite_difference.abs()),
-                            "{interpolator:?}/{compounding:?}, output {output_index}, pillar {pillar_index}: AD {adjoint} vs FD {finite_difference}");
+                        let derivative = pillar.derivative()?;
+                        assert!((derivative - finite_difference).abs() < 1e-7 * (1.0 + finite_difference.abs()),
+                            "{interpolator:?}/{compounding:?}, output {output_index}, pillar {pillar_index}: AD {derivative} vs FD {finite_difference}");
                     }
                 }
                 assert_eq!(element.nodes().map(|nodes| nodes.len()), Some(dates.len()));
-                Tape::stop_recording_fwd();
-                Tape::rewind_to_init_fwd();
+                Recording::stop();
+                Recording::clear();
             }
         }
         Ok(())
@@ -602,11 +604,11 @@ mod tests {
             )
         };
         let curve = make_curve(rates.clone())?;
-        Tape::rewind_to_init_fwd();
-        Tape::start_recording_fwd();
+        Recording::clear();
+        Recording::start();
         let dual = curve.to_dual();
         let output = dual.advance_to_date(roll)?.discount_factor(payment)?;
-        let _ = output.backward();
+        let _ = output.differentiate();
         for (index, pillar) in dual.rates().iter().enumerate() {
             let mut plus = rates.clone();
             let mut minus = rates.clone();
@@ -618,23 +620,23 @@ mod tests {
                     .discount_factor(payment)
             };
             let finite_difference = (evaluate(plus)? - evaluate(minus)?) / 2e-6;
-            assert!((pillar.adjoint()? - finite_difference).abs() < 1e-7);
+            assert!((pillar.derivative()? - finite_difference).abs() < 1e-7);
         }
-        Tape::stop_recording_fwd();
-        Tape::rewind_to_init_fwd();
+        Recording::stop();
+        Recording::clear();
         Ok(())
     }
 
     #[test]
     fn zero_curve_ad_constructor_preserves_existing_links() -> Result<()> {
         let reference = Date::new(2026, 1, 1);
-        Tape::rewind_to_init_fwd();
-        Tape::start_recording_fwd();
-        let input = DualFwd::new(0.01);
+        Recording::clear();
+        Recording::start();
+        let input = Recorded::new(0.01);
         let curve = ZeroRateTermStructure::new(
             reference,
             vec![reference],
-            vec![input.mul_val(DualFwd::scalar(2.0))],
+            vec![input.mul_val(Recorded::scalar(2.0))],
             RateDefinition::new(
                 DayCounter::Actual365,
                 Compounding::Continuous,
@@ -644,11 +646,11 @@ mod tests {
             true,
         )?;
         let output = curve.discount_factor_from_time(2.0)?;
-        let _ = output.backward();
-        assert!((input.adjoint()? + 4.0 * (-0.04_f64).exp()).abs() < 1e-12);
+        let _ = output.differentiate();
+        assert!((input.derivative()? + 4.0 * (-0.04_f64).exp()).abs() < 1e-12);
         assert!(curve.with_pillar_labels(vec![]).is_err());
-        Tape::stop_recording_fwd();
-        Tape::rewind_to_init_fwd();
+        Recording::stop();
+        Recording::clear();
         Ok(())
     }
 
@@ -717,17 +719,17 @@ mod tests {
         let date = reference
             .advance(1, TimeUnit::Years)
             .expect("valid date advancement");
-        Tape::start_recording_fwd();
+        Recording::start();
         let mut dual = curve.to_dual();
-        dual.put_pillars_on_tape();
+        dual.register_pillars();
         let rate = dual.zero_rate(date)?;
-        let _ = rate.backward();
+        let _ = rate.differentiate();
         assert!((rate.value() - curve.zero_rate(date)?).abs() < 1e-12);
         assert!(dual
             .rates()
             .iter()
-            .all(|pillar| pillar.adjoint().is_ok_and(|value| value > 0.0)));
-        Tape::stop_recording_fwd();
+            .all(|pillar| pillar.derivative().is_ok_and(|value| value > 0.0)));
+        Recording::stop();
         let single = ZeroRateTermStructure::new(
             reference,
             vec![reference],

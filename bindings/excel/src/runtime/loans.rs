@@ -2,9 +2,9 @@
 
 use quantsupport::prelude::{
     BusinessDayConvention, Calendar, CashflowType, Compounding, Currency, Date, DateGenerationRule,
-    DayCounter, DualFwd, FixedRateCoupon, Frequency, InterestRate, Loan, LoanRepaymentStructure,
+    DayCounter, FixedRateCoupon, Frequency, InterestRate, Loan, LoanRepaymentStructure,
     MakeInstrument, MakeLoan, MakeSchedule, MarketDataProvider, MarketIndex, Period,
-    PrepaymentModelConfiguration,
+    PrepaymentModelConfiguration, Recorded,
 };
 use serde::{Deserialize, Serialize};
 use std::result::Result;
@@ -81,7 +81,7 @@ pub struct LoanTerms {
 }
 
 impl LoanTerms {
-    pub fn build_instrument(self, name: &str) -> Result<Loan<DualFwd>, String> {
+    pub fn build_instrument(self, name: &str) -> Result<Loan<Recorded>, String> {
         self.build_maker(name)?
             .build()
             .map_err(|error| error.to_string())
@@ -91,13 +91,13 @@ impl LoanTerms {
         self,
         name: &str,
         context: &dyn MarketDataProvider,
-    ) -> Result<Loan<DualFwd>, String> {
+    ) -> Result<Loan<Recorded>, String> {
         self.build_maker(name)?
             .build_using(context)
             .map_err(|error| error.to_string())
     }
 
-    fn build_maker(self, name: &str) -> Result<MakeLoan<DualFwd>, String> {
+    fn build_maker(self, name: &str) -> Result<MakeLoan<Recorded>, String> {
         let options = &self.options;
         let repayment = match self.repayment.trim().to_ascii_lowercase().as_str() {
             "french" => LoanRepaymentStructure::French,
@@ -298,7 +298,7 @@ mod tests {
         }
     }
     struct TestPosition {
-        trade: LoanTrade<DualFwd>,
+        trade: LoanTrade<Recorded>,
         discount_index: Option<MarketIndex>,
         rebuild: bool,
     }
@@ -399,7 +399,7 @@ mod tests {
                     Rc::new(RefCell::new(
                         FlatForwardTermStructure::new(
                             Date::new(2026, 2, 24),
-                            DualFwd::from(rate),
+                            Recorded::from(rate),
                             RateDefinition::new(
                                 DayCounter::Actual360,
                                 Compounding::Continuous,

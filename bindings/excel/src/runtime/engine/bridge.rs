@@ -364,18 +364,18 @@ impl Worker {
             self.owners.clear();
             registry::clear_workbooks();
         }
-        struct TapeGuard;
-        impl Drop for TapeGuard {
+        struct RecordingGuard;
+        impl Drop for RecordingGuard {
             fn drop(&mut self) {
-                use quantsupport::prelude::Tape;
-                Tape::stop_recording();
-                Tape::stop_recording_fwd();
-                // Retained contexts contain detached DualFwd inputs, never reverse tape nodes.
-                Tape::rewind_to_init();
-                Tape::<quantsupport::prelude::ADForward>::rewind_to_init_for();
+                use quantsupport::prelude::Recording;
+                Recording::stop();
+                Recording::stop();
+                // Retained contexts contain detached Recorded inputs, never reverse capture nodes.
+                Recording::clear();
+                Recording::clear();
             }
         }
-        let _guard = TapeGuard;
+        let _guard = RecordingGuard;
         let mut markets = Vec::new();
         for (position, definition) in spec.definitions.iter().enumerate() {
             if cancel.canceled() {

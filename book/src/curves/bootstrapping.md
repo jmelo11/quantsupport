@@ -132,7 +132,7 @@ At a converged solution, implicit differentiation gives
 
 The implemented own-quote derivative is diagonal by calibration-instrument
 construction. Parent dependencies are finite-differenced. These matrices
-reconnect solved factors to tape inputs through a local first-order relation:
+reconnect solved factors to compiler inputs through a local first-order relation:
 
 \\[
 x_i^{\rm AD}=x_i^\ast

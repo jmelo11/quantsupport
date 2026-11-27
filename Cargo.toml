@@ -20,10 +20,12 @@ members = [
 
 [workspace.package]
 version = "0.1.24"
+rust-version = "1.100"
 
 [package]
 name = "quantsupport"
 version.workspace = true
+rust-version.workspace = true
 edition = "2021"
 
 license = "MIT"
@@ -47,6 +49,10 @@ sobol_burley = { version = "0.5.0", default-features = false }
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 nalgebra = "0.34.1"
+cranelift-codegen = "0.137.1"
+cranelift-frontend = "0.137.1"
+cranelift-jit = "0.137.1"
+cranelift-module = "0.137.1"
 num-complex = "0.4"
 num-traits = "0.2"
 plotters = { version = "0.3", optional = true, default-features = false, features = ["bitmap_backend", "bitmap_encoder", "svg_backend", "ttf", "all_series", "all_elements", "full_palette"] }
@@ -57,6 +63,11 @@ serde_json = "1.0.149"
 [features]
 default = []
 plot = ["plotters"]
+
+# Tests exercise native compilation as well as pricing. Optimizing the JIT
+# compiler keeps those tests practical while retaining test debug assertions.
+[profile.test]
+opt-level = 2
 
 [lints.rust]
 missing_docs = "forbid"

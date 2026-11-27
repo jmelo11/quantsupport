@@ -1,15 +1,15 @@
 //! The atomic unit of exposure computation.
 //!
-//! A [`ContingentClaim`] represents a single contingent cashflow that can
-//! declare its market-data requirements via [`simulation_requests`](ContingentClaim::simulation_requests)
-//! and be valued on a simulated scenario via [`evaluate`](ContingentClaim::evaluate).
+//! A [`ContingentClaim`](crate::xva::contigentclaim::ContingentClaim) represents a single contingent cashflow that can
+//! declare its market-data requirements via [`simulation_requests`](crate::xva::contigentclaim::ContingentClaim::simulation_requests)
+//! and be valued on a simulated scenario via [`evaluate`](crate::xva::contigentclaim::ContingentClaim::evaluate).
 //!
 //! Trades are decomposed into one or more `ContingentClaim`s by the
-//! [`IntoContingentClaims`](super::makecontigentclaim::IntoContingentClaims) trait
-//! or the [`MakeContingentClaim`](super::makecontigentclaim::MakeContingentClaim) builder.
+//! [`IntoContingentClaims`](crate::xva::makecontigentclaim::IntoContingentClaims) trait
+//! or the [`MakeContingentClaim`](crate::xva::makecontigentclaim::MakeContingentClaim) builder.
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         collateral::Discountable,
         instrument::AssetClass,
@@ -194,7 +194,8 @@ impl ContingentClaim {
         self.index.as_ref()
     }
 
-    /// Returns the flat-vector index assigned by the [`PreprocessorExecutor`](super::visitors::preprocessorexecutor::PreprocessorExecutor).
+    /// Returns the response-block index assigned by the [`PreprocessorExecutor`](super::visitors::preprocessorexecutor::PreprocessorExecutor).
+    /// Identical market-request blocks can be shared by several independent claims.
     #[must_use]
     pub const fn idx(&self) -> Option<usize> {
         self.idx
@@ -439,7 +440,7 @@ impl ContingentClaim {
     ///
     /// # Errors
     /// Returns an error for scripted strategies, which require
-    /// `evaluate_dualfwd`, or propagates an inner claim's error.
+    /// `evaluate_recorded`, or propagates an inner claim's error.
     pub fn evaluate<T: Scalar + 'static>(&self, response: &SimulationResponse<T>) -> Result<T> {
         let sign = self.side().sign();
         let notional = self.notional();
@@ -477,7 +478,7 @@ impl ContingentClaim {
 
             ClaimEvaluationStrategy::Scripted { .. } => {
                 return Err(QSError::NotImplementedErr(
-                    "scripted claims require scenario-row DualFwd evaluation".to_string(),
+                    "scripted claims require scenario-row Recorded evaluation".to_string(),
                 ));
             }
         };
@@ -488,16 +489,16 @@ impl ContingentClaim {
             .mul_val(T::scalar(sign * notional)))
     }
 
-    /// Evaluates this claim from its indexed response block in a `DualFwd` scenario row.
+    /// Evaluates this claim from its indexed response block in a `Recorded` scenario row.
     ///
     /// # Errors
     /// Returns an error if preprocessing has not assigned an index, the model
     /// returned an incomplete response block, or the scripted payoff fails.
-    pub fn evaluate_dualfwd(
+    pub fn evaluate_recorded(
         &self,
         evaluation_date: Date,
-        responses: &[SimulationResponse<DualFwd>],
-    ) -> Result<DualFwd> {
+        responses: &[SimulationResponse<Recorded>],
+    ) -> Result<Recorded> {
         let index = self.idx.ok_or_else(|| {
             QSError::EvaluationErr(format!(
                 "contingent claim '{}' has not been indexed",
@@ -526,13 +527,13 @@ impl ContingentClaim {
                 ))
             })?;
         let raw = payoff.evaluate(evaluation_date, script_responses)?;
-        let discount = primary.discounts.unwrap_or_else(DualFwd::one);
-        let fx = primary.fx_rates.unwrap_or_else(DualFwd::one);
+        let discount = primary.discounts.unwrap_or_else(Recorded::one);
+        let fx = primary.fx_rates.unwrap_or_else(Recorded::one);
 
         Ok(raw
             .mul_val(discount)
             .mul_val(fx)
-            .mul_val(DualFwd::scalar(self.side.sign() * self.notional)))
+            .mul_val(Recorded::scalar(self.side.sign() * self.notional)))
     }
 }
 

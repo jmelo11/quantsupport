@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         instrument::Instrument,
         request::LegsProvider,
@@ -160,7 +160,7 @@ where
 }
 
 #[allow(clippy::expect_used)]
-impl From<BasisSwap<f64>> for BasisSwap<DualFwd> {
+impl From<BasisSwap<f64>> for BasisSwap<Recorded> {
     fn from(value: BasisSwap<f64>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
@@ -175,8 +175,8 @@ impl From<BasisSwap<f64>> for BasisSwap<DualFwd> {
 }
 
 #[allow(clippy::expect_used)]
-impl From<BasisSwap<DualFwd>> for BasisSwap<f64> {
-    fn from(value: BasisSwap<DualFwd>) -> Self {
+impl From<BasisSwap<Recorded>> for BasisSwap<f64> {
+    fn from(value: BasisSwap<Recorded>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
             value.identifier,
@@ -189,7 +189,7 @@ impl From<BasisSwap<DualFwd>> for BasisSwap<f64> {
     }
 }
 
-impl From<BasisSwapTrade<f64>> for BasisSwapTrade<DualFwd> {
+impl From<BasisSwapTrade<f64>> for BasisSwapTrade<Recorded> {
     fn from(value: BasisSwapTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -200,8 +200,8 @@ impl From<BasisSwapTrade<f64>> for BasisSwapTrade<DualFwd> {
     }
 }
 
-impl From<BasisSwapTrade<DualFwd>> for BasisSwapTrade<f64> {
-    fn from(value: BasisSwapTrade<DualFwd>) -> Self {
+impl From<BasisSwapTrade<Recorded>> for BasisSwapTrade<f64> {
+    fn from(value: BasisSwapTrade<Recorded>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

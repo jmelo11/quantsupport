@@ -3,15 +3,15 @@
 //! Builders and representations for cashflows, fixed-income products,
 //! equity derivatives, FX instruments, and interest-rate swaps.
 
-/// Cashflow module.
+/// Defines cashflows, coupons and the payment legs used by financial contracts.
 pub mod cashflows;
-/// Credit instruments module.
+/// Defines credit contracts and their instrument makers.
 pub mod credit;
-/// Equity instruments module.
+/// Defines equity derivatives and their instrument makers.
 pub mod equity;
-/// Bonds, deposits, floating-rate notes and loans.
+/// Provides the bonds, deposits, floating-rate notes and loans.
 pub mod fixedincome;
-/// FX instruments.
+/// Provides the FX instruments.
 pub mod fx;
-/// Rates instruments module.
+/// Defines interest-rate derivatives and their instrument makers.
 pub mod rates;

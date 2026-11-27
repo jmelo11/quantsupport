@@ -52,7 +52,7 @@ use crate::{
 /// The borrowed discount curve supplies `P(0, t)` and the initial forward
 /// curve. It is therefore both the calibration anchor and the source of the
 /// model's exact time-zero curve fit. Use [`f64`] for ordinary valuation and an
-/// AD scalar such as [`DualFwd`](crate::ad::dual::DualFwd) when parameter or
+/// AD scalar such as [`Recorded`](crate::ad::Recorded) when parameter or
 /// curve sensitivities are required.
 pub struct LgmRateModel<'a, T: Scalar> {
     lambda: T,
@@ -798,13 +798,29 @@ impl<'a, T: Scalar> LgmEquityModel<'a, T> {
     }
 }
 
+impl<T: Scalar> LgmFxModel<'_, T> {
+    /// Gaussian-state loadings in log FX drift.
+    #[must_use]
+    pub fn rate_state_loadings(&self, t: f64) -> (T, T) {
+        (self.domestic.H_dot(t), self.foreign.H_dot(t))
+    }
+}
+
+impl<T: Scalar> LgmEquityModel<'_, T> {
+    /// Domestic Gaussian-state loading in equity log drift.
+    #[must_use]
+    pub fn rate_state_loading(&self, t: f64) -> T {
+        self.domestic.H_dot(t)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, collections::BTreeMap, rc::Rc, str::FromStr};
 
     use super::*;
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::elements::volatilitysurfaceelement::VolatilitySurfaceElement,
         indices::marketindex::MarketIndex,
         math::interpolation::interpolator::Interpolator,
@@ -859,8 +875,8 @@ mod tests {
         let curve = flat_curve(reference_date)?;
 
         let smile = BTreeMap::from([
-            (F64Key::new(0.0), DualFwd::from(MARKET_VOL)),
-            (F64Key::new(0.10), DualFwd::from(MARKET_VOL)),
+            (F64Key::new(0.0), Recorded::from(MARKET_VOL)),
+            (F64Key::new(0.10), Recorded::from(MARKET_VOL)),
         ]);
         let mut points = BTreeMap::new();
         points.insert(Period::new(1, TimeUnit::Months), smile.clone());

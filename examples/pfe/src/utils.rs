@@ -200,7 +200,7 @@ pub fn bootstrap_curves(
     Ok(all_curves)
 }
 
-/// Extract an f64 discount term structure from a bootstrapped `DualFwd` curve.
+/// Extract an f64 discount term structure from a bootstrapped `Recorded` curve.
 ///
 /// Samples discount factors on a fine grid and builds a `DiscountTermStructure<f64>`.
 pub fn extract_f64_curve(

@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         collateral::Discountable,
         instrument::{AssetClass, Instrument},
@@ -179,7 +179,7 @@ where
     }
 }
 
-impl From<FixedRateDeposit<f64>> for FixedRateDeposit<DualFwd> {
+impl From<FixedRateDeposit<f64>> for FixedRateDeposit<Recorded> {
     fn from(value: FixedRateDeposit<f64>) -> Self {
         Self::new(
             value.identifier,
@@ -193,8 +193,8 @@ impl From<FixedRateDeposit<f64>> for FixedRateDeposit<DualFwd> {
     }
 }
 
-impl From<FixedRateDeposit<DualFwd>> for FixedRateDeposit<f64> {
-    fn from(value: FixedRateDeposit<DualFwd>) -> Self {
+impl From<FixedRateDeposit<Recorded>> for FixedRateDeposit<f64> {
+    fn from(value: FixedRateDeposit<Recorded>) -> Self {
         Self::new(
             value.identifier,
             value.units,
@@ -207,7 +207,7 @@ impl From<FixedRateDeposit<DualFwd>> for FixedRateDeposit<f64> {
     }
 }
 
-impl From<FixedRateDepositTrade<f64>> for FixedRateDepositTrade<DualFwd> {
+impl From<FixedRateDepositTrade<f64>> for FixedRateDepositTrade<Recorded> {
     fn from(value: FixedRateDepositTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -218,8 +218,8 @@ impl From<FixedRateDepositTrade<f64>> for FixedRateDepositTrade<DualFwd> {
     }
 }
 
-impl From<FixedRateDepositTrade<DualFwd>> for FixedRateDepositTrade<f64> {
-    fn from(value: FixedRateDepositTrade<DualFwd>) -> Self {
+impl From<FixedRateDepositTrade<Recorded>> for FixedRateDepositTrade<f64> {
+    fn from(value: FixedRateDepositTrade<Recorded>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

@@ -14,10 +14,11 @@ fn reference_date() -> Date {
     Date::new(2025, 1, 1)
 }
 
-fn curve() -> FlatForwardTermStructure<DualFwd> {
+/// Builds a labelled flat discount curve for the benchmark market.
+fn curve() -> FlatForwardTermStructure<Recorded> {
     FlatForwardTermStructure::new(
         reference_date(),
-        DualFwd::from(0.03),
+        Recorded::from(0.03),
         RateDefinition::new(
             DayCounter::Actual365,
             Compounding::Continuous,
@@ -27,8 +28,9 @@ fn curve() -> FlatForwardTermStructure<DualFwd> {
     .with_pillar_label("SOFR.flat".into())
 }
 
-fn native_trade() -> Result<SteppedCouponBondTrade<DualFwd>> {
-    let instrument = MakeSteppedCouponBond::<DualFwd>::default()
+/// Builds the ordinary trade used to compare scripted and native valuations.
+fn native_trade() -> Result<SteppedCouponBondTrade<Recorded>> {
+    let instrument = MakeSteppedCouponBond::<Recorded>::default()
         .with_identifier("SCRIPT-CHECK-STEP-CALL".into())
         .with_start_date(reference_date())
         .with_maturity_date(Date::new(2029, 1, 1))
@@ -146,9 +148,9 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .ok_or_else(|| QSError::ValueNotSetErr("native bond value".into()))?;
 
     let mut scripted_curve = curve();
-    Tape::start_recording_fwd();
-    scripted_curve.put_pillars_on_tape();
-    let rate_model = LgmRateModel::new(DualFwd::scalar(0.05), DualFwd::zero(), &scripted_curve);
+    Recording::start();
+    scripted_curve.register_pillars();
+    let rate_model = LgmRateModel::new(Recorded::scalar(0.05), Recorded::zero(), &scripted_curve);
     let mut model = LgmMarketModel::new(
         Currency::USD,
         MarketIndex::SOFR,
@@ -168,7 +170,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     .get("bond")
     .copied()
     .ok_or_else(|| QSError::ValueNotSetErr("scripted bond value".into()))?;
-    Tape::stop_recording_fwd();
+    Recording::stop();
 
     let difference = (native - scripted).abs();
     println!("Native tree PV:  {native:.10}");

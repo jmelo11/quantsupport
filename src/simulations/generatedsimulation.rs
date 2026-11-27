@@ -2,7 +2,7 @@
 //! [`SimulationBuilder`](crate::simulations::simulationbuilder::SimulationBuilder).
 
 use crate::{
-    ad::dual::DualFwd,
+    ad::Recorded,
     core::{
         elements::montecarlosimulationelement::ADMonteCarloSimulationElement, pillars::Pillars,
     },
@@ -14,15 +14,15 @@ use crate::{
 /// A materialized Monte Carlo simulation: a set of paths simulated on a fixed
 /// date grid by a configured model (Hull-White, Brownian motion, ...).
 ///
-/// Paths are generated as `f64` and then wrapped in [`DualFwd`], without
+/// Paths are generated as `f64` and then wrapped in [`Recorded`], without
 /// retaining derivatives through model inputs, calibration, or path generation.
 /// The simulation exposes no pillars. Wrapping a value does not create
-/// spot/volatility risk; the constructor may create unrelated tape leaves
-/// when recording is active.
+/// spot/volatility risk. Path values stay detached even when a pricing capture
+/// is active during market construction.
 pub struct GeneratedMonteCarloSimulation {
     market_index: MarketIndex,
     dates: Vec<Date>,
-    paths: Vec<Vec<DualFwd>>,
+    paths: Vec<Vec<Recorded>>,
     n_paths: i64,
     dt: f64,
 }
@@ -37,7 +37,7 @@ impl GeneratedMonteCarloSimulation {
         let n_paths = i64::try_from(paths.len()).unwrap_or(i64::MAX);
         let paths = paths
             .into_iter()
-            .map(|path| path.into_iter().map(DualFwd::new).collect())
+            .map(|path| path.into_iter().map(Recorded::detached).collect())
             .collect();
         Self {
             market_index,
@@ -49,8 +49,9 @@ impl GeneratedMonteCarloSimulation {
     }
 }
 
-impl MonteCarloSimulation<DualFwd> for GeneratedMonteCarloSimulation {
-    fn path(&self) -> &Vec<Vec<DualFwd>> {
+impl MonteCarloSimulation<Recorded> for GeneratedMonteCarloSimulation {
+    /// Returns a materialized path with its original numerical risk boundary.
+    fn path(&self) -> &Vec<Vec<Recorded>> {
         &self.paths
     }
 
@@ -71,8 +72,9 @@ impl MonteCarloSimulation<DualFwd> for GeneratedMonteCarloSimulation {
     }
 }
 
-impl Pillars<DualFwd> for GeneratedMonteCarloSimulation {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl Pillars<Recorded> for GeneratedMonteCarloSimulation {
+    /// Returns the labelled inputs used to report market sensitivities.
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         None
     }
 
@@ -80,7 +82,8 @@ impl Pillars<DualFwd> for GeneratedMonteCarloSimulation {
         None
     }
 
-    fn put_pillars_on_tape(&mut self) {}
+    /// Registers current labelled market pillars as independent compiler inputs.
+    fn register_pillars(&mut self) {}
 }
 
 impl ADMonteCarloSimulationElement for GeneratedMonteCarloSimulation {}

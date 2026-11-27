@@ -1,5 +1,5 @@
 #[cfg(test)]
-use crate::ad::dual::DualFwd;
+use crate::ad::Recorded;
 use crate::{
     ad::scalar::Scalar,
     core::{
@@ -30,7 +30,7 @@ use std::marker::PhantomData;
 /// ```rust
 /// use quantsupport::prelude::*;
 ///
-/// let basis_swap = MakeBasisSwap::<DualFwd>::default()
+/// let basis_swap = MakeBasisSwap::<Recorded>::default()
 ///     .with_identifier("BASIS-3M6M".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2026, 1, 1))
@@ -380,8 +380,8 @@ mod tests {
     use super::*;
     use crate::core::instrument::Instrument;
 
-    fn base_builder() -> MakeBasisSwap<DualFwd> {
-        MakeBasisSwap::<DualFwd>::default()
+    fn base_builder() -> MakeBasisSwap<Recorded> {
+        MakeBasisSwap::<Recorded>::default()
             .with_identifier("basis_swap_test".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))
@@ -407,7 +407,7 @@ mod tests {
 
     #[test]
     fn test_build_basis_swap_missing_receive_index_fails() {
-        let result = MakeBasisSwap::<DualFwd>::default()
+        let result = MakeBasisSwap::<Recorded>::default()
             .with_identifier("basis_swap_missing_receive".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))

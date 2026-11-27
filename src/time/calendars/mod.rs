@@ -1,51 +1,51 @@
-/// Brazil calendar implementation.
+/// Provides the Brazilian holiday calendar implementation.
 pub mod brazil;
-/// Chile calendar implementation.
+/// Provides the Chilean holiday calendar implementation.
 pub mod chile;
-/// Null calendar implementation.
+/// Provides the null calendar implementation.
 pub mod nullcalendar;
-/// Target calendar implementation.
+/// Provides the TARGET holiday calendar implementation.
 pub mod target;
-/// Calendar traits and interfaces.
+/// Provides the calendar traits and interfaces.
 pub mod traits;
-/// United States calendar implementation.
+/// Provides the United States holiday calendar implementation.
 pub mod unitedstates;
-/// Weekends only calendar implementation.
+/// Provides the weekends only calendar implementation.
 pub mod weekendsonly;
 
-/// Japan bank calendar.
+/// Provides the Japanese bank holiday calendar.
 pub mod japan;
-/// Joint calendars for multiple markets.
+/// Provides the joint calendars for multiple markets.
 pub mod jointcalendar;
-/// London settlement calendar.
+/// Provides the London settlement calendar.
 pub mod unitedkingdom;
 
-/// Australia business-day calendar.
+/// Provides the Australian business-day calendar.
 pub mod australia;
 
-/// Canada business-day calendar.
+/// Provides the Canadian business-day calendar.
 pub mod canada;
 
-/// Switzerland business-day calendar.
+/// Provides the Swiss business-day calendar.
 pub mod switzerland;
 
-/// `NewZealand` business-day calendar.
+/// Provides the New Zealand business-day calendar.
 pub mod newzealand;
 
-/// Norway business-day calendar.
+/// Provides the Norwegian business-day calendar.
 pub mod norway;
 
-/// Sweden business-day calendar.
+/// Provides the Swedish business-day calendar.
 pub mod sweden;
 
-/// Denmark business-day calendar.
+/// Provides the Danish business-day calendar.
 pub mod denmark;
 
-/// `SouthKorea` business-day calendar.
+/// Provides the South Korean business-day calendar.
 pub mod southkorea;
 
-/// `SouthAfrica` business-day calendar.
+/// Provides the South African business-day calendar.
 pub mod southafrica;
 
-/// China business-day calendar.
+/// Provides the Chinese business-day calendar.
 pub mod china;

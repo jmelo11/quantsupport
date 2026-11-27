@@ -7,9 +7,9 @@ use crate::{currencies::currency::Currency, time::date::Date};
 /// such pairs from its spot FX store, including available triangulation paths.
 /// A single currency requests the spot observations needed for conversion to
 /// the context's base currency. The pricer composes that conversion on its AD
-/// tape. The context does not use [`Self::date`] to construct a forward FX rate;
+/// capture. The context does not use [`Self::date`] to construct a forward FX rate;
 /// a simulation model may interpret it relative to its own domestic currency.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct FxRequest {
     base: Currency,
     quote: Option<Currency>,

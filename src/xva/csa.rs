@@ -1,6 +1,6 @@
 //! CSA (Credit Support Annex) terms — per-client collateral and credit configuration.
 //!
-//! Each counterparty (netting agreement) carries its own [`CsaTerms`]
+//! Each counterparty (netting agreement) carries its own [`CsaTerms`](crate::xva::csa::CsaTerms)
 //! describing the collateral treatment (which curve remunerates posted
 //! collateral) and the credit/funding parameters used for CVA and FVA.
 //! The struct is serde-deserializable so it can be loaded straight from
@@ -158,17 +158,19 @@ impl<T: Scalar> VariationMarginAccount<T> {
     /// Accrues the retained balance, settles any margin call and returns unsecured exposure.
     pub fn exposure_after_call(&mut self, exposure: T, accrual_factor: T) -> T {
         self.balance = self.balance.mul_val(accrual_factor);
-        let target = if exposure.value() > self.counterparty_threshold {
-            exposure.sub_val(T::scalar(self.counterparty_threshold))
-        } else if exposure.value() < -self.own_threshold {
-            exposure.add_val(T::scalar(self.own_threshold))
-        } else {
-            T::zero()
-        };
+        let positive = T::scalar(self.counterparty_threshold);
+        let negative = T::scalar(-self.own_threshold);
+        let target = exposure.select_greater(
+            positive,
+            exposure.sub_val(positive),
+            negative.select_greater(exposure, exposure.sub_val(negative), T::zero()),
+        );
         let transfer = target.sub_val(self.balance);
-        if transfer.value().abs() >= self.minimum_transfer_amount {
-            self.balance = target;
-        }
+        self.balance = T::scalar(self.minimum_transfer_amount).select_greater(
+            transfer.abs(),
+            self.balance,
+            target,
+        );
         exposure.sub_val(self.balance)
     }
 }
@@ -240,43 +242,44 @@ mod tests {
         terms.validate()
     }
 
+    /// Checks variation margin preserves recorded derivatives.
     #[test]
-    fn variation_margin_preserves_dualfwd_derivatives() -> Result<()> {
-        use crate::ad::{dual::DualFwd, tape::Tape};
+    fn variation_margin_preserves_recorded_derivatives() -> Result<()> {
+        use crate::ad::{Recorded, Recording};
 
-        Tape::rewind_to_init_fwd();
-        Tape::start_recording_fwd();
-        let first = DualFwd::new(100.0);
-        let second = DualFwd::new(103.0);
+        Recording::clear();
+        Recording::start();
+        let first = Recorded::new(100.0);
+        let second = Recorded::new(103.0);
         let mut account = VariationMarginAccount::new(10.0, 20.0, 5.0)?;
-        let capped = account.exposure_after_call(first, DualFwd::one());
-        let retained = account.exposure_after_call(second, DualFwd::one());
+        let capped = account.exposure_after_call(first, Recorded::one());
+        let retained = account.exposure_after_call(second, Recorded::one());
         assert_eq!(capped.value(), 10.0);
         assert_eq!(retained.value(), 13.0);
-        retained.backward()?;
-        assert_eq!(first.adjoint()?.value(), -1.0);
-        assert_eq!(second.adjoint()?.value(), 1.0);
-        Tape::stop_recording_fwd();
-        Tape::rewind_to_init_fwd();
+        retained.differentiate()?;
+        assert_eq!(first.derivative()?.value(), -1.0);
+        assert_eq!(second.derivative()?.value(), 1.0);
+        Recording::stop();
+        Recording::clear();
         Ok(())
     }
 
     #[test]
     fn variation_margin_accrual_sensitivity_matches_bump() -> Result<()> {
-        use crate::ad::{dual::DualFwd, tape::Tape};
+        use crate::ad::{Recorded, Recording};
 
-        Tape::rewind_to_init_fwd();
-        Tape::start_recording_fwd();
-        let first = DualFwd::new(100.0);
-        let second = DualFwd::new(103.0);
-        let discount = DualFwd::new(0.99);
+        Recording::clear();
+        Recording::start();
+        let first = Recorded::new(100.0);
+        let second = Recorded::new(103.0);
+        let discount = Recorded::new(0.99);
         let mut account = VariationMarginAccount::new(10.0, 20.0, 5.0)?;
-        let capped = account.exposure_after_call(first, DualFwd::one());
+        let capped = account.exposure_after_call(first, Recorded::one());
         assert_eq!(capped.value(), 10.0);
-        let residual = account.exposure_after_call(second, DualFwd::one().div_val(discount));
-        residual.backward()?;
-        assert!((first.adjoint()?.value() + 1.0 / 0.99).abs() < 1e-12);
-        assert_eq!(second.adjoint()?.value(), 1.0);
+        let residual = account.exposure_after_call(second, Recorded::one().div_val(discount));
+        residual.differentiate()?;
+        assert!((first.derivative()?.value() + 1.0 / 0.99).abs() < 1e-12);
+        assert_eq!(second.derivative()?.value(), 1.0);
         let bump = 1e-6;
         let evaluate = |discount: f64| -> Result<f64> {
             let mut account = VariationMarginAccount::<f64>::new(10.0, 20.0, 5.0)?;
@@ -284,9 +287,9 @@ mod tests {
             Ok(account.exposure_after_call(103.0, 1.0 / discount))
         };
         let finite_difference = (evaluate(0.99 + bump)? - evaluate(0.99 - bump)?) / (2.0 * bump);
-        assert!((discount.adjoint()?.value() - finite_difference).abs() < 1e-7);
-        Tape::stop_recording_fwd();
-        Tape::rewind_to_init_fwd();
+        assert!((discount.derivative()?.value() - finite_difference).abs() < 1e-7);
+        Recording::stop();
+        Recording::clear();
         Ok(())
     }
 }

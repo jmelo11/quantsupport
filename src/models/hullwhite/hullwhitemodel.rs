@@ -1,6 +1,6 @@
 use crate::{
     ad::scalar::Scalar,
-    math::probability::norm_cdf::norm_cdf,
+    math::probability::normcdf::norm_cdf,
     models::{
         hullwhite::{
             hullwhitecalibration::HullWhiteTimeDependentVolatility,

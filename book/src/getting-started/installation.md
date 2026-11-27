@@ -26,6 +26,18 @@ core pricing. Applications loading JSON add their own `serde_json` dependency.
 The library owns serializable financial types, while the application owns file
 locations and I/O.
 
+Build the library with the stable Rust toolchain. Updating the stable channel
+before a source build keeps the compiler aligned with the channel used by CI:
+
+```sh
+rustup update stable
+cargo +stable build -p quantsupport
+```
+
+Automatic differentiation is included in the library. The
+[differentiation guide](../risk/aad.md) explains how pricing requests register
+market inputs, compile derivatives and reuse prepared calculations.
+
 For the source checkout:
 
 ```sh

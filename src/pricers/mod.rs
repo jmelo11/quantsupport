@@ -3,17 +3,17 @@
 //! Cashflow-discounting and Monte Carlo pricers for
 //! fixed-income, equity, FX, and rates instruments.
 
-/// Cashflow discounting pricers.
+/// Provides the cashflow discounting pricers.
 pub mod cashflows;
-/// Credit pricers.
+/// Provides the credit pricers.
 pub mod credit;
-/// Equity pricers
+/// Provides the equity pricers.
 pub mod equity;
-/// Fixed-income security pricers.
+/// Values bonds, deposits, notes and amortizing loans.
 pub mod fixedincome;
-/// FX pricers.
+/// Provides the FX pricers.
 pub mod fx;
-/// Streaming portfolio valuation and aggregation.
+/// Streams trade valuations into portfolio accumulators.
 pub mod portfoliopricer;
-/// Rates pricers.
+/// Provides the rates pricers.
 pub mod rates;

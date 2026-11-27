@@ -181,7 +181,7 @@ mod resolution_tests {
                 .with_discount_curve_index(Currency::EUR, MarketIndex::ESTR),
         ));
         let mut registrations: HashMap<TypeId, Box<dyn ErasedPricer>> = HashMap::new();
-        registrations.insert(TypeId::of::<LoanTrade<DualFwd>>(), Box::new(pricer));
+        registrations.insert(TypeId::of::<LoanTrade<Recorded>>(), Box::new(pricer));
         let evaluator = Evaluator::new(registrations);
         let low = market(reference(), 0.02, FixingStore::default());
         let high = market(reference(), 0.08, FixingStore::default());

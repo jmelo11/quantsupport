@@ -1,7 +1,7 @@
 use std::cell::{Ref, RefMut};
 
 use crate::{
-    ad::dual::DualFwd,
+    ad::Recorded,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::Interpolator,
@@ -20,7 +20,7 @@ use crate::{
 /// differentiation contexts. It combines the properties of an interest rates
 /// term structure and pillars, and allows for cloning.
 pub trait ADCurveElement:
-    InterestRatesTermStructure<DualFwd> + Pillars<DualFwd> + Send + Sync
+    InterestRatesTermStructure<Recorded> + Pillars<Recorded> + Send + Sync
 {
     /// Copies a curve with independent numeric pillars and detached AD nodes.
     /// Immutable calibration metadata may be shared between copies.
@@ -39,11 +39,12 @@ pub trait ADCurveElement:
     }
 }
 
-impl InterestRatesTermStructure<DualFwd> for Box<dyn ADCurveElement> {
+impl InterestRatesTermStructure<Recorded> for Box<dyn ADCurveElement> {
     fn reference_date(&self) -> Date {
         self.as_ref().reference_date()
     }
-    fn discount_factor(&self, date: Date) -> Result<DualFwd> {
+    /// Returns the discount factor at a date under the curve conventions.
+    fn discount_factor(&self, date: Date) -> Result<Recorded> {
         self.as_ref().discount_factor(date)
     }
     fn forward_rate(
@@ -52,32 +53,37 @@ impl InterestRatesTermStructure<DualFwd> for Box<dyn ADCurveElement> {
         end: Date,
         comp: Compounding,
         freq: Frequency,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         self.as_ref().forward_rate(start, end, comp, freq)
     }
-    fn nodes(&self) -> Option<Vec<(Date, DualFwd)>> {
+    /// Returns the curve nodes in their interpolation order.
+    fn nodes(&self) -> Option<Vec<(Date, Recorded)>> {
         self.as_ref().nodes()
     }
     fn day_counter(&self) -> Option<DayCounter> {
         self.as_ref().day_counter()
     }
-    fn discount_factor_from_time(&self, time: f64) -> Result<DualFwd> {
+    /// Returns the discount factor for a day-count year fraction.
+    fn discount_factor_from_time(&self, time: f64) -> Result<Recorded> {
         self.as_ref().discount_factor_from_time(time)
     }
-    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
+    /// Returns the forward rate between two day-count year fractions.
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<Recorded> {
         self.as_ref().forward_rate_from_time(start, end)
     }
 }
 
-impl Pillars<DualFwd> for Box<dyn ADCurveElement> {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl Pillars<Recorded> for Box<dyn ADCurveElement> {
+    /// Returns the labelled inputs used to report market sensitivities.
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.as_ref().pillars()
     }
     fn pillar_labels(&self) -> Option<Vec<String>> {
         self.as_ref().pillar_labels()
     }
-    fn put_pillars_on_tape(&mut self) {
-        self.as_mut().put_pillars_on_tape();
+    /// Registers current labelled market pillars as independent compiler inputs.
+    fn register_pillars(&mut self) {
+        self.as_mut().register_pillars();
     }
 }
 

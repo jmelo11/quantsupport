@@ -114,7 +114,7 @@ market, load the corresponding snapshot as described below.
 `MarketSnapshot` records one observation instant together with a complete set
 of native construction inputs. `MarketSnapshotStore` holds such observations.
 Snapshots preserve quote levels, FX and configuration—including direct zero
-rates—but not constructed curves or an AD tape. Contexts supplied with runtime
+rates—but not constructed curves or an AD capture. Contexts supplied with runtime
 market objects cannot be captured as if those objects were serializable
 construction instructions.
 

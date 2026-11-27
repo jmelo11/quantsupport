@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, expr::FloatExt, tape::Tape},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -18,7 +18,7 @@ use crate::{
         cashflows::cashflowtype::CashflowType,
         rates::europeanswaption::{EuropeanSwaptionTrade, SwaptionType},
     },
-    math::probability::norm_cdf::norm_cdf,
+    math::probability::normcdf::norm_cdf,
     models::{
         hullwhite::parameters::{hull_white_piecewise_variance, HullWhiteParameters},
         modelconfiguration::{
@@ -41,7 +41,7 @@ use std::collections::HashSet;
 /// per square-root year. Volatility can be supplied directly or resolved by
 /// the shared Hull-White calibration from a surface or cube.
 ///
-/// Curve inputs remain on the AD tape throughout the decomposition, including
+/// Curve inputs remain on the AD capture throughout the decomposition, including
 /// the implicit critical-rate solve, so [`Request::Sensitivities`] returns
 /// sensitivities to the requested curve and calibration volatility pillars.
 ///
@@ -60,8 +60,8 @@ struct JamshidianTerm {
     payment_date: Date,
     coefficient: f64,
     b: f64,
-    affine_a: DualFwd,
-    forward_df: DualFwd,
+    affine_a: Recorded,
+    forward_df: Recorded,
 }
 
 impl ClosedFormHullWhiteSwaptionPricer {
@@ -134,19 +134,19 @@ impl ClosedFormHullWhiteSwaptionPricer {
         &self,
         option_time: f64,
         bond_time: f64,
-        state_variance: DualFwd,
-        curve: &dyn InterestRatesTermStructure<DualFwd>,
-    ) -> Result<DualFwd> {
+        state_variance: Recorded,
+        curve: &dyn InterestRatesTermStructure<Recorded>,
+    ) -> Result<Recorded> {
         let b = self.b(option_time, bond_time);
         let option_df = curve.discount_factor_from_time(option_time)?;
         let bond_df = curve.discount_factor_from_time(bond_time)?;
 
         let h = 1.0 / 365.0;
         let option_df_plus = curve.discount_factor_from_time(option_time + h)?;
-        let forward_at_option: DualFwd = (-(option_df_plus / option_df).ln() / h).into();
-        let variance_adjustment: DualFwd = (state_variance * (0.5 * b * b)).into();
-        let log_a: DualFwd =
-            ((bond_df / option_df).ln() + forward_at_option * b - variance_adjustment).into();
+        let forward_at_option: Recorded = -(option_df_plus / option_df).ln() / h;
+        let variance_adjustment: Recorded = state_variance * (0.5 * b * b);
+        let log_a: Recorded =
+            (bond_df / option_df).ln() + forward_at_option * b - variance_adjustment;
         Ok(log_a.exp())
     }
 
@@ -192,16 +192,16 @@ impl ClosedFormHullWhiteSwaptionPricer {
     }
 
     /// Adds the implicit curve dependence of the critical rate to the AD graph.
-    fn implicit_critical_rate(terms: &[JamshidianTerm], rate: f64) -> Result<DualFwd> {
-        let rate = DualFwd::new(rate);
-        let mut objective = DualFwd::new(-1.0);
-        let mut derivative = DualFwd::zero();
+    fn implicit_critical_rate(terms: &[JamshidianTerm], rate: f64) -> Result<Recorded> {
+        let rate = Recorded::new(rate);
+        let mut objective = Recorded::new(-1.0);
+        let mut derivative = Recorded::zero();
 
         for term in terms {
-            let exponent: DualFwd = (rate * -term.b).into();
-            let conditional_bond: DualFwd = (term.affine_a * exponent.exp()).into();
-            objective = (objective + conditional_bond * term.coefficient).into();
-            derivative = (derivative - conditional_bond * (term.coefficient * term.b)).into();
+            let exponent: Recorded = rate * -term.b;
+            let conditional_bond: Recorded = term.affine_a * exponent.exp();
+            objective += conditional_bond * term.coefficient;
+            derivative -= conditional_bond * (term.coefficient * term.b);
         }
 
         if derivative.value().abs() < 1e-14 {
@@ -212,43 +212,42 @@ impl ClosedFormHullWhiteSwaptionPricer {
 
         // At the converged scalar root, one Newton correction supplies the
         // implicit derivative dr*/dq = -(df/dq) / (df/dr).
-        Ok((rate - objective / derivative).into())
+        Ok(rate - objective / derivative)
     }
 
     /// Prices the zero-coupon bond option used in payer or receiver swaption decomposition.
     fn bond_option(
         option_type: SwaptionType,
-        bond_volatility: DualFwd,
-        strike: DualFwd,
-        option_df: DualFwd,
-        bond_df: DualFwd,
-    ) -> DualFwd {
-        let strike_value: DualFwd = (strike * option_df).into();
+        bond_volatility: Recorded,
+        strike: Recorded,
+        option_df: Recorded,
+        bond_df: Recorded,
+    ) -> Recorded {
+        let strike_value: Recorded = strike * option_df;
         if bond_volatility.value() <= 1e-12 {
-            let intrinsic: DualFwd = match option_type {
-                SwaptionType::Payer => (strike_value - bond_df).into(),
-                SwaptionType::Receiver => (bond_df - strike_value).into(),
+            let intrinsic: Recorded = match option_type {
+                SwaptionType::Payer => strike_value - bond_df,
+                SwaptionType::Receiver => bond_df - strike_value,
             };
             return if intrinsic.value() > 0.0 {
                 intrinsic
             } else {
-                DualFwd::zero()
+                Recorded::zero()
             };
         }
 
-        let d1: DualFwd = (((bond_df / strike_value).ln()
+        let d1: Recorded = ((bond_df / strike_value).ln()
             + bond_volatility * bond_volatility * 0.5)
-            / bond_volatility)
-            .into();
-        let d2: DualFwd = (d1 - bond_volatility).into();
+            / bond_volatility;
+        let d2: Recorded = d1 - bond_volatility;
 
         match option_type {
             SwaptionType::Payer => {
-                let negative_d1: DualFwd = (-d1).into();
-                let negative_d2: DualFwd = (-d2).into();
-                (strike_value * norm_cdf(negative_d2) - bond_df * norm_cdf(negative_d1)).into()
+                let negative_d1: Recorded = -d1;
+                let negative_d2: Recorded = -d2;
+                strike_value * norm_cdf(negative_d2) - bond_df * norm_cdf(negative_d1)
             }
-            SwaptionType::Receiver => (bond_df * norm_cdf(d1) - strike_value * norm_cdf(d2)).into(),
+            SwaptionType::Receiver => bond_df * norm_cdf(d1) - strike_value * norm_cdf(d2),
         }
     }
 
@@ -256,10 +255,10 @@ impl ClosedFormHullWhiteSwaptionPricer {
     #[allow(clippy::too_many_lines)]
     fn swaption_value(
         &self,
-        trade: &EuropeanSwaptionTrade<DualFwd>,
+        trade: &EuropeanSwaptionTrade<Recorded>,
         state: &HullWhiteSwaptionState,
-        parameters: &HullWhiteParameters<DualFwd>,
-    ) -> Result<DualFwd> {
+        parameters: &HullWhiteParameters<Recorded>,
+    ) -> Result<Recorded> {
         let swaption = trade.instrument();
         let forward_index = swaption.market_index();
         let discount_index = if let Some(policy) = &self.discount_policy {
@@ -291,7 +290,7 @@ impl ClosedFormHullWhiteSwaptionPricer {
         let state_std_dev = if state_variance.value() > 0.0 {
             state_variance.sqrt()
         } else {
-            DualFwd::zero()
+            Recorded::zero()
         };
 
         let fixed_coupons: Vec<_> = swaption
@@ -349,13 +348,13 @@ impl ClosedFormHullWhiteSwaptionPricer {
             None
         };
 
-        let mut value = DualFwd::zero();
+        let mut value = Recorded::zero();
         for term in &terms {
-            let exponent: DualFwd = (critical_rate * -term.b).into();
-            let bond_strike: DualFwd = (term.affine_a * exponent.exp()).into();
+            let exponent: Recorded = critical_rate * -term.b;
+            let bond_strike: Recorded = term.affine_a * exponent.exp();
             let mut component = Self::bond_option(
                 swaption.underlying_type(),
-                (state_std_dev * term.b).into(),
+                state_std_dev * term.b,
                 bond_strike,
                 option_df,
                 term.forward_df,
@@ -363,18 +362,18 @@ impl ClosedFormHullWhiteSwaptionPricer {
 
             if let Some(curve) = &discount_curve {
                 let discount_df = curve.discount_factor(term.payment_date)?;
-                component = (component * discount_df / term.forward_df).into();
+                component = component * discount_df / term.forward_df;
             }
-            value = (value + component * term.coefficient).into();
+            value += component * term.coefficient;
         }
 
-        Ok((value * trade.notional() * trade.side().sign()).into())
+        Ok(value * trade.notional() * trade.side().sign())
     }
 }
 
 #[derive(Default)]
 struct HullWhiteSwaptionState {
-    value: Option<DualFwd>,
+    value: Option<Recorded>,
     market_data: Option<MarketData>,
 }
 
@@ -388,12 +387,12 @@ impl PricerState for HullWhiteSwaptionState {
     }
 }
 
-impl HandleValue<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
+impl HandleValue<EuropeanSwaptionTrade<Recorded>, HullWhiteSwaptionState>
     for ClosedFormHullWhiteSwaptionPricer
 {
     fn handle_value(
         &self,
-        trade: &EuropeanSwaptionTrade<DualFwd>,
+        trade: &EuropeanSwaptionTrade<Recorded>,
         state: &mut HullWhiteSwaptionState,
     ) -> Result<f64> {
         self.validate_parameters()?;
@@ -406,10 +405,10 @@ impl HandleValue<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
             parameter_source: self.parameter_source.clone(),
         })?;
         parameters.resolve_calibration(market, &trade.instrument().market_index())?;
-        Tape::start_recording_fwd();
-        let value: Result<DualFwd> = (|| {
-            Tape::set_mark_fwd();
-            state.put_pillars_on_tape()?;
+        Recording::start();
+        let value: Result<Recorded> = (|| {
+            Recording::checkpoint();
+            state.register_pillars()?;
             let market = state
                 .market_data
                 .as_mut()
@@ -419,7 +418,7 @@ impl HandleValue<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
                 .volatility_cubes_mut()
                 .values_mut()
             {
-                cube.cube_mut().put_pillars_on_tape();
+                cube.cube_mut().register_pillars();
             }
             let parameters = parameters.ad_parameters(market)?;
             let value = self.swaption_value(trade, state, &parameters)?;
@@ -429,12 +428,12 @@ impl HandleValue<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
                 .and_then(MarketData::base_currency)
                 .filter(|target| *target != source)
             {
-                Ok((value * state.get_exchange_rate(source, target)?).into())
+                Ok(value * state.get_exchange_rate(source, target)?)
             } else {
                 Ok(value)
             }
         })();
-        Tape::stop_recording_fwd();
+        Recording::stop();
 
         let value = value?;
         state.value = Some(value);
@@ -442,12 +441,12 @@ impl HandleValue<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
     }
 }
 
-impl HandleSensitivities<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
+impl HandleSensitivities<EuropeanSwaptionTrade<Recorded>, HullWhiteSwaptionState>
     for ClosedFormHullWhiteSwaptionPricer
 {
     fn handle_sensitivities(
         &self,
-        trade: &EuropeanSwaptionTrade<DualFwd>,
+        trade: &EuropeanSwaptionTrade<Recorded>,
         state: &mut HullWhiteSwaptionState,
     ) -> Result<SensitivityMap> {
         let value = if let Some(value) = state.value {
@@ -460,7 +459,7 @@ impl HandleSensitivities<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
                 )
             })?
         };
-        value.backward_to_mark()?;
+        value.differentiate_accumulating()?;
 
         let mut identifiers = Vec::new();
         let mut exposures = Vec::new();
@@ -472,19 +471,19 @@ impl HandleSensitivities<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
         for curve in elements.discount_curves().values() {
             for (label, pillar) in curve.curve().pillars().into_iter().flatten() {
                 identifiers.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
         for surface in elements.volatility_surfaces().values() {
             for (label, pillar) in surface.surface().pillars().into_iter().flatten() {
                 identifiers.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
         for cube in elements.volatility_cubes().values() {
             for (label, pillar) in cube.cube().pillars().into_iter().flatten() {
                 identifiers.push(label);
-                exposures.push(pillar.adjoint()?.value());
+                exposures.push(pillar.derivative()?.value());
             }
         }
 
@@ -501,7 +500,7 @@ impl HandleSensitivities<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
 }
 
 impl Pricer for ClosedFormHullWhiteSwaptionPricer {
-    type Item = EuropeanSwaptionTrade<DualFwd>;
+    type Item = EuropeanSwaptionTrade<Recorded>;
     type Policy = dyn DiscountPolicy;
 
     fn evaluate(
@@ -601,7 +600,7 @@ impl Pricer for ClosedFormHullWhiteSwaptionPricer {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ad::dual::DualFwd,
+        ad::Recorded,
         core::{
             collateral::SingleCurveCSADiscountPolicy,
             elements::curveelement::DiscountCurveElement,
@@ -732,7 +731,7 @@ mod tests {
         // must both use the curve's time scale.
         let curve = FlatForwardTermStructure::new(
             reference_date(),
-            DualFwd::from(RATE),
+            Recorded::from(RATE),
             RateDefinition::new(
                 DayCounter::Actual365,
                 Compounding::Continuous,
@@ -773,9 +772,9 @@ mod tests {
     }
 
     /// Builds the payer or receiver swaption used by calibration-risk tests.
-    fn calibrated_trade(option_type: SwaptionType) -> Result<EuropeanSwaptionTrade<DualFwd>> {
+    fn calibrated_trade(option_type: SwaptionType) -> Result<EuropeanSwaptionTrade<Recorded>> {
         let expiry = reference_date() + Period::new(30, TimeUnit::Months);
-        let swaption = MakeSwaption::<DualFwd>::default()
+        let swaption = MakeSwaption::<Recorded>::default()
             .with_identifier("CALIBRATED_SWAPTION".into())
             .with_expiry(expiry)
             .with_swap_tenor_date(expiry + Period::new(5, TimeUnit::Years))
@@ -941,11 +940,11 @@ mod tests {
     fn build_trade(
         option_type: SwaptionType,
         side: Side,
-    ) -> Result<EuropeanSwaptionTrade<DualFwd>> {
+    ) -> Result<EuropeanSwaptionTrade<Recorded>> {
         let reference_date = reference_date();
         let expiry = reference_date + Period::new(1, TimeUnit::Years);
         let maturity = expiry + Period::new(3, TimeUnit::Years);
-        let swaption = MakeSwaption::<DualFwd>::default()
+        let swaption = MakeSwaption::<Recorded>::default()
             .with_identifier("HW_SWAPTION".to_string())
             .with_expiry(expiry)
             .with_swap_tenor_date(maturity)
@@ -970,7 +969,7 @@ mod tests {
     fn market_data(rate: f64) -> MarketData {
         let curve = FlatForwardTermStructure::new(
             reference_date(),
-            DualFwd::from(rate),
+            Recorded::from(rate),
             RateDefinition::default(),
         )
         .with_pillar_label("SOFR_flat".to_string());
@@ -995,7 +994,7 @@ mod tests {
         let mut market_data = market_data(forward_rate);
         let discount_curve = FlatForwardTermStructure::new(
             reference_date(),
-            DualFwd::from(discount_rate),
+            Recorded::from(discount_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("discount_flat".to_string());
@@ -1013,7 +1012,7 @@ mod tests {
     }
 
     /// Extracts the underlying swap's fixed coupon schedule for independent price checks.
-    fn fixed_schedule(trade: &EuropeanSwaptionTrade<DualFwd>) -> Vec<(f64, f64)> {
+    fn fixed_schedule(trade: &EuropeanSwaptionTrade<Recorded>) -> Vec<(f64, f64)> {
         let day_counter = DayCounter::Actual360;
         trade
             .instrument()

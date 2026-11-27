@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     indices::marketindex::MarketIndex,
     instruments::cashflows::{
         coupons::{accrual_fraction, NonLinearCoupon},
@@ -172,13 +172,13 @@ impl OptionEmbeddedCoupon<f64> {
     }
 }
 
-impl OptionEmbeddedCoupon<DualFwd> {
+impl OptionEmbeddedCoupon<Recorded> {
     /// Returns the amount of the coupon (calculated from accrued amount).
     ///
     /// # Errors
     ///
     /// Returns an error if the accrued amount calculation fails.
-    pub fn amount(&self) -> Result<DualFwd> {
+    pub fn amount(&self) -> Result<Recorded> {
         self.accrued_amount(self.accrual_start_date, self.accrual_end_date)
     }
 }
@@ -192,6 +192,7 @@ impl NonLinearCoupon<f64> for OptionEmbeddedCoupon<f64> {
         self.accrual_start_date
     }
 
+    /// Calculates the coupon accrual at the requested date.
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<f64> {
         let year_fraction = accrual_fraction(
             self.day_counter()?,
@@ -225,7 +226,7 @@ impl NonLinearCoupon<f64> for OptionEmbeddedCoupon<f64> {
     }
 }
 
-impl NonLinearCoupon<DualFwd> for OptionEmbeddedCoupon<DualFwd> {
+impl NonLinearCoupon<Recorded> for OptionEmbeddedCoupon<Recorded> {
     fn accrual_end_date(&self) -> Date {
         self.accrual_end_date
     }
@@ -234,7 +235,8 @@ impl NonLinearCoupon<DualFwd> for OptionEmbeddedCoupon<DualFwd> {
         self.accrual_start_date
     }
 
-    fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<DualFwd> {
+    /// Calculates the coupon accrual at the requested date.
+    fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<Recorded> {
         let year_fraction = accrual_fraction(
             self.day_counter()?,
             self.accrual_start_date,
@@ -243,15 +245,15 @@ impl NonLinearCoupon<DualFwd> for OptionEmbeddedCoupon<DualFwd> {
             end_date,
         )?;
         if year_fraction == 0.0 {
-            return Ok(DualFwd::zero());
+            return Ok(Recorded::zero());
         }
         let fixing = self
             .fixing
             .ok_or_else(|| QSError::NotFoundErr("Fixing not set".into()))?;
 
         let resuling_rate = self.payoff.eval(fixing)?;
-        let coupon_rate: DualFwd = (self.spread + resuling_rate).into();
-        Ok((coupon_rate * DualFwd::new(year_fraction * self.notional)).into())
+        let coupon_rate: Recorded = self.spread + resuling_rate;
+        Ok(coupon_rate * Recorded::new(year_fraction * self.notional))
     }
 
     fn notional(&self) -> f64 {
@@ -267,12 +269,13 @@ impl NonLinearCoupon<DualFwd> for OptionEmbeddedCoupon<DualFwd> {
     }
 }
 
-impl From<OptionEmbeddedCoupon<f64>> for OptionEmbeddedCoupon<DualFwd> {
+impl From<OptionEmbeddedCoupon<f64>> for OptionEmbeddedCoupon<Recorded> {
+    /// Converts the source data into this financial representation.
     fn from(value: OptionEmbeddedCoupon<f64>) -> Self {
         Self {
             notional: value.notional,
-            fixing: value.fixing.map(DualFwd::new),
-            spread: DualFwd::new(value.spread.value()),
+            fixing: value.fixing.map(Recorded::new),
+            spread: Recorded::new(value.spread.value()),
             index: value.index,
             accrual_start_date: value.accrual_start_date,
             accrual_end_date: value.accrual_end_date,
@@ -284,8 +287,9 @@ impl From<OptionEmbeddedCoupon<f64>> for OptionEmbeddedCoupon<DualFwd> {
     }
 }
 
-impl From<OptionEmbeddedCoupon<DualFwd>> for OptionEmbeddedCoupon<f64> {
-    fn from(value: OptionEmbeddedCoupon<DualFwd>) -> Self {
+impl From<OptionEmbeddedCoupon<Recorded>> for OptionEmbeddedCoupon<f64> {
+    /// Converts the source data into this financial representation.
+    fn from(value: OptionEmbeddedCoupon<Recorded>) -> Self {
         Self {
             notional: value.notional,
             fixing: value.fixing.map(|fixing| fixing.value()),

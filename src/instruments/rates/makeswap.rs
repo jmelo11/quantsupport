@@ -1,5 +1,5 @@
 #[cfg(test)]
-use crate::ad::dual::DualFwd;
+use crate::ad::Recorded;
 use crate::{
     ad::scalar::Scalar,
     core::{
@@ -39,7 +39,7 @@ use std::marker::PhantomData;
 ///     Frequency::Semiannual,
 /// );
 ///
-/// let swap = MakeSwap::<DualFwd>::default()
+/// let swap = MakeSwap::<Recorded>::default()
 ///     .with_identifier("IRS-5Y".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2029, 1, 1))
@@ -444,8 +444,8 @@ mod tests {
         )
     }
 
-    fn base_builder() -> MakeSwap<DualFwd> {
-        MakeSwap::<DualFwd>::default()
+    fn base_builder() -> MakeSwap<Recorded> {
+        MakeSwap::<Recorded>::default()
             .with_identifier("swap_test".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))
@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     fn test_build_swap_missing_fixed_rate_fails() {
-        let result = MakeSwap::<DualFwd>::default()
+        let result = MakeSwap::<Recorded>::default()
             .with_identifier("swap_missing_fixed_rate".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))

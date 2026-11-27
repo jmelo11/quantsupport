@@ -1,20 +1,21 @@
 //! Interpolation module containing various interpolation methods and traits.
 
-/// Policies for queries outside multidimensional interpolation grids.
+/// Provides the policies for queries outside multidimensional interpolation grids.
 pub mod extrapolation;
-/// Enumeration types for interpolation.
+/// Provides the enumeration types for interpolation.
 pub mod interpolator;
-/// Linear interpolation implementation.
+/// Provides the linear interpolation implementation.
 pub mod linear;
-/// Log-linear interpolation implementation.
+/// Provides the log-linear interpolation implementation.
 pub mod loglinear;
+/// Interpolates values on a rectangular grid with a caller-selected number of dimensions.
 mod multilinear;
 
-/// Bilinear interpolation implementation.
+/// Provides the bilinear interpolation implementation.
 pub mod bilinear;
 
-/// Trilinear interpolation implementation.
+/// Provides the trilinear interpolation implementation.
 pub mod trilinear;
 
-/// Cubic spline interpolation implementation.
+/// Provides the cubic spline interpolation implementation.
 pub mod cubicspline;

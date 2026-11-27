@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use crate::{
-    ad::dual::DualFwd,
+    ad::Recorded,
     core::{
         elements::{
             curveelement::{CreditCurveElement, DiscountCurveElement, DividendCurveElement},
@@ -17,6 +19,15 @@ use crate::{
     utils::errors::{QSError, Result},
     volatility::orientedfxvolsurface::OrientedFxVolSurface,
 };
+
+/// Registers market inputs in a deterministic order for compatible native code reuse.
+fn register_in_order<T>(elements: &mut HashMap<MarketIndex, T>, mut register: impl FnMut(&mut T)) {
+    let mut ordered: Vec<_> = elements.iter_mut().collect();
+    ordered.sort_by_cached_key(|(index, _)| index.to_string());
+    for (_, element) in ordered {
+        register(element);
+    }
+}
 
 /// The [`PricerState`] trait defines the interface for accessing
 /// market data responses, derived elements and finxing values during the
@@ -89,13 +100,13 @@ pub trait PricerState {
 
     /// Retrieves the exchange rate between two currencies from the exchange-rate store.
     ///
-    /// Returns an [`DualFwd`] so that sensitivities to FX rates are captured on the AD tape.
+    /// Returns a [`Recorded`] value so that FX sensitivities are included in the compiler capture.
     ///
     /// ## Errors
     ///
     /// Returns an error if the market data response or exchange-rate store is not available,
     /// or if no rate path exists between the two currencies.
-    fn get_exchange_rate(&self, base: Currency, quote: Currency) -> Result<DualFwd> {
+    fn get_exchange_rate(&self, base: Currency, quote: Currency) -> Result<Recorded> {
         self.get_market_data_reponse()
             .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .fx_store()
@@ -111,7 +122,7 @@ pub trait PricerState {
     /// Collects spot-pillar derivatives after the pricer differentiates its value.
     ///
     /// # Errors
-    /// Propagates adjoint errors for spot observations on the valuation tape.
+    /// Propagates derivative errors for spot observations on the valuation capture.
     fn get_fx_sensitivities(&self) -> Result<Vec<(String, f64)>> {
         self.get_fx_store().map_or_else(
             || Ok(Vec::new()),
@@ -120,7 +131,7 @@ pub trait PricerState {
                     .pillars()
                     .unwrap_or_default()
                     .into_iter()
-                    .map(|(label, pillar)| Ok((label, pillar.adjoint()?.value())))
+                    .map(|(label, pillar)| Ok((label, pillar.derivative()?.value())))
                     .collect()
             },
         )
@@ -221,46 +232,31 @@ pub trait PricerState {
             .ok_or_else(|| QSError::NotFoundErr(format!("Simulation element for index {index}")))
     }
 
-    /// Puts the pillars into the tape.
+    /// Registers market pillars as compiler inputs in a stable layout.
     ///
     /// This includes curve/surface pillars **and** exchange-rate spot rates.
     ///
     /// ## Errors
     ///
     /// Returns an error if the market data response is not available.
-    fn put_pillars_on_tape(&mut self) -> Result<()> {
+    fn register_pillars(&mut self) -> Result<()> {
         if let Some(md_response) = self.get_market_data_reponse_mut() {
-            for curve in md_response
-                .constructed_elements_mut()
-                .discount_curves_mut()
-                .values_mut()
-            {
-                curve.curve_mut().put_pillars_on_tape();
-            }
-            for curve in md_response
-                .constructed_elements_mut()
-                .dividend_curves_mut()
-                .values_mut()
-            {
-                curve.curve_mut().put_pillars_on_tape();
-            }
-            for curve in md_response
-                .constructed_elements_mut()
-                .credit_curves_mut()
-                .values_mut()
-            {
-                curve.curve_mut().put_pillars_on_tape();
-            }
-            for surface in md_response
-                .constructed_elements_mut()
-                .volatility_surfaces_mut()
-                .values_mut()
-            {
-                surface.surface_mut().put_pillars_on_tape();
-            }
-            // Put FX spot rates on tape
+            let elements = md_response.constructed_elements_mut();
+            register_in_order(elements.discount_curves_mut(), |curve| {
+                curve.curve_mut().register_pillars();
+            });
+            register_in_order(elements.dividend_curves_mut(), |curve| {
+                curve.curve_mut().register_pillars();
+            });
+            register_in_order(elements.credit_curves_mut(), |curve| {
+                curve.curve_mut().register_pillars();
+            });
+            register_in_order(elements.volatility_surfaces_mut(), |surface| {
+                surface.surface_mut().register_pillars();
+            });
+            // Register FX spot inputs after the ordered market pillars.
             if let Some(fx_store) = md_response.fx_store_mut() {
-                fx_store.put_pillars_on_tape();
+                fx_store.register_pillars();
             }
         }
         Ok(())

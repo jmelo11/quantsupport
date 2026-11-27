@@ -5,49 +5,50 @@
 //! frequency are specified independently; swap fixed-leg frequency may depend
 //! on the swap tenor.
 
+/// Generates consistent metadata and accessors for supported floating-rate indices.
 mod macros;
 
-/// AONIA (AUD) index implementation.
+/// Provides the AONIA (AUD) index implementation.
 pub mod aonia;
-/// BBSW (AUD) index implementation.
+/// Provides the BBSW (AUD) index implementation.
 pub mod bbsw;
-/// BKBM (NZD) index implementation.
+/// Provides the BKBM (NZD) index implementation.
 pub mod bkbm;
-/// CDI (BRL) index implementation.
+/// Provides the CDI (BRL) index implementation.
 pub mod cdi;
-/// CORRA (CAD) index implementation.
+/// Provides the CORRA (CAD) index implementation.
 pub mod corra;
-/// DESTR (DKK) index implementation.
+/// Provides the DESTR (DKK) index implementation.
 pub mod destr;
-/// €STR (EUR) index implementation.
+/// Provides the €STR (EUR) index implementation.
 pub mod estr;
-/// EURIBOR (EUR) index implementation.
+/// Provides the EURIBOR (EUR) index implementation.
 pub mod euribor;
-/// `FedFunds` (USD) index implementation.
+/// Provides the `FedFunds` (USD) index implementation.
 pub mod fedfunds;
-/// ICP (CLP) index implementation.
+/// Provides the ICP (CLP) index implementation.
 pub mod icp;
-/// KOFR (KRW) index implementation.
+/// Provides the KOFR (KRW) index implementation.
 pub mod kofr;
-/// NIBOR (NOK) index implementation.
+/// Provides the NIBOR (NOK) index implementation.
 pub mod nibor;
-/// NOWA (NOK) index implementation.
+/// Provides the NOWA (NOK) index implementation.
 pub mod nowa;
-/// NZONIA (NZD) index implementation.
+/// Provides the NZONIA (NZD) index implementation.
 pub mod nzonia;
-/// SARON (CHF) index implementation.
+/// Provides the SARON (CHF) index implementation.
 pub mod saron;
-/// SHIBOR (CNY) index implementation.
+/// Provides the SHIBOR (CNY) index implementation.
 pub mod shibor;
-/// SOFR (USD) index implementation.
+/// Provides the SOFR (USD) index implementation.
 pub mod sofr;
-/// SONIA (GBP) index implementation.
+/// Provides the SONIA (GBP) index implementation.
 pub mod sonia;
-/// SWESTR (SEK) index implementation.
+/// Provides the SWESTR (SEK) index implementation.
 pub mod swestr;
-/// TIBOR (JPY) index implementation.
+/// Provides the TIBOR (JPY) index implementation.
 pub mod tibor;
-/// TONAR (JPY) index implementation.
+/// Provides the TONAR (JPY) index implementation.
 pub mod tonar;
-/// ZARONIA (ZAR) index implementation.
+/// Provides the ZARONIA (ZAR) index implementation.
 pub mod zaronia;

@@ -3,7 +3,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    ad::dual::DualFwd,
+    ad::Recorded,
     core::{
         elements::curveelement::{
             ADCurveElement, CreditCurveElement, DiscountCurveElement, DividendCurveElement,
@@ -65,12 +65,13 @@ impl AdvancedCurve {
     }
 }
 
-impl InterestRatesTermStructure<DualFwd> for AdvancedCurve {
+impl InterestRatesTermStructure<Recorded> for AdvancedCurve {
     fn reference_date(&self) -> Date {
         self.date
     }
 
-    fn discount_factor(&self, date: Date) -> Result<DualFwd> {
+    /// Returns the discount factor at a date under the curve conventions.
+    fn discount_factor(&self, date: Date) -> Result<Recorded> {
         if date < self.date {
             return Err(QSError::InvalidValueErr(format!(
                 "Curve query {date} precedes horizon {}",
@@ -78,12 +79,12 @@ impl InterestRatesTermStructure<DualFwd> for AdvancedCurve {
             )));
         }
         if date == self.date {
-            return Ok(DualFwd::one());
+            return Ok(Recorded::one());
         }
-        let value: DualFwd = match self.roll {
-            CurveRoll::ImpliedForward => (self.original.discount_factor(date)?
-                / self.original.discount_factor(self.date)?)
-            .into(),
+        let value: Recorded = match self.roll {
+            CurveRoll::ImpliedForward => {
+                self.original.discount_factor(date)? / self.original.discount_factor(self.date)?
+            }
             CurveRoll::ConstantTenor => self
                 .original
                 .discount_factor_from_time(self.counter()?.year_fraction(self.date, date))?,
@@ -102,11 +103,11 @@ impl InterestRatesTermStructure<DualFwd> for AdvancedCurve {
         end: Date,
         comp: Compounding,
         freq: Frequency,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let counter = self.counter()?;
         let end = if start == end { end + 1 } else { end };
-        let compound: DualFwd = (self.discount_factor(start)? / self.discount_factor(end)?).into();
-        Ok(InterestRate::<DualFwd>::implied_rate(
+        let compound: Recorded = self.discount_factor(start)? / self.discount_factor(end)?;
+        Ok(InterestRate::<Recorded>::implied_rate(
             compound,
             counter,
             comp,
@@ -116,7 +117,8 @@ impl InterestRatesTermStructure<DualFwd> for AdvancedCurve {
         .rate())
     }
 
-    fn nodes(&self) -> Option<Vec<(Date, DualFwd)>> {
+    /// Returns the curve nodes in their interpolation order.
+    fn nodes(&self) -> Option<Vec<(Date, Recorded)>> {
         let mut dates = vec![self.date];
         dates.extend(
             self.original
@@ -136,46 +138,49 @@ impl InterestRatesTermStructure<DualFwd> for AdvancedCurve {
         self.original.day_counter()
     }
 
-    fn discount_factor_from_time(&self, time: f64) -> Result<DualFwd> {
+    /// Returns the discount factor for a day-count year fraction.
+    fn discount_factor_from_time(&self, time: f64) -> Result<Recorded> {
         if !time.is_finite() || time < 0.0 {
             return Err(QSError::InvalidValueErr(
                 "Forward curve time must be finite and non-negative".into(),
             ));
         }
         let value = match self.roll {
-            CurveRoll::ImpliedForward => (self
-                .original
-                .discount_factor_from_time(self.offset()? + time)?
-                / self.original.discount_factor(self.date)?)
-            .into(),
+            CurveRoll::ImpliedForward => {
+                self.original
+                    .discount_factor_from_time(self.offset()? + time)?
+                    / self.original.discount_factor(self.date)?
+            }
             CurveRoll::ConstantTenor => self.original.discount_factor_from_time(time)?,
         };
         Ok(value)
     }
 
-    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
+    /// Returns the forward rate between two day-count year fractions.
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<Recorded> {
         let end = if (start - end).abs() < f64::EPSILON {
             start + 1e-6
         } else {
             end
         };
         Ok(
-            ((self.discount_factor_from_time(start)? / self.discount_factor_from_time(end)? - 1.0)
-                / (end - start))
-                .into(),
+            (self.discount_factor_from_time(start)? / self.discount_factor_from_time(end)? - 1.0)
+                / (end - start),
         )
     }
 }
 
-impl Pillars<DualFwd> for AdvancedCurve {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl Pillars<Recorded> for AdvancedCurve {
+    /// Returns the labelled inputs used to report market sensitivities.
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.original.pillars()
     }
     fn pillar_labels(&self) -> Option<Vec<String>> {
         self.original.pillar_labels()
     }
-    fn put_pillars_on_tape(&mut self) {
-        self.original.put_pillars_on_tape();
+    /// Registers current labelled market pillars as independent compiler inputs.
+    fn register_pillars(&mut self) {
+        self.original.register_pillars();
     }
 }
 

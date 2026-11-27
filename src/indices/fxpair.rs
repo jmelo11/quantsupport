@@ -1,8 +1,8 @@
 //! FX currency-pair type with canonical-form support.
 //!
-//! [`FxPair`] encodes a directed foreign-exchange pair (base / quote).
+//! [`FxPair`](crate::indices::fxpair::FxPair) encodes a directed foreign-exchange pair (base / quote).
 //! Canonical keys order currencies lexicographically by ISO code, so EURUSD
-//! and USDEUR share a storage key. [`FxPair::canonical`] also returns an
+//! and USDEUR share a storage key. [`FxPair::canonical`](crate::indices::fxpair::FxPair::canonical) also returns an
 //! inversion flag to preserve the requested orientation.
 
 use serde::{Deserialize, Serialize};

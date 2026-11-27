@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, tape::Tape},
+    ad::{Recorded, Recording},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -20,6 +20,7 @@ use crate::{
     },
     indices::marketindex::MarketIndex,
     instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
+    rates::interestrate::InterestRate,
     time::date::Date,
     utils::errors::{QSError, Result},
 };
@@ -28,13 +29,13 @@ use std::{collections::HashSet, marker::PhantomData};
 /// State for cashflow discounting, holding market data and intermediate values.
 struct DCFState<'a> {
     /// The computed DCF value.
-    pub value: Option<DualFwd>,
+    value: Option<Recorded>,
     /// Market data response for discount curves.
-    pub md_response: Option<MarketData>,
+    md_response: Option<MarketData>,
     /// Resolved legs used by default cashflows handling.
-    pub legs: &'a [Leg<DualFwd>],
+    legs: &'a [Leg<Recorded>],
     /// The evaluation date, used to determine if a fixing is in the past.
-    pub eval_date: Date,
+    eval_date: Date,
 }
 
 impl PricerState for DCFState<'_> {
@@ -76,11 +77,11 @@ impl PricerState for DCFState<'_> {
 /// use quantsupport::prelude::*;
 ///
 /// // Create the pricer for a FixedRateBond/Trade pair
-/// let pricer: DiscountedCashflowPricer<FixedRateBond<DualFwd>, FixedRateBondTrade<DualFwd>> =
+/// let pricer: DiscountedCashflowPricer<FixedRateBond<Recorded>, FixedRateBondTrade<Recorded>> =
 ///     DiscountedCashflowPricer::new();
 ///
 /// // Or use it for a FloatingRateNote:
-/// let frn_pricer: DiscountedCashflowPricer<FloatingRateNote<DualFwd>, FloatingRateNoteTrade<DualFwd>> =
+/// let frn_pricer: DiscountedCashflowPricer<FloatingRateNote<Recorded>, FloatingRateNoteTrade<Recorded>> =
 ///     DiscountedCashflowPricer::new();
 ///
 /// // Evaluation requires a MarketDataProvider. The typical flow is:
@@ -102,8 +103,9 @@ impl<I, T> DiscountedCashflowPricer<I, T> {
     }
 }
 
-impl LegsProvider<DualFwd> for DCFState<'_> {
-    fn legs(&self) -> &[Leg<DualFwd>] {
+impl LegsProvider<Recorded> for DCFState<'_> {
+    /// Returns the trade legs used by the existing cashflow valuation.
+    fn legs(&self) -> &[Leg<Recorded>] {
         self.legs
     }
 }
@@ -111,7 +113,7 @@ impl LegsProvider<DualFwd> for DCFState<'_> {
 impl<I, T> HandleCashflows<T, DCFState<'_>> for DiscountedCashflowPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider<DualFwd> + Trade<I>,
+    T: LegsProvider<Recorded> + Trade<I>,
 {
 }
 
@@ -124,7 +126,7 @@ impl<I, T> Default for DiscountedCashflowPricer<I, T> {
 impl<I, T> HandleSensitivities<T, DCFState<'_>> for DiscountedCashflowPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider<DualFwd> + Trade<I>,
+    T: LegsProvider<Recorded> + Trade<I>,
 {
     fn handle_sensitivities(&self, trade: &T, state: &mut DCFState<'_>) -> Result<SensitivityMap> {
         let price = if let Some(p) = state.value {
@@ -137,8 +139,8 @@ where
         };
 
         // Cached values retain their graph across requests, including prior adjoints.
-        Tape::reset_adjoints_fwd();
-        let () = price.backward_to_mark()?;
+        Recording::reset_derivatives();
+        let () = price.differentiate_accumulating()?;
 
         // Collect sensitivities from all unique discount curves used in valuation
         let mut all_ids = Vec::new();
@@ -156,7 +158,7 @@ where
                         .pillars()
                         .into_iter()
                         .flat_map(IntoIterator::into_iter)
-                        .map(|(label, value)| (label, value.adjoint().ok()))
+                        .map(|(label, value)| (label, value.derivative().ok()))
                         .unzip();
 
                     all_ids.extend(ids);
@@ -177,7 +179,7 @@ where
                         .pillars()
                         .into_iter()
                         .flat_map(IntoIterator::into_iter)
-                        .map(|(label, value)| (label, value.adjoint().ok()))
+                        .map(|(label, value)| (label, value.derivative().ok()))
                         .unzip();
 
                     all_ids.extend(ids);
@@ -199,7 +201,7 @@ where
                         .pillars()
                         .into_iter()
                         .flat_map(std::iter::IntoIterator::into_iter)
-                        .map(|(label, value)| (label, value.adjoint().ok()))
+                        .map(|(label, value)| (label, value.derivative().ok()))
                         .unzip();
 
                     all_ids.extend(ids);
@@ -227,10 +229,10 @@ impl<I, T> DiscountedCashflowPricer<I, T> {
     /// Returns spot conversion from leg currency to the context base currency.
     /// Returns one when no currency conversion is needed.
     fn conversion_factor(
-        leg: &Leg<DualFwd>,
+        leg: &Leg<Recorded>,
         index: &MarketIndex,
         state: &DCFState<'_>,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let target = state
             .get_market_data_reponse()
             .and_then(MarketData::base_currency)
@@ -241,7 +243,7 @@ impl<I, T> DiscountedCashflowPricer<I, T> {
         target
             .filter(|target| *target != leg.currency())
             .map_or_else(
-                || Ok(DualFwd::one()),
+                || Ok(Recorded::one()),
                 |target| state.get_exchange_rate(leg.currency(), target),
             )
     }
@@ -249,7 +251,7 @@ impl<I, T> DiscountedCashflowPricer<I, T> {
     /// Selects a policy or leg discount index, falling back to an unambiguous currency curve.
     fn select_discount_index(
         &self,
-        leg: &Leg<DualFwd>,
+        leg: &Leg<Recorded>,
         state: &DCFState<'_>,
     ) -> Result<MarketIndex> {
         let leg_currency = leg.currency();
@@ -322,7 +324,7 @@ impl<I, T> DiscountedCashflowPricer<I, T> {
 
 impl<I, T> DiscountedCashflowPricer<I, T>
 where
-    T: LegsProvider<DualFwd>,
+    T: LegsProvider<Recorded>,
 {
     /// Collects historical observations for the coupons needed by this evaluation.
     fn fixing_requests(
@@ -432,7 +434,7 @@ where
                 {
                     let realized = state
                         .get_fixing(forward_index, coupon.fixing_date())
-                        .map(DualFwd::new)?;
+                        .map(Recorded::new)?;
                     coupon.set_fixing(realized);
                 } else {
                     let fwd_curve = state.get_discount_curve_element(forward_index)?.curve();
@@ -440,14 +442,13 @@ where
                         .market_index()
                         .rate_index_details()?
                         .rate_definition();
-                    let growth: DualFwd = (fwd_curve
+                    let growth: Recorded = fwd_curve
                         .discount_factor(coupon.accrual_start_date())?
-                        / fwd_curve.discount_factor(coupon.accrual_end_date())?)
-                    .into();
+                        / fwd_curve.discount_factor(coupon.accrual_end_date())?;
                     let time = rd
                         .day_counter()
                         .year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date());
-                    let fwd = crate::rates::interestrate::InterestRate::<DualFwd>::implied_rate(
+                    let fwd = InterestRate::<Recorded>::implied_rate(
                         growth,
                         rd.day_counter(),
                         rd.compounding(),
@@ -465,7 +466,7 @@ where
 
 impl<I, T> HandleAccruedAmount<T, DCFState<'_>> for DiscountedCashflowPricer<I, T>
 where
-    T: LegsProvider<DualFwd>,
+    T: LegsProvider<Recorded>,
 {
     fn handle_accrued_amount(
         &self,
@@ -483,7 +484,7 @@ where
 impl<I, T> HandleValue<T, DCFState<'_>> for DiscountedCashflowPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider<DualFwd> + Trade<I>,
+    T: LegsProvider<Recorded> + Trade<I>,
 {
     #[allow(clippy::too_many_lines)]
     fn handle_value(&self, trade: &T, state: &mut DCFState<'_>) -> Result<f64> {
@@ -497,13 +498,13 @@ where
             }
         }
 
-        Tape::start_recording_fwd();
-        Tape::set_mark_fwd();
+        Recording::start();
+        Recording::checkpoint();
 
-        let mut pv = DualFwd::new(0.0);
+        let mut pv = Recorded::new(0.0);
 
-        // Put pillars on tape for sensitivity calculation
-        state.put_pillars_on_tape()?;
+        // Put pillars on capture for sensitivity calculation
+        state.register_pillars()?;
         Self::resolve_coupons(trade, state, None)?;
 
         // Iterate through all legs
@@ -532,10 +533,10 @@ where
                     CashflowType::Redemption(cf) => {
                         // Redemption is the return of principal at maturity,
                         // opposite in sign to the initial disbursement.
-                        (DualFwd::from(cf.amount()?), cf.payment_date())
+                        (Recorded::from(cf.amount()?), cf.payment_date())
                     }
                     CashflowType::Disbursement(cf) => {
-                        (DualFwd::from(-cf.amount()?), cf.payment_date())
+                        (Recorded::from(-cf.amount()?), cf.payment_date())
                     }
                     _ => {
                         return Err(QSError::InvalidValueErr(format!(
@@ -552,15 +553,15 @@ where
                     .get_discount_curve_element(&leg_discount_index)?
                     .curve()
                     .discount_factor(payment_date)?;
-                let cf_pv: DualFwd = (amount * fx * df).into();
+                let cf_pv: Recorded = amount * fx * df;
 
-                pv = (pv + cf_pv * side).into();
+                pv += cf_pv * side;
             }
         }
 
         state.value = Some(pv);
 
-        Tape::stop_recording_fwd();
+        Recording::stop();
         Ok(state
             .value
             .ok_or_else(|| QSError::ValueNotSetErr("PV value".into()))?
@@ -571,7 +572,7 @@ where
 impl<I, T> HandleFairRate<T, DCFState<'_>> for DiscountedCashflowPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider<DualFwd> + Trade<I>,
+    T: LegsProvider<Recorded> + Trade<I>,
 {
     fn handle_fair_rate(&self, trade: &T, state: &mut DCFState<'_>, target: usize) -> Result<f64> {
         let leg = trade.legs().get(target).ok_or_else(|| {
@@ -652,7 +653,7 @@ where
 impl<I, T> Pricer for DiscountedCashflowPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider<DualFwd> + Trade<I> + Send + Sync,
+    T: LegsProvider<Recorded> + Trade<I> + Send + Sync,
 {
     type Item = T;
     type Policy = dyn DiscountPolicy;
@@ -715,7 +716,7 @@ where
             eval_date,
         };
 
-        // Only price-dependent requests need a PV and its differentiation tape.
+        // Only price-dependent requests need a PV and its differentiation capture.
         let needs_value = requests.iter().any(|r| {
             matches!(
                 r,
@@ -907,7 +908,7 @@ mod tests {
         );
 
         // --- 1. Build the deposit trade ---
-        let deposit = MakeFixedRateDeposit::<DualFwd>::default()
+        let deposit = MakeFixedRateDeposit::<Recorded>::default()
             .with_identifier("TEST_DEPOSIT".to_string())
             .with_start_date(trade_date)
             .with_maturity_date(maturity_date)
@@ -924,7 +925,7 @@ mod tests {
         // --- 2. Set up market data: flat 3% discount curve ---
         let discount_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(discount_rate),
+            Recorded::from(discount_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("SOFR_flat".to_string());
@@ -943,8 +944,8 @@ mod tests {
 
         // --- 3. Price using the Pricer trait ---
         let pricer = DiscountedCashflowPricer::<
-            FixedRateDeposit<DualFwd>,
-            FixedRateDepositTrade<DualFwd>,
+            FixedRateDeposit<Recorded>,
+            FixedRateDepositTrade<Recorded>,
         >::new();
         let results = pricer
             .evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)
@@ -1015,7 +1016,7 @@ mod tests {
         context.initialize().unwrap();
         let start = Date::new(2026, 1, 2);
         let end = Date::new(2026, 1, 7);
-        let instrument = MakeOvernightIndexSwap::<DualFwd>::new(
+        let instrument = MakeOvernightIndexSwap::<Recorded>::new(
             MarketIndex::SOFR,
             reference,
             Period::new(1, TimeUnit::Years),
@@ -1028,8 +1029,8 @@ mod tests {
         let payment = instrument.floating_leg().last_payment_date();
         let trade = OvernightIndexSwapTrade::new(instrument, reference, 1.0, Side::LongReceive);
         let pricer = DiscountedCashflowPricer::<
-            OvernightIndexSwap<DualFwd>,
-            OvernightIndexSwapTrade<DualFwd>,
+            OvernightIndexSwap<Recorded>,
+            OvernightIndexSwapTrade<Recorded>,
         >::new();
         let results = pricer
             .evaluate(&trade, &[Request::Value, Request::FairRate(0)], &context)
@@ -1052,7 +1053,7 @@ mod tests {
             Frequency::Annual,
         );
 
-        let swap = MakeSwap::<DualFwd>::default()
+        let swap = MakeSwap::<Recorded>::default()
             .with_identifier("VANILLA_SWAP_CF_TEST".to_string())
             .with_start_date(start_date)
             .with_maturity_date(maturity_date)
@@ -1091,7 +1092,7 @@ mod tests {
 
         let discount_curve = FlatForwardTermStructure::new(
             start_date,
-            DualFwd::from(0.031),
+            Recorded::from(0.031),
             RateDefinition::default(),
         )
         .with_pillar_label("SOFR_flat".to_string());
@@ -1107,7 +1108,7 @@ mod tests {
             market_data,
         };
 
-        let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
+        let pricer = DiscountedCashflowPricer::<Swap<Recorded>, SwapTrade<Recorded>>::new();
         let results = pricer.evaluate(
             &trade,
             &[Request::Cashflows(true), Request::Value],
@@ -1275,7 +1276,7 @@ mod tests {
 
         // --- 1. Build the cross-currency swap ---
         // Domestic = EUR (fixed, receive), Foreign = USD (floating SOFR, pay)
-        let xccy_swap = MakeFixFloatCrossCurrencySwap::<DualFwd>::default()
+        let xccy_swap = MakeFixFloatCrossCurrencySwap::<Recorded>::default()
             .with_identifier("XCCY_EUR_USD".to_string())
             .with_start_date(trade_date)
             .with_maturity_date(maturity_date)
@@ -1305,7 +1306,7 @@ mod tests {
         // SOFR curve (USD floating leg projection + forward FX)
         let sofr_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(sofr_rate),
+            Recorded::from(sofr_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("SOFR_flat".to_string());
@@ -1313,7 +1314,7 @@ mod tests {
         // ESTR curve (EUR leg discount + CSA collateral OIS)
         let estr_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(estr_rate),
+            Recorded::from(estr_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("ESTR_flat".to_string());
@@ -1321,7 +1322,7 @@ mod tests {
         // Collateral curve for USD cashflows under EUR CSA (same underlying rate as ESTR)
         let collateral_usd_eur_curve = FlatForwardTermStructure::new(
             trade_date,
-            DualFwd::from(estr_rate),
+            Recorded::from(estr_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("ESTR_flat".to_string());
@@ -1345,7 +1346,7 @@ mod tests {
 
         // FX spot rate
         let mut fx_store = FxStore::new();
-        fx_store.add_fx_rate(Currency::USD, Currency::EUR, DualFwd::from(fx_usd_eur));
+        fx_store.add_fx_rate(Currency::USD, Currency::EUR, Recorded::from(fx_usd_eur));
 
         let market_data =
             MarketData::new(HashMap::new(), constructed_elements).with_fx_store(fx_store);
@@ -1357,8 +1358,8 @@ mod tests {
 
         // --- 3. Price with CSA ---
         let mut pricer = DiscountedCashflowPricer::<
-            FixFloatCrossCurrencySwap<DualFwd>,
-            FixFloatCrossCurrencySwapTrade<DualFwd>,
+            FixFloatCrossCurrencySwap<Recorded>,
+            FixFloatCrossCurrencySwapTrade<Recorded>,
         >::new();
         pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
             estr_index.clone(),
@@ -1453,7 +1454,7 @@ mod tests {
         );
 
         // Build swap with an arbitrary fixed rate (not at par).
-        let swap = MakeSwap::<DualFwd>::default()
+        let swap = MakeSwap::<Recorded>::default()
             .with_identifier("FAIR_RATE_TEST".to_string())
             .with_start_date(start_date)
             .with_maturity_date(maturity_date)
@@ -1473,7 +1474,7 @@ mod tests {
         // Flat 4% SOFR curve.
         let discount_curve = FlatForwardTermStructure::new(
             start_date,
-            DualFwd::from(flat_rate),
+            Recorded::from(flat_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("SOFR_flat".to_string());
@@ -1490,7 +1491,7 @@ mod tests {
         };
 
         // Evaluate fair rate.
-        let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
+        let pricer = DiscountedCashflowPricer::<Swap<Recorded>, SwapTrade<Recorded>>::new();
         let results = pricer
             .evaluate(&trade, &[Request::FairRate(0)], &provider)
             .expect("Fair rate evaluation failed");
@@ -1505,7 +1506,7 @@ mod tests {
         println!("Fair rate = {fair_rate:.8}, flat rate = {flat_rate}");
 
         // Re-price the swap at the fair rate: NPV should be ~0.
-        let swap_at_par = MakeSwap::<DualFwd>::default()
+        let swap_at_par = MakeSwap::<Recorded>::default()
             .with_identifier("FAIR_RATE_REPRICE".to_string())
             .with_start_date(start_date)
             .with_maturity_date(maturity_date)
@@ -1522,10 +1523,10 @@ mod tests {
 
         let par_trade = SwapTrade::new(swap_at_par, start_date, notional, Side::LongReceive);
 
-        // Rebuild market data (tape state is consumed by previous eval).
+        // Rebuild market data (capture state is consumed by previous eval).
         let discount_curve2 = FlatForwardTermStructure::new(
             start_date,
-            DualFwd::from(flat_rate),
+            Recorded::from(flat_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("SOFR_flat".to_string());
@@ -1599,7 +1600,7 @@ mod tests {
         );
 
         // Build CLP ICP swap with an off-market fixed rate.
-        let swap = MakeSwap::<DualFwd>::default()
+        let swap = MakeSwap::<Recorded>::default()
             .with_identifier("CLP_ICP_FAIR_RATE".to_string())
             .with_start_date(start_date)
             .with_maturity_date(maturity_date)
@@ -1619,7 +1620,7 @@ mod tests {
         // ICP curve (CLP forward projection).
         let icp_curve = FlatForwardTermStructure::new(
             start_date,
-            DualFwd::from(icp_rate),
+            Recorded::from(icp_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("ICP_flat".to_string());
@@ -1627,7 +1628,7 @@ mod tests {
         // Collateral(CLP, USD): CLP discount under USD CSA.
         let collateral_curve = FlatForwardTermStructure::new(
             start_date,
-            DualFwd::from(collateral_rate),
+            Recorded::from(collateral_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("Collateral_CLP_USD_flat".to_string());
@@ -1646,7 +1647,7 @@ mod tests {
         );
 
         let mut fx_store = FxStore::new();
-        fx_store.add_fx_rate(Currency::CLP, Currency::USD, DualFwd::from(fx_clp_usd));
+        fx_store.add_fx_rate(Currency::CLP, Currency::USD, Recorded::from(fx_clp_usd));
 
         let market_data =
             MarketData::new(HashMap::new(), constructed_elements).with_fx_store(fx_store);
@@ -1656,7 +1657,7 @@ mod tests {
         };
 
         // Evaluate fair rate with USD CSA policy.
-        let mut pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
+        let mut pricer = DiscountedCashflowPricer::<Swap<Recorded>, SwapTrade<Recorded>>::new();
         pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
             MarketIndex::SOFR,
             Currency::USD,
@@ -1678,7 +1679,7 @@ mod tests {
         );
 
         // Re-price at the fair rate: NPV should be ~zero.
-        let swap_at_par = MakeSwap::<DualFwd>::default()
+        let swap_at_par = MakeSwap::<Recorded>::default()
             .with_identifier("CLP_ICP_REPRICE".to_string())
             .with_start_date(start_date)
             .with_maturity_date(maturity_date)
@@ -1698,14 +1699,14 @@ mod tests {
         // Rebuild market data.
         let icp_curve2 = FlatForwardTermStructure::new(
             start_date,
-            DualFwd::from(icp_rate),
+            Recorded::from(icp_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("ICP_flat".to_string());
 
         let collateral_curve2 = FlatForwardTermStructure::new(
             start_date,
-            DualFwd::from(collateral_rate),
+            Recorded::from(collateral_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("Collateral_CLP_USD_flat".to_string());
@@ -1724,7 +1725,7 @@ mod tests {
         );
 
         let mut fx_store2 = FxStore::new();
-        fx_store2.add_fx_rate(Currency::CLP, Currency::USD, DualFwd::from(fx_clp_usd));
+        fx_store2.add_fx_rate(Currency::CLP, Currency::USD, Recorded::from(fx_clp_usd));
 
         let market_data2 =
             MarketData::new(HashMap::new(), constructed_elements2).with_fx_store(fx_store2);
@@ -1762,7 +1763,7 @@ mod reporting_tests {
         let date = Date::new(2026, 2, 24);
         let curve = FlatForwardTermStructure::new(
             date,
-            DualFwd::new(0.03),
+            Recorded::new(0.03),
             RateDefinition::new(
                 DayCounter::Actual365,
                 Compounding::Continuous,
@@ -1782,8 +1783,8 @@ mod reporting_tests {
             .with_fx_store(fx)
     }
 
-    /// Builds a fixed EUR deposit with contract terms detached from any previous AD tape.
-    fn trade() -> Result<FixedRateDepositTrade<DualFwd>> {
+    /// Builds a fixed EUR deposit with contract terms detached from any previous AD capture.
+    fn trade() -> Result<FixedRateDepositTrade<Recorded>> {
         dated_trade(
             Date::new(2026, 2, 24),
             Date::new(2027, 2, 24),
@@ -1796,9 +1797,9 @@ mod reporting_tests {
         start: Date,
         maturity: Date,
         side: Side,
-    ) -> Result<FixedRateDepositTrade<DualFwd>> {
-        Tape::<ADForward>::stop_recording_fwd();
-        let deposit = MakeFixedRateDeposit::<DualFwd>::default()
+    ) -> Result<FixedRateDepositTrade<Recorded>> {
+        Recording::stop();
+        let deposit = MakeFixedRateDeposit::<Recorded>::default()
             .with_identifier("EUR-DEPOSIT".into())
             .with_start_date(start)
             .with_maturity_date(maturity)
@@ -1818,7 +1819,7 @@ mod reporting_tests {
 
     /// Builds a deposit pricer that uses the instrument discount curve.
     fn pricer(
-    ) -> DiscountedCashflowPricer<FixedRateDeposit<DualFwd>, FixedRateDepositTrade<DualFwd>> {
+    ) -> DiscountedCashflowPricer<FixedRateDeposit<Recorded>, FixedRateDepositTrade<Recorded>> {
         let mut pricer = DiscountedCashflowPricer::new();
         pricer.set_discount_policy(Box::new(FixedIncomeDiscountPolicy::new(true)));
         pricer
@@ -1858,8 +1859,8 @@ mod reporting_tests {
     fn unsupported_cashflow_measures_do_not_require_market_inputs() -> Result<()> {
         let trade = trade()?;
         let pricer: DiscountedCashflowPricer<
-            FixedRateDeposit<DualFwd>,
-            FixedRateDepositTrade<DualFwd>,
+            FixedRateDeposit<Recorded>,
+            FixedRateDepositTrade<Recorded>,
         > = DiscountedCashflowPricer::new();
         let result = pricer.evaluate(
             &trade,
@@ -1977,7 +1978,7 @@ mod reporting_tests {
     fn seasoned_deposit_accrual_and_cashflows_do_not_discount_the_historical_advance() -> Result<()>
     {
         let context = context(Currency::EUR, FxStore::new());
-        let instrument = MakeFixedRateDeposit::<DualFwd>::default()
+        let instrument = MakeFixedRateDeposit::<Recorded>::default()
             .with_identifier("SEASONED".into())
             .with_start_date(Date::new(2025, 12, 1))
             .with_maturity_date(Date::new(2026, 6, 1))
@@ -2015,7 +2016,7 @@ mod reporting_tests {
             context(Currency::EUR, FxStore::new()).with_quote_store(QuoteStore::new(start));
         let curve = FlatForwardTermStructure::new(
             start,
-            DualFwd::new(0.03),
+            Recorded::new(0.03),
             RateDefinition::new(
                 DayCounter::Actual365,
                 Compounding::Continuous,
@@ -2029,7 +2030,7 @@ mod reporting_tests {
                 MarketIndex::EURIBOR3m,
                 DiscountCurveElement::new(MarketIndex::EURIBOR3m, Rc::new(RefCell::new(curve))),
             );
-        let instrument = MakeFloatingRateNote::<DualFwd>::default()
+        let instrument = MakeFloatingRateNote::<Recorded>::default()
             .with_identifier("NOTE".into())
             .with_start_date(start)
             .with_maturity_date(Date::new(2026, 6, 1))
@@ -2041,8 +2042,8 @@ mod reporting_tests {
             .build()?;
         let trade = FloatingRateNoteTrade::new(instrument, start, 1_000.0, Side::LongReceive);
         let pricer = DiscountedCashflowPricer::<
-            FloatingRateNote<DualFwd>,
-            FloatingRateNoteTrade<DualFwd>,
+            FloatingRateNote<Recorded>,
+            FloatingRateNoteTrade<Recorded>,
         >::new();
         let result = pricer.evaluate(
             &trade,
@@ -2058,12 +2059,12 @@ mod reporting_tests {
     #[test]
     fn context_controls_reporting_without_a_discount_policy() -> Result<()> {
         let mut fx = FxStore::new();
-        fx.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::new(1.1));
+        fx.add_fx_rate(Currency::EUR, Currency::USD, Recorded::new(1.1));
         let context = context(Currency::EUR, fx);
         let trade = trade()?;
         let mut pricer = DiscountedCashflowPricer::<
-            FixedRateDeposit<DualFwd>,
-            FixedRateDepositTrade<DualFwd>,
+            FixedRateDeposit<Recorded>,
+            FixedRateDepositTrade<Recorded>,
         >::new();
         let requests = [
             Request::Value,
@@ -2101,7 +2102,7 @@ mod reporting_tests {
     #[test]
     fn direct_rust_pricer_and_evaluator_convert_pv_curve_risk_and_fx_risk() -> Result<()> {
         let mut fx = FxStore::new();
-        fx.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::new(1.1));
+        fx.add_fx_rate(Currency::EUR, Currency::USD, Recorded::new(1.1));
         let context = context(Currency::USD, fx);
         let trade = trade()?;
         let pricer = pricer();
@@ -2159,7 +2160,7 @@ mod reporting_tests {
                 < 1e-8
         );
         let evaluator = Evaluator::new(HashMap::from([(
-            TypeId::of::<FixedRateDepositTrade<DualFwd>>(),
+            TypeId::of::<FixedRateDepositTrade<Recorded>>(),
             Box::new(pricer) as Box<dyn ErasedPricer>,
         )]));
         let erased = evaluator.evaluate(&trade, &requests, &context)?;
@@ -2180,7 +2181,7 @@ mod reporting_tests {
         let pricer = pricer();
         let local = -100_000.0 + 104_000.0 * (-0.03_f64).exp();
         let mut inverse = FxStore::new();
-        inverse.add_fx_rate(Currency::USD, Currency::EUR, DualFwd::new(0.9));
+        inverse.add_fx_rate(Currency::USD, Currency::EUR, Recorded::new(0.9));
         let result = pricer.evaluate(
             &trade,
             &[Request::Value, Request::Sensitivities],
@@ -2196,8 +2197,8 @@ mod reporting_tests {
         );
         assert!((sensitivity(&result, "USD/EUR")? + local / 0.9_f64.powi(2)).abs() < 1e-8);
         let mut triangulated = FxStore::new();
-        triangulated.add_fx_rate(Currency::EUR, Currency::GBP, DualFwd::new(0.8));
-        triangulated.add_fx_rate(Currency::GBP, Currency::USD, DualFwd::new(1.375));
+        triangulated.add_fx_rate(Currency::EUR, Currency::GBP, Recorded::new(0.8));
+        triangulated.add_fx_rate(Currency::GBP, Currency::USD, Recorded::new(1.375));
         let result = pricer.evaluate(
             &trade,
             &[Request::Value, Request::Sensitivities],
@@ -2232,8 +2233,8 @@ mod reporting_tests {
     #[test]
     fn native_fx_requests_keep_original_spot_observation_labels() -> Result<()> {
         let mut fx = FxStore::new();
-        fx.add_fx_rate(Currency::EUR, Currency::GBP, DualFwd::new(0.8));
-        fx.add_fx_rate(Currency::GBP, Currency::USD, DualFwd::new(1.375));
+        fx.add_fx_rate(Currency::EUR, Currency::GBP, Recorded::new(0.8));
+        fx.add_fx_rate(Currency::GBP, Currency::USD, Recorded::new(1.375));
         let context = context(Currency::USD, fx);
         let data = context.handle_request(
             &MarketDataRequest::default().with_fx_request(vec![FxRequest::single(Currency::EUR)]),
@@ -2266,7 +2267,7 @@ mod resolution_tests {
         let evaluation = Date::new(2026, 3, 10);
         let base = market(start, 0.04, FixingStore::default())
             .with_quote_store(QuoteStore::new(evaluation));
-        let instrument = MakeSwap::<DualFwd>::default()
+        let instrument = MakeSwap::<Recorded>::default()
             .with_identifier("swap".into())
             .with_start_date(start)
             .with_maturity_date(start + p("2Y")?)
@@ -2278,7 +2279,7 @@ mod resolution_tests {
             .with_floating_leg_frequency(Frequency::Annual)
             .build()?;
         let trade = SwapTrade::new(instrument, start, 100_000.0, Side::LongReceive);
-        let mut pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
+        let mut pricer = DiscountedCashflowPricer::<Swap<Recorded>, SwapTrade<Recorded>>::new();
         pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
             MarketIndex::ESTR,
             Currency::EUR,

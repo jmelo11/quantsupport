@@ -1,6 +1,6 @@
 //! Evaluation strategies for contingent claims.
 //!
-//! Each variant of [`ClaimEvaluationStrategy`] describes *how* a claim's
+//! Each variant of [`ClaimEvaluationStrategy`](crate::xva::claimevaluationstrategy::ClaimEvaluationStrategy) describes *how* a claim's
 //! raw value is computed from simulated market data before notional,
 //! discounting, and FX conversion are applied.
 

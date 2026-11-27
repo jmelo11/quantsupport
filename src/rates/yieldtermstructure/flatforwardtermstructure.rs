@@ -1,5 +1,5 @@
 use crate::{
-    ad::{constant::Const, dual::DualFwd, forward::ADForward, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     rates::{
         compounding::Compounding,
@@ -79,8 +79,9 @@ where
     }
 }
 
-impl Pillars<DualFwd> for FlatForwardTermStructure<DualFwd> {
-    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+impl Pillars<Recorded> for FlatForwardTermStructure<Recorded> {
+    /// Returns the labelled inputs used to report market sensitivities.
+    fn pillars(&self) -> Option<Vec<(String, &Recorded)>> {
         self.pillar_label
             .as_ref()
             .map(|label| vec![(label.clone(), self.rate.rate_ref())])
@@ -90,8 +91,9 @@ impl Pillars<DualFwd> for FlatForwardTermStructure<DualFwd> {
         self.pillar_label.as_ref().map(|label| vec![label.clone()])
     }
 
-    fn put_pillars_on_tape(&mut self) {
-        self.rate.rate_mut().put_on_tape();
+    /// Registers current labelled market pillars as independent compiler inputs.
+    fn register_pillars(&mut self) {
+        self.rate.rate_mut().register_input();
     }
 }
 
@@ -99,6 +101,7 @@ impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
     fn reference_date(&self) -> Date {
         self.reference_date
     }
+    /// Returns the discount factor at a date under the curve conventions.
     fn discount_factor(&self, date: Date) -> Result<f64> {
         if date < self.reference_date() {
             return Err(QSError::InvalidValueErr(format!(
@@ -123,6 +126,7 @@ impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
         )
     }
 
+    /// Returns the curve nodes in their interpolation order.
     fn nodes(&self) -> Option<Vec<(Date, f64)>> {
         None
     }
@@ -131,6 +135,7 @@ impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
         Some(self.rate.day_counter())
     }
 
+    /// Returns the discount factor for a day-count year fraction.
     fn discount_factor_from_time(&self, t: f64) -> Result<f64> {
         if t < 0.0 {
             return Err(QSError::InvalidValueErr("Time must be non-negative".into()));
@@ -138,6 +143,7 @@ impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
         Ok(1.0 / self.rate.compound_factor_from_yf(t))
     }
 
+    /// Returns the forward rate between two day-count year fractions.
     fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<f64> {
         if (end - start).abs() < 1e-14 {
             // Instantaneous forward rate: use numerical limit
@@ -153,11 +159,12 @@ impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
     }
 }
 
-impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
+impl InterestRatesTermStructure<Recorded> for FlatForwardTermStructure<Recorded> {
     fn reference_date(&self) -> Date {
         self.reference_date
     }
-    fn discount_factor(&self, date: Date) -> Result<DualFwd> {
+    /// Returns the discount factor at a date under the curve conventions.
+    fn discount_factor(&self, date: Date) -> Result<Recorded> {
         if date < self.reference_date() {
             return Err(QSError::InvalidValueErr(format!(
                 "Date {date:?} is before reference date {reference_date:?}",
@@ -172,11 +179,11 @@ impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
         end_date: Date,
         comp: Compounding,
         freq: Frequency,
-    ) -> Result<DualFwd> {
+    ) -> Result<Recorded> {
         let comp_factor = self.discount_factor(start_date)? / self.discount_factor(end_date)?;
         let t = self.rate.day_counter().year_fraction(start_date, end_date);
-        Ok(InterestRate::<DualFwd>::implied_rate(
-            comp_factor.into(),
+        Ok(InterestRate::<Recorded>::implied_rate(
+            comp_factor,
             self.rate.day_counter(),
             comp,
             freq,
@@ -185,7 +192,8 @@ impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
         .rate())
     }
 
-    fn nodes(&self) -> Option<Vec<(Date, DualFwd)>> {
+    /// Returns the curve nodes in their interpolation order.
+    fn nodes(&self) -> Option<Vec<(Date, Recorded)>> {
         None
     }
 
@@ -193,33 +201,35 @@ impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
         Some(self.rate.day_counter())
     }
 
-    fn discount_factor_from_time(&self, t: f64) -> Result<DualFwd> {
+    /// Returns the discount factor for a day-count year fraction.
+    fn discount_factor_from_time(&self, t: f64) -> Result<Recorded> {
         if t < 0.0 {
             return Err(QSError::InvalidValueErr("Time must be non-negative".into()));
         }
         let cf = self.rate.compound_factor_from_yf(t);
-        Ok((Const::one() / cf).into())
+        Ok(1.0_f64 / cf)
     }
 
-    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
+    /// Returns the forward rate between two day-count year fractions.
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<Recorded> {
         if (end - start).abs() < 1e-14 {
             let eps = 1e-8;
             let df_s = self.discount_factor_from_time(start)?;
             let df_e = self.discount_factor_from_time(start + eps)?;
             let fwd = (df_s / df_e - 1.0) / eps;
-            return Ok(fwd.into());
+            return Ok(fwd);
         }
         let df_start = self.discount_factor_from_time(start)?;
         let df_end = self.discount_factor_from_time(end)?;
         let fwd = (df_start / df_end - 1.0) / (end - start);
-        Ok(fwd.into())
+        Ok(fwd)
     }
 }
 
-impl ADCurveElement for FlatForwardTermStructure<DualFwd> {
+impl ADCurveElement for FlatForwardTermStructure<Recorded> {
     fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
         let mut curve = self.clone();
-        *curve.rate.rate_mut() = DualFwd::constant(ADForward::constant(self.value().value()));
+        *curve.rate.rate_mut() = Recorded::constant(self.value().value());
         Ok(Box::new(curve))
     }
 }
@@ -315,9 +325,9 @@ mod tests {
     // fn test_ad_forward_rate() -> Result<()> {
     //     let reference_date = Date::new(2023, 8, 19);
 
-    //     let mut rate = DualFwd::from(0.05);
-    //     Tape::start_recording_fwd();
-    //     rate.put_on_tape();
+    //     let mut rate = Recorded::from(0.05);
+    //     Recording::start();
+    //     rate.register_input();
     //     let term_structure =
     //         FlatForwardTermStructure::new(reference_date, rate, RateDefinition::default());
     //     let term_structure_2 = term_structure.clone();
@@ -326,12 +336,12 @@ mod tests {
     //     let df2 =
     //         term_structure_2.discount_factor(reference_date + Period::new(1, TimeUnit::Years));
 
-    //     Tape::stop_recording_fwd();
+    //     Recording::stop();
     //     let rate2 = rate.clone();
-    //     // let _ = df?.backward()?;
-    //     // println!("Rate sensitivity: {:?}", rate.adjoint()?);
-    //     let _ = df2?.backward()?;
-    //     println!("Rate sensitivity: {:?}", rate.adjoint()?);
+    //     // let _ = df?.differentiate()?;
+    //     // println!("Rate sensitivity: {:?}", rate.derivative()?);
+    //     let _ = df2?.differentiate()?;
+    //     println!("Rate sensitivity: {:?}", rate.derivative()?);
     //     Ok(())
     // }
 }

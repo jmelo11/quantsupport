@@ -8,7 +8,7 @@ use crate::{
 };
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{scalar::Scalar, Recorded},
     core::{
         collateral::Discountable,
         instrument::{AssetClass, Instrument},
@@ -249,7 +249,7 @@ impl<T: Scalar> BondTerms<T> for FixedRateBondTrade<T> {
     }
 }
 
-impl From<FixedRateBond<f64>> for FixedRateBond<DualFwd> {
+impl From<FixedRateBond<f64>> for FixedRateBond<Recorded> {
     fn from(value: FixedRateBond<f64>) -> Self {
         Self::new(
             value.identifier,
@@ -261,8 +261,8 @@ impl From<FixedRateBond<f64>> for FixedRateBond<DualFwd> {
     }
 }
 
-impl From<FixedRateBond<DualFwd>> for FixedRateBond<f64> {
-    fn from(value: FixedRateBond<DualFwd>) -> Self {
+impl From<FixedRateBond<Recorded>> for FixedRateBond<f64> {
+    fn from(value: FixedRateBond<Recorded>) -> Self {
         Self::new(
             value.identifier,
             value.units,
@@ -273,7 +273,7 @@ impl From<FixedRateBond<DualFwd>> for FixedRateBond<f64> {
     }
 }
 
-impl From<FixedRateBondTrade<f64>> for FixedRateBondTrade<DualFwd> {
+impl From<FixedRateBondTrade<f64>> for FixedRateBondTrade<Recorded> {
     fn from(value: FixedRateBondTrade<f64>) -> Self {
         let mut trade = Self::new(
             value.instrument.into(),
@@ -288,8 +288,8 @@ impl From<FixedRateBondTrade<f64>> for FixedRateBondTrade<DualFwd> {
     }
 }
 
-impl From<FixedRateBondTrade<DualFwd>> for FixedRateBondTrade<f64> {
-    fn from(value: FixedRateBondTrade<DualFwd>) -> Self {
+impl From<FixedRateBondTrade<Recorded>> for FixedRateBondTrade<f64> {
+    fn from(value: FixedRateBondTrade<Recorded>) -> Self {
         let mut trade = Self::new(
             value.instrument.into(),
             value.trade_date,

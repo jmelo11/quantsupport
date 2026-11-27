@@ -1,6 +1,7 @@
 """Run the Book's Rust examples against Cargo's selected library artifacts."""
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -10,6 +11,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def main():
+    # mdBook runs rustdoc from a temporary directory, outside rustup's local
+    # toolchain override. Keep its compiler identical to Cargo's library build.
+    compiler = os.environ.get("RUSTC", "rustc")
+    sysroot = Path(subprocess.check_output(
+        [compiler, "--print", "sysroot"], cwd=ROOT, text=True,
+    ).strip())
+    toolchain_bin = sysroot / "bin"
+    env = {**os.environ, "PATH": str(toolchain_bin) + os.pathsep + os.environ.get("PATH", "")}
     build = subprocess.run(
         ["cargo", "build", "-p", "quantsupport", "--message-format=json"],
         cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE,
@@ -31,7 +40,7 @@ def main():
                     name = metadata.with_suffix(".rlib").name
                 (libraries / name).symlink_to(library)
         return subprocess.run(
-            ["mdbook", "test", "-L", str(libraries)], cwd=ROOT,
+            ["mdbook", "test", "-L", str(libraries)], cwd=ROOT, env=env,
         ).returncode
 
 

@@ -1,28 +1,28 @@
-/// Bond trade pricing anchors.
+/// Provides the bond trade pricing anchors.
 pub mod bondpricinganchor;
-/// Shared bond contract and trade interface.
+/// Provides the shared bond contract and trade interface.
 pub mod bondterms;
-/// Issuer call schedule entries for callable bonds.
+/// Provides the issuer call schedule entries for callable bonds.
 pub mod callschedule;
-/// Fixed Rate Bond Module
+/// Represents fixed-rate bond contracts and their trades.
 pub mod fixedratebond;
-/// Deposit Module
+/// Represents fixed-rate deposits and their trades.
 pub mod fixedratedeposit;
-/// Floating Rate Note Module
+/// Represents floating-rate note contracts and their trades.
 pub mod floatingratenote;
-/// Loan contracts and positions.
+/// Provides the loan contracts and positions.
 pub mod loan;
-/// Bullet, French, and balloon loan amortization structures.
+/// Provides the bullet, French, and balloon loan amortization structures.
 pub mod loanrepaymentstructure;
-/// Fixed rate bond builder.
+/// Provides the fixed rate bond builder.
 pub mod makefixedratebond;
-/// Fixed rate deposit builder.
+/// Provides the fixed rate deposit builder.
 pub mod makefixedratedeposit;
-/// Floating rate note builder.
+/// Provides the floating rate note builder.
 pub mod makefloatingratenote;
-/// Loan contract builder.
+/// Provides the loan contract builder.
 pub mod makeloan;
-/// Stepped-coupon bond builder.
+/// Builds stepped-coupon bonds from their coupon and call schedules.
 pub mod makesteppedcouponbond;
-/// Callable stepped-coupon bond instrument and coupon specifications.
+/// Provides the callable stepped-coupon bond instrument and coupon specifications.
 pub mod steppedcouponbond;

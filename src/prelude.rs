@@ -5,10 +5,8 @@
 
 pub use crate::{
     ad::{
-        dual::{Dual, DualFwd},
-        forward::{ADForward, Fwd, Fwd1, Fwd2, Fwd3, Fwd4},
-        scalar::Scalar,
-        tape::Tape,
+        scalar::Scalar, CompiledFunction, CompiledKernel, CompiledProgram, DerivativeOrder, Graph,
+        ImplicitDerivatives, PathSums, Recorded, Recording, RecordingScope,
     },
     core::{
         cashflowaggregation::{
@@ -159,7 +157,7 @@ pub use crate::{
             extrapolation::ExtrapolationPolicy,
             interpolator::{Interpolate, Interpolator, StaticInterpolate},
         },
-        probability::norm_cdf::NormCDF,
+        probability::normcdf::NormCDF,
         solvers::{bisection::Bisection, newtonraphson::NewtonRaphson},
     },
     models::{

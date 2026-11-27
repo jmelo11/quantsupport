@@ -6,11 +6,13 @@
 //! volatility; Bachelier volatility has forward units per square-root year.
 //! Apply payment discounting and contract scaling separately.
 
+use std::cmp::min;
+
 use crate::{
-    ad::{dual::DualFwd, expr::FloatExt},
+    ad::{scalar::Scalar, Recorded},
     math::probability::{
-        norm_cdf::{norm_cdf, NormCDF},
         norm_pdf::norm_pdf,
+        normcdf::{norm_cdf, NormCDF},
     },
     rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     time::{date::Date, daycounter::DayCounter, enums::TimeUnit, period::Period},
@@ -97,7 +99,7 @@ pub fn bachelier_call(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<f64> 
 }
 
 // ---------------------------------------------------------------------------
-// DualFwd (AD-enabled) variants
+// Recorded (AD-enabled) variants
 // ---------------------------------------------------------------------------
 
 /// Black forward-price `d1` and `d2` (AD-enabled).
@@ -111,7 +113,12 @@ pub fn bachelier_call(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<f64> 
 /// Returns an error if `strike` or `tau` are non-positive.
 /// Forward, volatility, and input finiteness are not checked; invalid inputs
 /// can produce nonfinite outputs rather than errors.
-pub fn d1_d2_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<(DualFwd, DualFwd)> {
+pub fn d1_d2_ad(
+    fwd: Recorded,
+    strike: f64,
+    vol: Recorded,
+    tau: f64,
+) -> Result<(Recorded, Recorded)> {
     if strike <= 0.0 {
         return Err(QSError::InvalidValueErr("strike must be positive".into()));
     }
@@ -121,8 +128,35 @@ pub fn d1_d2_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<(Du
         ));
     }
     let sqrt_tau = tau.sqrt();
-    let d1: DualFwd = ((fwd / strike).ln() / (vol * sqrt_tau) + vol * sqrt_tau * 0.5).into();
-    let d2: DualFwd = (d1 - vol * sqrt_tau).into();
+    let d1: Recorded = (fwd / strike).ln() / (vol * sqrt_tau) + vol * sqrt_tau * 0.5;
+    let d2: Recorded = d1 - vol * sqrt_tau;
+    Ok((d1, d2))
+}
+
+/// Black `d1` and `d2` using eager scalar arithmetic for capture or compiled AD.
+///
+/// Strike and expiry are fixed contract data. Forward and volatility remain
+/// differentiable inputs, with the same positive-input domain as [`d1_d2_ad`].
+///
+/// # Errors
+/// Rejects non-positive strike or expiry; preserves the AD helper's volatility policy.
+pub fn d1_d2_scalar<T: Scalar>(fwd: T, strike: f64, vol: T, tau: f64) -> Result<(T, T)> {
+    if strike <= 0.0 {
+        return Err(QSError::InvalidValueErr("strike must be positive".into()));
+    }
+    if tau <= 0.0 {
+        return Err(QSError::InvalidValueErr(
+            "time to expiry must be positive".into(),
+        ));
+    }
+    let sqrt_tau = tau.sqrt();
+    let width = vol.mul_val(T::scalar(sqrt_tau));
+    let d1 = fwd
+        .div_val(T::scalar(strike))
+        .ln()
+        .div_val(width)
+        .add_val(width.mul_val(T::scalar(0.5)));
+    let d2 = d1.sub_val(width);
     Ok((d1, d2))
 }
 
@@ -136,9 +170,23 @@ pub fn d1_d2_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<(Du
 ///
 /// # Errors
 /// Returns an error if d₁/d₂ computation fails.
-pub fn black_call_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<DualFwd> {
+pub fn black_call_ad(fwd: Recorded, strike: f64, vol: Recorded, tau: f64) -> Result<Recorded> {
     let (d1, d2) = d1_d2_ad(fwd, strike, vol, tau)?;
-    Ok((fwd * norm_cdf(d1) - norm_cdf(d2) * strike).into())
+    Ok(fwd * norm_cdf(d1) - norm_cdf(d2) * strike)
+}
+
+/// Undiscounted Black call for eager scalars and compiled pricing kernels.
+///
+/// Forward and volatility retain their dependencies; strike and expiry are constants.
+/// Discounting and trade notional are applied by the calling pricing engine.
+///
+/// # Errors
+/// Propagates strike and expiry validation errors from [`d1_d2_scalar`].
+pub fn black_call_scalar<T: Scalar + NormCDF>(fwd: T, strike: f64, vol: T, tau: f64) -> Result<T> {
+    let (d1, d2) = d1_d2_scalar(fwd, strike, vol, tau)?;
+    Ok(fwd
+        .mul_val(d1.norm_cdf())
+        .sub_val(d2.norm_cdf().mul_val(T::scalar(strike))))
 }
 
 /// Undiscounted Black put price (AD-enabled).
@@ -151,11 +199,24 @@ pub fn black_call_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Resul
 ///
 /// # Errors
 /// Returns an error if d₁/d₂ computation fails.
-pub fn black_put_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<DualFwd> {
+pub fn black_put_ad(fwd: Recorded, strike: f64, vol: Recorded, tau: f64) -> Result<Recorded> {
     let (d1, d2) = d1_d2_ad(fwd, strike, vol, tau)?;
-    let neg_d2: DualFwd = (-d2).into();
-    let neg_d1: DualFwd = (-d1).into();
-    Ok((norm_cdf(neg_d2) * strike - fwd * norm_cdf(neg_d1)).into())
+    let neg_d2: Recorded = -d2;
+    let neg_d1: Recorded = -d1;
+    Ok(norm_cdf(neg_d2) * strike - fwd * norm_cdf(neg_d1))
+}
+
+/// Undiscounted Black put for eager scalars and compiled pricing kernels.
+///
+/// # Errors
+/// Propagates strike and expiry validation errors from [`d1_d2_scalar`].
+pub fn black_put_scalar<T: Scalar + NormCDF>(fwd: T, strike: f64, vol: T, tau: f64) -> Result<T> {
+    let (d1, d2) = d1_d2_scalar(fwd, strike, vol, tau)?;
+    Ok(d2
+        .neg_val()
+        .norm_cdf()
+        .mul_val(T::scalar(strike))
+        .sub_val(fwd.mul_val(d1.neg_val().norm_cdf())))
 }
 
 /// Computes the swap annuity (sum of discount factors times year fractions)
@@ -174,7 +235,7 @@ pub fn swap_annuity_from_curve(
     let mut date = start;
     let one_year = Period::new(1, TimeUnit::Years);
     while date < end {
-        let next = std::cmp::min(date + one_year, end);
+        let next = min(date + one_year, end);
         let t = day_counter.year_fraction(reference_date, next);
         let tau = day_counter.year_fraction(date, next);
         annuity = tau.mul_add(curve.discount_factor_from_time(t)?, annuity);
@@ -186,13 +247,14 @@ pub fn swap_annuity_from_curve(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::f64::consts::PI;
 
     #[test]
     fn bachelier_call_atm_matches_closed_form() -> Result<()> {
         // ATM Bachelier price = sigma * sqrt(tau) / sqrt(2*pi).
         let (fwd, vol, tau) = (0.03, 0.01, 2.0);
         let price = bachelier_call(fwd, fwd, vol, tau)?;
-        let expected = vol * tau.sqrt() / (2.0 * std::f64::consts::PI).sqrt();
+        let expected = vol * tau.sqrt() / (2.0 * PI).sqrt();
         assert!((price - expected).abs() < 1e-15);
         Ok(())
     }

@@ -5,12 +5,13 @@
 //! rate-index trait definitions, and concrete implementations for
 //! major overnight and term indices (SOFR, ESTR, EURIBOR, SONIA, etc.).
 
+/// Defines typed currency pairs and their market-index representation.
 pub mod fxpair;
-/// Unified market-index identifiers.
+/// Provides the unified market-index identifiers.
 pub mod marketindex;
-/// Market quote-type identifiers.
+/// Provides the market quote-type identifiers.
 pub mod quotetype;
-/// Interest-rate index traits and metadata.
+/// Provides the interest-rate index traits and metadata.
 pub mod rateindex;
-/// Concrete interest-rate index definitions.
+/// Provides the concrete interest-rate index definitions.
 pub mod rateindices;

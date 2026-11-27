@@ -1,14 +1,15 @@
 mod utils;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, error::Error, path::PathBuf, result::Result as StdResult};
 
 use quantsupport::prelude::*;
 
 use utils::{load_credit_curve_specs, load_curve_specs, load_quotes, load_vol_specs};
 
-fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+/// Runs the CVA valuation example and displays adjustments, first risks and exposures.
+fn main() -> StdResult<(), Box<dyn Error>> {
     // ── 1. Build PricingContext from market data ────────────────
-    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let data_dir = manifest_dir.join("data");
 
     let quote_store = load_quotes(&data_dir.join("quotes.json"))?;
@@ -26,13 +27,14 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // Volatility inputs: a SOFR caplet surface and an ICP swaption cube. The
     // XVA engine calibrates its LGM sigma schedules against them.
-    let vol_specs = load_vol_specs(&data_dir.join("vol_specs.json"))?;
+    let (volatility_surfaces, volatility_cubes) =
+        load_vol_specs(&data_dir.join("vol_specs.json"))?.into_configurations();
 
     println!("Reference date: {ref_date}");
 
     // FX spot: 1 CLP = 1/900 USD  (i.e. 900 CLP per 1 USD)
     let mut fx_store = FxStore::new();
-    fx_store.add_fx_rate(Currency::CLP, Currency::USD, DualFwd::from(1.0 / 900.0));
+    fx_store.add_fx_rate(Currency::CLP, Currency::USD, Recorded::from(1.0 / 900.0));
 
     let mut ctx = PricingContext::new()
         .with_quote_store(quote_store)
@@ -41,8 +43,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .with_base_index(MarketIndex::SOFR)
         .with_curve_configurations(curve_specs)
         .with_credit_curve_configurations(credit_curve_specs)
-        .with_volatility_surface_configurations(vol_specs.volatility_surfaces)
-        .with_volatility_cube_configurations(vol_specs.volatility_cubes);
+        .with_volatility_surface_configurations(volatility_surfaces)
+        .with_volatility_cube_configurations(volatility_cubes);
     ctx.initialize()?;
 
     println!("Curves bootstrapped (SOFR, ICP, Collateral CLP/USD, TermSOFR3m funding).");

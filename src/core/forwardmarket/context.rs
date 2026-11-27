@@ -1,10 +1,7 @@
 //! Pricing-context orchestration for generated horizon markets.
 
 use crate::{
-    ad::{
-        forward::ADForward,
-        tape::{Tape, TapeHolder},
-    },
+    ad::RecordingScope,
     core::{
         marketdatahandling::{
             constructedelementstore::ConstructedElementStore, marketview::MarketView,
@@ -24,21 +21,6 @@ use super::{
 };
 
 // Preserve any enclosing valuation's differentiation recording, including errors.
-struct RecordingScope(Option<Tape<ADForward>>);
-
-impl RecordingScope {
-    fn new() -> Self {
-        Self(Some(ADForward::with_tape(std::mem::take)))
-    }
-}
-
-impl Drop for RecordingScope {
-    fn drop(&mut self) {
-        if let Some(tape) = self.0.take() {
-            ADForward::with_tape(|current| *current = tape);
-        }
-    }
-}
 
 impl PricingContext {
     /// Generates horizon quotes, FX and fixings and returns a fresh pricing context.
@@ -144,7 +126,7 @@ impl MarketView<'_> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ad::{dual::DualFwd, tape::Tape},
+        ad::{Recorded, Recording},
         calibration::impliedquote::ImpliedQuotePricer,
         core::{
             elements::curveelement::{DiscountCurveElement, DividendCurveElement},
@@ -569,7 +551,7 @@ mod tests {
                 index.clone(),
                 Rc::new(RefCell::new(FlatForwardTermStructure::new(
                     today,
-                    DualFwd::from(0.04),
+                    Recorded::from(0.04),
                     rate_definition,
                 ))),
             ),
@@ -580,7 +562,7 @@ mod tests {
                 index.clone(),
                 Rc::new(RefCell::new(FlatForwardTermStructure::new(
                     today,
-                    DualFwd::from(0.01),
+                    Recorded::from(0.01),
                     rate_definition,
                 ))),
             ),
@@ -592,13 +574,13 @@ mod tests {
                 eur,
                 Rc::new(RefCell::new(FlatForwardTermStructure::new(
                     today,
-                    DualFwd::from(0.02),
+                    Recorded::from(0.02),
                     rate_definition,
                 ))),
             ),
         );
         let mut fx = FxStore::new();
-        fx.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::from(1.10));
+        fx.add_fx_rate(Currency::EUR, Currency::USD, Recorded::from(1.10));
         let mut fixings = FixingStore::default();
         fixings.add_fixing(&index, today, 100.0);
         let mut quotes = source.quote_store().clone();
@@ -785,7 +767,7 @@ mod tests {
     }
 
     #[test]
-    fn source_and_horizon_shocks_are_independent_and_tape_is_preserved() -> Result<()> {
+    fn source_and_horizon_shocks_are_independent_and_capture_is_preserved() -> Result<()> {
         let source = Fixture::context()?;
         let config = ForwardMarketConfiguration::new(source.evaluation_date() + 180);
         let shock = Scenario::new(vec![Shock::new("SOFR", 0.01, ScenarioType::Absolute)]);
@@ -802,16 +784,16 @@ mod tests {
                 .value(Level::Mid)?,
             0.03
         );
-        Tape::rewind_to_init_fwd();
-        Tape::start_recording_fwd();
-        let mut input = DualFwd::new(2.0);
-        input.put_on_tape();
-        let output: DualFwd = (input * input).into();
+        Recording::clear();
+        Recording::start();
+        let mut input = Recorded::new(2.0);
+        input.register_input();
+        let output: Recorded = (input * input).into();
         let _future = source.advance_to(&config)?;
-        output.backward()?;
-        assert!((input.adjoint()?.value() - 4.0).abs() < 1e-12);
-        Tape::stop_recording_fwd();
-        Tape::rewind_to_init_fwd();
+        output.differentiate()?;
+        assert!((input.derivative()?.value() - 4.0).abs() < 1e-12);
+        Recording::stop();
+        Recording::clear();
         Ok(())
     }
 
@@ -1082,11 +1064,11 @@ mod tests {
             .discount_curve(&MarketIndex::SOFR)
             .unwrap()
             .advance_in_time(&config, &ForwardMarketSource::new(&source))?;
-        Tape::rewind_to_init_fwd();
-        Tape::start_recording_fwd();
-        advanced.curve_mut().put_pillars_on_tape();
+        Recording::clear();
+        Recording::start();
+        advanced.curve_mut().register_pillars();
         let value = advanced.curve().discount_factor(date)?;
-        value.backward()?;
+        value.differentiate()?;
         let derivative = advanced
             .curve()
             .pillars()
@@ -1095,10 +1077,10 @@ mod tests {
             .find(|(label, _)| label == "ZeroRate_USD_SOFR_1Y")
             .unwrap()
             .1
-            .adjoint()?
+            .derivative()?
             .value();
-        Tape::stop_recording_fwd();
-        Tape::rewind_to_init_fwd();
+        Recording::stop();
+        Recording::clear();
         let evaluate = |bump| -> Result<f64> {
             let mut quotes = base.quote_store().clone();
             let original = quotes.quote("ZeroRate_USD_SOFR_1Y").unwrap();
