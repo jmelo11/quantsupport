@@ -1,7 +1,7 @@
 # Build the QuantSupport Book
 
-The Book contains the Rust guide, shared financial concepts and implementation
-notes for the native library.
+The Book is the user guide for QuantSupport. It covers financial concepts,
+conventions, and implementation notes. Build and check it with:
 
 ```sh
 cargo install mdbook --version 0.5.2 --locked

@@ -6,13 +6,13 @@
 
 - [Installation](getting-started/installation.md)
 - [A first valuation](getting-started/first-swap.md)
-- [Working in Rust](getting-started/rust-api.md)
+- [Library workflow](getting-started/rust-api.md)
 
 # Contracts and market state
 
 - [Cashflows, contracts and positions](concepts/instruments.md)
 - [Building instruments explicitly](concepts/instrument-resolution.md)
-- [Observations and historical markets](concepts/market-data.md)
+- [Market data and historical markets](concepts/market-data.md)
 - [Constructing and querying a market](concepts/pricing-context.md)
 
 # Market construction
@@ -35,11 +35,11 @@
 - [Differentiation and market sensitivities](risk/aad.md)
 - [Scenarios and full revaluation](risk/scenarios.md)
 
-# Models and payoff programs
+# Models and scripting
 
 - [Stochastic models and simulation](simulation/monte-carlo.md)
-- [Dated payoff programs](scripting/language.md)
-- [Script valuation and claim integration](scripting/engine.md)
+- [Scripting language](scripting/language.md)
+- [Script engine and exposure claims](scripting/engine.md)
 
 # Exposure and valuation adjustments
 
@@ -54,4 +54,4 @@
 # Supporting material
 
 - [Serializable configuration](reference/configuration.md)
-- [Executable reading route](reference/examples.md)
+- [Example programs](reference/examples.md)

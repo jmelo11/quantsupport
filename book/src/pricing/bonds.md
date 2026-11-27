@@ -1,57 +1,58 @@
 # Bonds and issuer optionality
 
-Bond valuation combines contractual coupon and principal payments with a
-market quotation. For a straight fixed-rate bond, QuantSupport solves the
-spread implied by a price anchor and provides yield and duration analytics.
-For a stepped-coupon bond with issuer calls, valuation also requires a
-short-rate model and an exercise calculation.
+A bond is valued from its coupon and principal payments plus a market quote.
+
+- For a straight fixed-rate bond, QuantSupport solves the spread implied by a
+  quoted price. It also computes yield and duration.
+- For a stepped-coupon bond with issuer calls, valuation also needs a
+  short-rate model to value the call option.
 
 | Instrument | Pricer | Supported analytics |
 | --- | --- | --- |
 | `FixedRateBond` | `BondPricer` | value, cashflows, yield to maturity, modified duration, Z-spread, sensitivities, accrued amount |
 | `SteppedCouponBond` | `TreeBasedBondPricer` or `BackwardFourierEvolutionBondPricer` | value, cashflows, OAS, sensitivities, accrued amount |
 
-Stepped-coupon bonds use price or spread anchors. Their supported analytics
-are value, cashflows, OAS, sensitivities and accrued amount; yield-to-maturity and
-modified-duration requests leave those result fields absent.
+Stepped-coupon bonds take a price or spread anchor. If you request yield to
+maturity or modified duration for them, those result fields stay empty.
 
 ## Contractual accrued amount
 
-We use `Request::AccruedAmount(start, end)` to request signed coupon interest
-between two dates. The result is an undiscounted currency amount in
-`EvaluationResults::accrued_amount()`, using the context base currency when
-configured. Principal is excluded, and the requested dates are clipped to each
-coupon period. Adjacent windows reconcile to the complete coupon.
+`Request::AccruedAmount(start, end)` returns the signed coupon interest earned
+between two dates. Read it from `EvaluationResults::accrued_amount()`.
 
-The request uses numeric coupon accrual without solving a spread, normalizing a
-clean or dirty quote, or recording a compiler capture. A callable bond
-reports contractual interest assuming its scheduled coupons continue; this
-measure does not include future exercise-probability weighting. Accrual alone
-requires no tree or Fourier valuation model.
+- The amount is undiscounted. It is in the context base currency when one is
+  set.
+- Principal is not included.
+- The dates are clipped to each coupon period, so adjacent windows add up to
+  the full coupon.
+
+Accrued interest is computed from the coupons alone. It does not need a spread,
+a clean or dirty quote, a tree or Fourier model, or AD. For a callable bond,
+accrued interest assumes the scheduled coupons are paid; the chance of a future
+call is not taken into account.
 
 ## Pricing anchors
 
-Every bond trade stores exactly one required `BondPricingAnchor`. Pricers
-are reusable and take no quote in their constructors:
+Every bond trade has exactly one `BondPricingAnchor`. Pricers take no quote
+when you create them, so you can reuse one pricer for many trades.
 
-- `CleanPrice(value)` is a price per bond units excluding accrued interest.
-- `DirtyPrice(value)` is a price per bond units including accrued interest.
+- `CleanPrice(value)` is a price per bond units, excluding accrued interest.
+- `DirtyPrice(value)` is a price per bond units, including accrued interest.
 - `ZSpread(value)` is a continuously compounded spread for a straight bond.
 - `OAS(value)` is an option-adjusted spread for a bond with issuer calls.
 
-A clean or dirty price anchor implies Z-spread for a straight bond and OAS
-for a bond with issuer calls. The pricer rejects OAS on a straight bond and
-Z-spread on a callable bond.
+A clean or dirty price gives a Z-spread for a straight bond and an OAS for a
+callable bond. The pricer rejects an OAS anchor on a straight bond and a
+Z-spread anchor on a callable bond.
 
-The solved or supplied spread becomes an independent AD variable. The common
-sensitivity table therefore reports curve risk together with either
-`dPV/dZSpread` or `dPV/dOAS`.
+The spread, whether supplied or solved, is an AD input. The sensitivity table
+therefore shows curve risk plus either `dPV/dZSpread` or `dPV/dOAS`.
 
 ## Straight fixed-rate bonds
 
-Only coupons and principal strictly after settlement enter valuation. A clean
-quote is converted to dirty value by adding accrued interest. Z-spread `z`
-solves
+Only coupons and principal paid strictly after settlement are valued. A clean
+price is turned into a dirty price by adding accrued interest. The Z-spread
+`z` solves
 
 \\[
 B_{\rm dirty}(S;z)=\sum_{T_i>S}CF_i
@@ -59,51 +60,56 @@ B_{\rm dirty}(S;z)=\sum_{T_i>S}CF_i
 \exp\\!\left[-z\\,\tau(S,T_i)\right].
 \\]
 
-Here \\(S\\) is settlement and \\(\tau\\) uses the spread day counter.
-Quoted prices are normalized to the bond's units; the expression above is
-the settlement value before that normalization.
+Here \\(S\\) is the settlement date and \\(\tau\\) uses the spread day
+counter. The formula gives the settlement value; quoted prices are then scaled
+to the bond's units.
 
-The solver expands a bracket and bisects inside it. Yield to maturity is
-solved independently under the fixed bond's day-count, frequency, and
-compounding convention. Modified duration is `-(dP/dy)/P`, using the analytic
-derivative of each yield discount factor.
+- The Z-spread solver widens a bracket, then bisects inside it.
+- Yield to maturity is solved separately, using the bond's day count,
+  frequency, and compounding.
+- Modified duration is `-(dP/dy)/P`, using the exact derivative of each yield
+  discount factor.
 
-`Request::Value` remains signed position PV at the evaluation date. A quoted
-price anchors the spread; it does not redefine PV.
+`Request::Value` returns the signed PV of the position at the evaluation date.
+The quoted price sets the spread; it is not the PV.
 
 ## Stepped-coupon contract
 
-The builder delegates date generation to `MakeSchedule`. In addition to
-`payment_frequency`, it accepts a calendar, business-day convention,
-termination-date convention, date-generation rule, end-of-month flag,
-first-coupon date and next-to-last-coupon date. The final date defaults to the
-same adjustment convention as intermediate dates.
+The builder uses `MakeSchedule` to generate dates. Besides
+`payment_frequency`, it accepts:
 
-Side belongs to `SteppedCouponBondTrade` or `FixedRateBondTrade`, together with
-the pricing anchor and optional settlement/spread day-count terms. Instrument
-builders do not accept side. Cashflows describe the contract; the pricer applies
-the trade direction to PV and sensitivities, and claim decomposition applies
-that direction to XVA claims.
+- a calendar and business-day convention;
+- a termination-date convention;
+- a date-generation rule and end-of-month flag;
+- a first-coupon date and next-to-last-coupon date.
 
-`SteppedCouponBond` is built from three independent schedules:
+By default, the final date uses the same adjustment as the other dates.
 
-1. `coupons` is positional. Entry zero applies to the first generated coupon
-   period, entry one to the second, and so on. If the payment schedule is
-   longer, the last coupon definition repeats through maturity. A list longer
-   than the generated schedule is rejected rather than silently truncated.
-2. `notional_percentages` is also positional and uses the same carry-forward
-   rule. Each value is the fraction of original principal outstanding during
-   that period. The first value must be `1.0`; values must remain in `(0, 1]`
-   and cannot increase. Extra entries beyond the generated schedule are
-   rejected.
-3. `call_schedule` is not positional. Each entry supplies `start_date`, an
-  optional `end_date`, and `strike`. Without an end date it is a discrete
-  call. Otherwise it is an inclusive exercise window. Windows are sorted,
-  must follow the bond start and end before final payment, and cannot overlap,
-  including at a shared endpoint. The legacy serialized `date` field remains
-  accepted as an alias for `start_date`.
+The side is set on the trade (`SteppedCouponBondTrade` or `FixedRateBondTrade`),
+together with the pricing anchor and optional settlement and spread day counts.
+Instrument builders do not take a side. Cashflows describe the contract; the
+pricer applies the trade direction to PV and sensitivities, and claim
+conversion applies it to XVA claims.
 
-A coupon schedule contains the existing `CashflowType<T>` variants:
+`SteppedCouponBond` is built from three schedules:
+
+1. `coupons` is positional. Entry zero applies to the first coupon period,
+   entry one to the second, and so on. If there are more periods than entries,
+   the last entry repeats until maturity. A list longer than the schedule is an
+   error.
+2. `notional_percentages` is also positional, and its last entry repeats in the
+   same way. Each value is the fraction of the original principal outstanding
+   in that period. The first value must be `1.0`. Values must stay in `(0, 1]`
+   and must not increase. A list longer than the schedule is an error.
+3. `call_schedule` is not positional. Each entry has a `start_date`, an
+   optional `end_date`, and a `strike`.
+   - Without an end date, the entry is a single call date.
+   - With an end date, it is an exercise window that includes both ends.
+   - Windows are sorted. They must start after the bond starts, end before the
+     final payment, and must not overlap, not even at a shared end date.
+   - The serialized field `date` is accepted as another name for `start_date`.
+
+Each coupon is one of the `CashflowType<T>` variants:
 
 ```text
 FixedRateCoupon(FixedRateCoupon<T>)
@@ -117,22 +123,27 @@ For a floating fixing `L`, the all-in coupon rate is
 R=\min\\!\left(\max(L+\text{spread},\text{floor}),\text{cap}\right),
 \\]
 
-with a missing floor interpreted as negative infinity and a missing cap as
-positive infinity. Fixed coupons use the bond's coupon day counter. Floating
-coupons use the referenced index convention.
+where a missing floor means no floor and a missing cap means no cap. Fixed coupons
+use the bond's coupon day counter. Floating coupons use the index's convention.
 
-An outstanding-notional reduction creates a principal redemption at the end
-of that coupon period. The remaining principal is redeemed at maturity.
+When the outstanding notional steps down, the reduction is redeemed at the end
+of that coupon period. The rest of the principal is redeemed at maturity.
 
-Call entries give the issuer the right to redeem; holder puts are unsupported.
-Strikes are quoted in bond units and exclude same-day coupons. During backward
-valuation the engine first discounts continuation, then applies the issuer
-obstacle `min(V, K)`, then adds contractual cashflows mapped to that date.
-Consequently, same-day coupon and scheduled amortization are paid before the
-remaining bond is called.
+Calls give the issuer the right to redeem the bond. Holder puts are not
+supported. Strikes are in bond units and do not include coupons paid on the
+same day.
 
-The following Rust fragment illustrates the contract and position terms.
-Its context and market configuration are supplied separately.
+On each date, valuation works backward in this order:
+
+1. discount the value of continuing to hold the bond;
+2. apply the issuer call: take `min(V, K)`;
+3. add the cashflows paid on that date.
+
+So a coupon or amortization paid on a call date is paid before the rest of the
+bond is called.
+
+The following fragment shows the contract and position terms. The context
+and market configuration are set up separately.
 
 ```rust,ignore
 let bond = MakeSteppedCouponBond::<Recorded>::default()
@@ -172,38 +183,40 @@ let mut pricer = TreeBasedBondPricer::new();
   ));
 ```
 
-The stepped bond and its builder have no discount index. Discounting is a
-pricing choice resolved by the pricer's `DiscountPolicy`. Straight-bond
-pricing also requires a policy; an embedded instrument index does not bypass
-it. A policy can explicitly choose whether to prefer legacy instrument
-indices.
+Neither the stepped bond nor its builder has a discount index. The pricer's
+`DiscountPolicy` chooses the discount curve. Straight bonds also need a policy;
+an index stored on the instrument is not used unless the policy says so.
+`FixedIncomeDiscountPolicy::new(prefer_instrument_index)` controls whether the
+instrument's index is preferred.
 
 `CashflowType::fixed` and `CashflowType::floating` create coupon templates. The
-builder rebinds existing cashflows to the generated dates and outstanding
-notional, preserving rates, spreads, payoff operations and fixed-rate
-conventions unless a day counter is overridden.
+builder fits each template to the generated dates and outstanding notional.
+Rates, spreads, payoff operations, and fixed-rate conventions are kept, unless
+you override the day counter.
 
 ## Floating-coupon projection convention
 
-Historical in-advance coupons use the fixing stored on their accrual-start
-date. Future coupons use the current forward curve for their reference index,
-then apply spread, floor, and cap. The resulting amount remains an AD
-expression, so its forward-curve sensitivity appears in the ordinary risk
-table.
+- A past coupon set in advance uses the fixing stored on its accrual start
+  date.
+- A future coupon uses the forward rate from today's curve for its index, then
+  applies the spread, floor, and cap.
 
-The callable engines use the Hull–White short-rate state to value the issuer
-option. Future floating coupons are projected from valuation-date forwards
-and remain deterministic within that exercise calculation. Their forward-curve
-sensitivity is retained, but the engines omit stochastic future coupon fixings.
+The coupon amount stays an AD expression, so its forward-curve risk appears in
+the normal sensitivity table.
+
+The callable engines use the Hull–White short rate to value the issuer call.
+Future floating coupons are projected from today's forwards and treated as
+known amounts inside the call calculation. Their forward-curve risk is
+included, but the engines do not model random future fixings.
 
 ## Context-level pricer and model selection
 
-Choose the callable engine through a `PricerConfiguration` for
-`InstrumentType::SteppedCouponBond`. The context uses the same configuration
-mechanism for other product families. Each model assignment associates a typed
-`ModelConfiguration` with a `MarketIndex`.
+Choose the callable engine with a `PricerConfiguration` for
+`InstrumentType::SteppedCouponBond`. Other product families use the same kind
+of configuration. Each model assignment links a `ModelConfiguration` to a
+`MarketIndex`.
 
-A tree configuration for the stepped-coupon bond is:
+A tree configuration for the stepped-coupon bond:
 
 ```json
 {
@@ -229,7 +242,7 @@ A tree configuration for the stepped-coupon bond is:
 }
 ```
 
-Backward Fourier evolution uses the same model assignment:
+Backward Fourier evolution with the same model assignment:
 
 ```json
 {
@@ -259,17 +272,17 @@ Backward Fourier evolution uses the same model assignment:
 }
 ```
 
-The configured model is resolved using the policy-selected discount index.
+The model is looked up using the discount index chosen by the policy.
 
 ## Hull-White dynamics and curve fit
 
-Both callable engines use the one-factor Hull-White state
+Both callable engines use the one-factor Hull-White model
 
 \\[
 dx_t=-\alpha x_t\\,dt+\sigma\\,dW_t,\qquad r_t=x_t+\phi(t).
 \\]
 
-For one interval `dt`, the exact transition is
+Over one step `dt`, the exact transition is
 
 \\[
 E[x_{t+\Delta}\mid x_t=x]=e^{-\alpha\Delta}x,\qquad
@@ -277,33 +290,40 @@ E[x_{t+\Delta}\mid x_t=x]=e^{-\alpha\Delta}x,\qquad
 =\sigma^2\frac{1-e^{-2\alpha\Delta}}{2\alpha},
 \\]
 
-with limit `sigma^2 dt` when `alpha` is zero. The deterministic shift
-`phi(t)` fits the initial discount curve. OAS is added to the short rate after
-that fit, so changing OAS does not recalibrate drift.
+which becomes `sigma^2 dt` when `alpha` is zero.
 
-Contractual payments and discrete call dates are mapped to their nearest time
-grid points. Call windows permit exercise at every numerical time inside the
-inclusive interval in both engines, not only at endpoints. A window that
-already started remains exercisable at settlement until its end date.
-Strikes use principal remaining after amortization mapped to the exercise
-step. Increasing `steps_per_year` improves time resolution; `max_steps` caps
-total work.
+- The shift `phi(t)` fits the initial discount curve.
+- OAS is added to the short rate after the fit, so changing the OAS does not
+  change the fitted drift.
+
+Time grid:
+
+- Payments and single call dates are moved to the nearest grid point.
+- In both engines, a call window allows exercise at every grid time inside the
+  window, not only at its ends.
+- A window that has already started can be exercised from settlement until its
+  end date.
+- The strike applies to the principal still outstanding, after amortization,
+  at the exercise step.
+- Raise `steps_per_year` for finer time steps. `max_steps` caps the total
+  number of steps.
 
 ### Recombining tree
 
-`TreeBasedBondPricer` places nodes at spacing
-`sqrt(3 Var[dx])`. At each node it selects the nearest middle successor to the
-conditional mean and assigns three probabilities that match the first two
-conditional moments. State prices propagate forward, and the deterministic
-shift at each layer is chosen so their discounted sum matches the input curve
-discount factor. The bond value is then obtained by backward induction with
-the call obstacle.
+`TreeBasedBondPricer` spaces nodes by `sqrt(3 Var[dx])`. At each node:
+
+1. it picks as middle successor the node closest to the conditional mean;
+2. it sets three probabilities that match the conditional mean and variance.
+
+State prices are rolled forward. At each step the shift is chosen so that the
+discounted state prices match the input curve's discount factor. The bond is
+then valued by backward induction, applying the call at each step.
 
 ### Backward Fourier evolution
 
-`BackwardFourierEvolutionBondPricer` uses a uniform state grid. If
-\\(V_{i+1}(x)\\) is the next-step value and \\(\eta\\) the Gaussian
-innovation, first form the convolution
+`BackwardFourierEvolutionBondPricer` uses an evenly spaced state grid. Let
+\\(V_{i+1}(x)\\) be the value at the next step and \\(\eta\\) the Gaussian
+shock. First compute the convolution
 
 \\[
 g_i(y)=\mathcal F^{-1}\\!\left(
@@ -313,21 +333,25 @@ e^{-\tfrac12\operatorname{Var}(\eta)k^2}\right)(y).
 
 The conditional expectation is then
 \\(E[V_{i+1}(e^{-\alpha\Delta}x+\eta)]=g_i(e^{-\alpha\Delta}x)\\).
-Separating convolution from evaluation at the mean avoids confusing the
-Fourier multiplier with the mean-reversion coordinate transformation.
 
-The implementation performs an FFT, multiplies by the Gaussian characteristic
-function, and performs an inverse FFT. It interpolates at the mean-reverted
-state, discounts by `exp(-(x + phi_i + OAS)dt)`, and applies the same call
-obstacle as the tree.
+Each step:
 
-`fourier_grid.points` must be a power of two. More points reduce interpolation
-and spectral error. `standard_deviations` controls the truncated state-domain
-half-width; increasing it reduces periodic wrap-around at the cost of a wider
-grid.
+1. runs an FFT;
+2. multiplies by the Gaussian characteristic function;
+3. runs an inverse FFT;
+4. interpolates at the mean-reverted state;
+5. discounts by `exp(-(x + phi_i + OAS)dt)`;
+6. applies the same call rule as the tree.
 
-The Fourier curve fit uses Gaussian integrated-state variance. With
-`I_n = dt sum_(i<n) x_i`, Gaussianity gives
+Grid settings:
+
+- `fourier_grid.points` must be a power of two. More points reduce
+  interpolation and spectral error.
+- `standard_deviations` sets the half-width of the state grid. A larger value
+  reduces wrap-around error but spreads the points wider.
+
+The Fourier engine fits the curve using the variance of the integrated state.
+With `I_n = dt sum_(i<n) x_i`, the Gaussian property gives
 
 \\[
 E[e^{-I_n}]=e^{\tfrac12\operatorname{Var}(I_n)},\qquad
@@ -335,50 +359,55 @@ E[e^{-I_n}]=e^{\tfrac12\operatorname{Var}(I_n)},\qquad
 +\tfrac12\operatorname{Var}(I_n).
 \\]
 
-This supplies an independent numerical construction of the same initial-curve
-fit used by the tree.
+This fits the same initial curve as the tree, computed in a different way.
 
 ## OAS inversion and risk
 
-For a clean or dirty price anchor, the selected callable engine is evaluated
-inside a bracketed scalar root solve until model dirty value equals quoted
-dirty value. The converged OAS is then placed on the AD capture for final
-valuation. `Request::Sensitivities` contains all discount/forward-curve pillar
-adjoints and one additional row:
+With a clean or dirty price anchor, the pricer solves for the OAS with a
+bracketed root search. It stops when the model dirty value equals the quoted
+dirty value. The solved OAS is then an AD input for the final valuation.
+
+`Request::Sensitivities` returns the risk to every discount and forward curve
+pillar, plus one extra row:
 
 ```text
 <identifier>.OAS    dPV/dOAS
 ```
 
-This is the partial derivative with OAS treated as an independent market
-factor. Curve and volatility sensitivities hold that spread fixed.
+This row treats the OAS as an independent market input. The curve and
+volatility sensitivities hold the OAS fixed.
 
 ## Validation and examples
 
-Tests cover invalid schedules, carry-forward behavior, amortization,
-clean/dirty spread round trips, AD-versus-central-difference spread risk,
+The tests cover invalid schedules, repetition of the last entry, amortization,
+clean/dirty spread round trips, AD against central-difference spread risk,
 extreme OAS, call boundaries, tree refinement, a Hull-White closed-form
-zero-coupon bond-option benchmark, and agreement between the tree and Fourier
-engines for fixed and mixed capped/floored coupons.
+zero-coupon bond option, and agreement between the tree and Fourier engines for
+fixed and mixed capped/floored coupons.
 
-Runnable examples are:
+Runnable examples:
 
 - `cargo run -p valuation-bonds`
-  prices the same mixed-coupon instrument with both engines.
+  prices the same mixed-coupon bond with both engines.
 - `cargo run --manifest-path examples/scripting/Cargo.toml --bin stepped-coupon-bond`
-  compares the native tree with an equivalent scripted deterministic payoff.
+  compares the tree engine with an equivalent deterministic script.
 
-Calibrated Hull–White parameters retain the entire piecewise sigma schedule.
-Transition variance integration splits at every sigma boundary, using the
-first sigma from time zero and extrapolating the last beyond its final pillar.
-Calibration uses the curve's reference date and day counter while preserving
-the configured step density and maximum steps. Callable valuation currently
-requires settlement to equal the context evaluation date.
+### Calibrated parameters
 
-Volatility sensitivities chain the calibration Jacobian through sampled
-surface or cube quotes to their original risk pillars. That schedule assembles
-independent constant-sigma fits, not a joint repricing calibration. The
-diagonal forward-difference Jacobian includes volatility inputs only:
-sigma's response to curve quotes and
-changes in calibration strikes is not included. Cube calibration must select
-at most one underlying tenor per expiry and stay within the source domain.
+- Calibrated Hull–White parameters keep the whole piecewise sigma schedule.
+- Transition variance is integrated piece by piece at each sigma change. The
+  first sigma applies from time zero, and the last sigma applies beyond the
+  final pillar.
+- Calibration uses the curve's reference date and day counter, with the
+  configured steps per year and maximum steps.
+- Callable valuation requires settlement to equal the context evaluation date.
+
+Volatility sensitivities pass through the calibration Jacobian to the original
+surface or cube pillars. Limits:
+
+- The schedule is built from separate constant-sigma fits, not a joint fit.
+- The Jacobian (one-sided differences, one quote at a time) covers volatility
+  inputs only. It does not include how sigma moves with curve quotes or with
+  calibration strikes.
+- Cube calibration must use at most one underlying tenor per expiry, within the
+  range of the source cube.

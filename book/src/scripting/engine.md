@@ -1,29 +1,29 @@
-# Script valuation and claim integration
+# Script engine and exposure claims
 
-`ScriptEngine` prepares a dated payoff program and evaluates it over market
-paths. Preparation parses the program once and identifies the observations
-needed from the model. Each path then supplies those observations, updates
-script variables and accumulates payments.
+`ScriptEngine` prepares a payoff script and evaluates it on market paths. It
+parses the script once and works out which observations the model must supply.
+On each path, the model supplies those observations, the script updates its
+variables, and payments are added up.
 
-For a selected result variable, the engine also propagates derivatives to
-registered market and model inputs. Temporary differentiation state is
-released after each path to bound memory use.
+For the result variable you choose, the engine also computes derivatives with
+respect to the registered market and model inputs. Memory used for derivatives
+is freed after each path.
 
 ## Preparing the program
 
-Construction receives an `EventStream`, reference date, local currency and
-local discount index. Variable indexing assigns storage slots and payment
-identities. Market calls become per-event `SimulationDataRequest` values and
-flattened model requests with observation dates. Conditional transformation,
-branch analysis and domain processing prepare the evaluator and remove
-statically impossible branches.
+`ScriptEngine::new` takes an `EventStream`, a reference date, a local currency,
+and a local discount index. During preparation the engine:
 
-The program's horizon includes requested observations and payments, not only
-source-event dates. This is important for a fixing event that declares a much
-later settlement. The model must be configured for the complete requested
-timeline.
+- assigns storage and payment identifiers to the variables;
+- turns market calls into `SimulationDataRequest` values for each event, with
+  their observation dates;
+- analyses conditions and branches, and removes branches that can never run.
 
-The following fragment assumes an existing event stream and differentiable
+The script's horizon covers every observation and payment it asks for, not
+only the event dates. For example, a fixing event can schedule a payment much
+later. Configure the model for the whole period.
+
+The following fragment assumes an existing event stream and a differentiable
 market model:
 
 ```rust,ignore
@@ -34,42 +34,56 @@ let values = engine.evaluate(&mut model, Some("swap"))?;
 let value = values.get("swap");
 ```
 
-The selected variable identifies the result whose weighted adjoints are
-propagated; returned averaged variables are not limited to that one name.
-Without conditionals the engine uses exact expression evaluation. Conditional
-programs use the smoothed evaluator described in the language chapter.
+- `evaluate` returns the path average of the variables. Derivatives are
+  computed only for the variable you select.
+- Scripts without conditions are evaluated exactly. Scripts with conditions use
+  the smoothing described in the [language chapter](language.md).
 
 ## Pathwise AD and reporting
 
-Curve pillars and model inputs are registered in a compiler capture. The
-parallel API prepares supported model/script layouts as shared native path
-programs: paths supply indexed draws, and the compiled program calculates
-values, payments and first gradients. Compatible subsequent calls reuse code
-while rebinding current market coefficients and their published-risk map.
+Curve pillars and model inputs are registered as AD inputs.
 
-Other layouts retain a setup prefix, build transient IR for one path and run
-native differentiation before discarding that IR. Their gradients already
-include setup dependencies and accumulate across the path range. This bounds
-temporary capture memory without an interpreted derivative propagation pass.
-`ScriptModelSetup` constructs inputs in the appropriate capture; live
-expression identities are not shared across independent worker captures.
+The parallel API compiles supported model and script layouts into one path
+program that all paths share. Each path supplies its random draws, and the
+compiled program computes values, payments, and first derivatives. Later
+calls reuse the compiled code with the current market coefficients and risk
+map, when the layout still matches.
 
-The total path count determines normalization. Reproducible path indices do
-not promise bitwise identical floating-point reductions across arbitrary
-thread layouts. Prepared and per-path-capture routes have different first-call
-and warm costs and are benchmarked separately from the stored-path equity pricer.
+For other layouts, the engine runs a shared setup step once. It then records,
+compiles, and differentiates each path separately and discards the recording
+afterward. The gradients include the setup's dependencies and are summed over
+the paths. This keeps memory use bounded. `ScriptModelSetup` creates the inputs
+for each worker's recording.
 
-`evaluate_with_cashflows` additionally collects executed payments. Each
-`ExpectedCashflow` distinguishes mean undiscounted amount in payment currency
-from mean discounted, numeraire-deflated present value in local currency.
-These are raw sampled payments.
+Results:
+
+- Averages are divided by the total number of paths.
+- Path results are reproducible by path index, but sums over paths may differ
+  in the last bits with different thread layouts.
+- The compiled path program and the per-path route have different costs for
+  the first call and for repeated calls. They are benchmarked separately from
+  the stored-path equity pricer.
+
+`evaluate_with_cashflows` also collects the payments made. Each
+`ExpectedCashflow` reports:
+
+- the mean undiscounted amount, in the payment currency;
+- the mean present value, discounted and divided by the numeraire, in the
+  local currency.
+
+These are plain path averages of the payments.
 
 ## Martingale controls and reconciliation
 
-For a selected result, at least 16 paths and eligible discount/forward requests,
-the engine estimates martingale control coefficients on a separate pilot
-sample of up to 64 paths. Known initial-curve expectations anchor discounted
-bond/forward controls. The main estimator is schematically
+The engine reduces variance with martingale control variates when:
+
+- you selected a result variable;
+- there are at least 16 paths;
+- the script makes eligible discount or forward requests.
+
+It fits the control coefficients on a separate pilot sample of up to 64 paths.
+The controls are discounted bonds and forwards, whose expected values are known
+from today's curves. The estimator is
 
 \\[
 \widehat V_{\rm controlled}
@@ -77,33 +91,30 @@ bond/forward controls. The main estimator is schematically
 \widehat\beta^\mathsf T(C_p-E[C])\right].
 \\]
 
-The fitted coefficients are held fixed during differentiation. The adjusted
-estimator reduces variance; assess its remaining error through sampling
-comparisons.
+The fitted coefficients are held fixed for differentiation. The estimate has
+lower variance, but it still has sampling error; measure it.
 
-Only the selected result variable receives this adjustment. Expected cashflow
-present values remain unadjusted sampled payments. Consequently their sum need
-not equal the reported controlled result at finite path count. Equality also
-requires that the selected variable actually represents the total payment
-accumulator rather than another state quantity. Use the estimator's sampling
-error when assessing a stochastic reconciliation; a deterministic comparison has
-a different tolerance.
+Only the selected result variable is adjusted. Expected cashflow present values
+are not. With a finite number of paths, their sum can therefore differ from the
+reported result. They can match only if the selected variable is the total of
+all payments. When you reconcile the two, allow for sampling error; a
+deterministic comparison needs a tighter tolerance.
 
 ## From payments to exposure claims
 
-`ScriptedProduct::contingent_claims` creates one claim per payment identity.
-Each uses unit notional and `LongReceive`, because scale and direction already
-belong to the script expression. Claims share one compiled engine.
+`ScriptedProduct::contingent_claims` creates one claim per payment identifier.
+Each claim has unit notional and `LongReceive`, because the script expression
+already contains the amount and direction. All claims share one compiled
+engine.
 
-At an exposure date, a scripted claim replays the required program against its
-response block and returns that payment's value. The live-claim schedule
-controls which payments remain. Required discount, rate, FX and spot requests
-must all be supported by the market model; the claim bridge does not create
-missing dynamics.
+At an exposure date, a scripted claim reruns the script on the market data for
+that date and returns its payment's value. The live-claim schedule decides
+which payments are still outstanding. The market model must support every
+discount, rate, FX, and spot request; claims cannot add missing dynamics.
 
-Scripted and native claims can share a netting set. The script must specify
-any exercise rule it uses; this claim bridge does not solve general optimal
-stopping for scripted callable products.
+Scripted and native claims can be in the same netting set. If the product has
+an exercise rule, write it into the script. Scripted claims do not solve for
+optimal exercise of callable products.
 
-The Rust examples compare native and scripted swaps under controlled matching
-setups.
+The examples in [`examples/scripting`](../../../examples/scripting) compare
+native and scripted swaps on matching setups.

@@ -1,9 +1,9 @@
 # Scenarios and full revaluation
 
-Scenarios measure the effect of a specified market move by changing inputs,
-rebuilding the affected market objects and repricing the trade. Comparing the
-revalued change with the sensitivity estimate shows how well a local linear
-approximation describes that move:
+A scenario measures the effect of a given market move. It changes the inputs,
+rebuilds the affected market objects, and reprices the trade. Comparing the
+repriced change with the sensitivity estimate shows how well a linear
+approximation describes the move:
 
 \\[
 \Delta V=V(q+\Delta q)-V(q),\qquad
@@ -11,26 +11,32 @@ approximation describes that move:
 \frac{\partial V}{\partial q_j}\Delta q_j.
 \\]
 
-The difference can reflect curvature, a change in exercise or payoff behavior,
-and recalibration effects omitted from partial model sensitivities.
+The two can differ because of curvature, a change in exercise or payoff, or
+recalibration effects that partial model sensitivities leave out.
 
 ## Ordered input transformations
 
-A `Scenario` contains ordered `Shock` definitions. An absolute shock adds its
-value; a relative shock multiplies by one plus its value. The target matches
-an exact identifier or requires every underscore-separated target segment to
-occur in the input identifier. Segment order and multiplicity are ignored.
-The exact-string branch does not prevent that same target from matching other
-identifiers through the segment rule.
+A `Scenario` is an ordered list of `Shock`s.
 
-A fully qualified identifier is therefore not a universal exact-only selector.
-Repeated tenor/expiry tokens can make targets overlap, so constructing one
-shock per full quote identifier can move some quotes more than once. For a
-parallel family stress, prefer one family selector and verify the transformed
-values of every affected quote. An isolated finite-difference bump requires
-checking the actual matched set rather than assuming the target is unique.
+- An absolute shock adds its value to the quote.
+- A relative shock multiplies the quote by one plus its value.
 
-This fragment assumes an existing `context`, `trade` and compatible `pricer`:
+A shock target matches a quote identifier if either:
+
+- the target equals the identifier exactly, or
+- every underscore-separated part of the target appears in the identifier. The
+  order and number of repeats of the parts do not matter.
+
+Both rules always apply. A full quote identifier can therefore also match other
+identifiers that contain the same parts. Repeated tenor or expiry parts can
+make targets overlap, so one shock per full identifier can move some quotes
+more than once.
+
+- For a parallel stress of a quote family, use one family target and check the
+  shocked value of every affected quote.
+- For a bump of a single quote, check which quotes actually matched.
+
+This fragment assumes an existing `context`, `trade`, and compatible `pricer`:
 
 ```rust,ignore
 let scenario = Scenario::new(vec![
@@ -41,40 +47,49 @@ let stressed_market = scenario.apply(&context)?;
 let stressed = pricer.evaluate(&trade, &[Request::Value], &stressed_market)?;
 ```
 
-The first change adds one basis point to matching OIS rate quotes; the second
-scales matching optionlet volatilities by 1.10. Overlapping transformations
-compose in supplied order. All available quote levels are transformed, then
-the context's selected bid/mid/ask level is consumed.
+The first shock adds one basis point to the matching OIS quotes. The second
+multiplies the matching optionlet volatilities by 1.10.
 
-Direct zero-rate quotes can also be targeted. A funding spread curve may
-expose `ZeroRate_EUR_OTHER:FUNDINGSPREAD_<tenor>` identifiers; targeting
-`OTHER:FUNDINGSPREAD` changes all matching spread quotes. Historical fixings and spot
-FX are not implied targets of this quote mechanism. Empty targets, nonfinite shocks and
-unmatched selectors are errors.
+- Overlapping shocks are applied in the order given.
+- All quote levels (bid, mid, ask) are shocked. The context then uses its
+  selected level.
+
+You can also shock direct zero-rate quotes. A funding spread curve may use
+identifiers like `ZeroRate_EUR_OTHER:FUNDINGSPREAD_<tenor>`. The target
+`OTHER:FUNDINGSPREAD` shocks all of them.
+
+Scenarios shock quotes only. To change historical fixings or spot FX, change
+those stores directly. Empty targets, non-finite shocks, and targets that match
+no quote are errors.
 
 ## Independent views and construction
 
-`scenario.apply(&context)` returns a borrowed `MarketDataProvider` with an
-independent cache. The base observations and constructed objects remain
-unchanged. Requests rebuild affected dependencies; unrelated simulations are
-not generated. Unchanged calibrated data can be reused with detached AD
-wrappers. An affected simulation uses its configured seed when rebuilt.
+`scenario.apply(&context)` returns a `MarketDataProvider` that borrows the
+context and has its own cache. The base quotes and built objects do not
+change.
+
+- Objects affected by the shock are rebuilt when a pricer asks for them.
+- Unrelated simulations are not generated.
+- Unaffected calibrated objects are reused.
+- A rebuilt simulation uses its configured seed.
 
 ## Local validation and stress interpretation
 
-For one input, a central comparison uses
+For a single input, the central difference is
 
 \\[
 \frac{V(q+h)-V(q-h)}{2h}.
 \\]
 
-Use identical seeds, grids, policies, payment selection and quote levels.
-Check that only the intended target moved. Vary \\(h\\) to distinguish
-curvature from solver/sampling noise; one finite difference is not a universal
-truth about a derivative.
+When you compare it with an AD sensitivity:
 
-For a broad stress, report the full revalued change and the assumptions it
-reconstructs. A large parallel funding shock can change the whole composite
-discount curve, whereas a derivative row is local to one rate pillar. Credit,
-prepayment and smoothed script behavior can also make stress results depart
-substantially from a linear ladder.
+- use the same seeds, grids, policies, payment selection, and quote level;
+- check that only the intended quote moved;
+- try several values of \\(h\\) to separate curvature from solver or sampling
+  noise. A single finite difference is not proof of the true derivative.
+
+For a large stress, report the fully repriced change and the assumptions behind
+it. A large parallel funding shock can move the whole composite discount curve,
+while each sensitivity row is local to one pillar. Credit, prepayment, and
+smoothed script payoffs can also make stress results differ a lot from a linear
+sum of sensitivities.

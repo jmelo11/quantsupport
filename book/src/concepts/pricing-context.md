@@ -1,16 +1,19 @@
 # Constructing and querying a market
 
-A valuation needs a consistent set of observations and constructed market
-objects. `PricingContext` brings these together: it holds quote, fixing and FX
-stores, curve and model configurations, and the objects built from them. Its
-evaluation date is the quote store's reference date.
+`PricingContext` holds everything a valuation needs from the market:
 
-A pricer requests the market data needed for a trade, and the context constructs
-and caches the corresponding dependencies. Applications can also call
-`initialize()` to build the configured market in advance.
+- the quote, fixing, and FX stores;
+- the curve and model configurations;
+- the market objects built from them.
 
-The following fragment illustrates configuration-driven setup; `quotes` and
-`curves` are previously loaded typed inputs:
+The evaluation date of the context is the reference date of its quote store.
+
+When a pricer asks for market data, the context builds what is needed and
+caches it. You can also call `initialize()` to build the whole configured
+market up front.
+
+The following fragment sets up a context from configuration. `quotes` and
+`curves` are inputs you have already loaded:
 
 ```rust,ignore
 let mut context = PricingContext::new()
@@ -24,79 +27,94 @@ let mut context = PricingContext::new()
 context.initialize()?;
 ```
 
-`validate()` checks compatibility and duplicate configuration without calibrating
-curves or generating paths. `initialize()` clears request caches, starts from
-supplied runtime elements, then constructs configured discount curves, credit
-curves, volatility surfaces, cubes and simulations in that order. Later
-components can therefore consume earlier dependencies. Reinitialization
-rebuilds from the original inputs.
+- `validate()` checks the configuration for conflicts and duplicates. It does
+  not calibrate curves or generate paths.
+- `initialize()` clears the cached results and starts from any market objects
+  you supplied directly. It then builds, in order: discount curves, credit
+  curves, volatility surfaces, volatility cubes, and simulations. Each step can
+  use the objects built before it.
+- Calling `initialize()` again rebuilds everything from the original inputs.
 
-Native pricers and simulation services manage their own differentiation
-recording scopes.
+Pricers and simulations set up AD recording themselves; you do not need to.
 
 ## Dependency-driven construction
 
-A `MarketDataRequest` asks for a focused subset of the market: projection and
-discount curves, a volatility surface/cube, simulations, historical fixings,
-spot FX, or typed pricing/calibration configuration. A request through the
-provider constructs and caches required objects and dependencies.
+A `MarketDataRequest` asks for part of the market. It can ask for:
 
-For example, a swap may need only two rate curves and a fixing series even if
-the context also describes unrelated equities and simulations. A calibrated
-swaption additionally needs source option identities and its volatility market.
-The context reports missing configuration for the requested resource.
+- projection and discount curves;
+- a volatility surface or cube;
+- simulations;
+- historical fixings;
+- spot FX rates;
+- pricing or calibration configuration.
 
-`ConstructedElementStore` groups constructed objects by `MarketIndex`.
-Directly supplied curves are useful for controlled tests such as the first
-valuation. Configuration-driven markets are more suitable for serialization,
-snapshots and coherent scenario reconstruction.
+The context builds and caches the requested objects and everything they depend
+on. For example, a swap may need only two rate curves and one fixing series,
+even if the context also describes equities and simulations. A calibrated
+swaption also needs its volatility market and the identifiers of the options
+used to calibrate it. If the configuration for a requested object is missing,
+the context returns an error that names it.
+
+`ConstructedElementStore` holds built objects, grouped by `MarketIndex`. You
+can insert curves directly, which is useful for tests such as the
+[first valuation](../getting-started/first-swap.md). Markets built from
+configuration are better when you need serialization, snapshots, or scenarios.
 
 ## Discounting is a policy
 
-An index identifies a curve; a `DiscountPolicy` determines which curve applies
-to an object. `SingleCurveCSADiscountPolicy` selects its collateral index for
-payments in the collateral currency and `Collateral(payment_ccy, collateral_ccy)`
-for other currencies. `FixedIncomeDiscountPolicy` can prefer an instrument
-index or choose a configured per-currency risk-free index.
+A `MarketIndex` names a curve. A `DiscountPolicy` decides which curve
+discounts a given payment.
 
-The bootstrap policy uses these rules while solving calibration instruments.
-Valuation pricers must also receive the appropriate policy. The context's
-base currency/index guide base collateral construction, but they are not a
-promise that every direct Rust pricer will automatically install a policy or
-convert its output to that currency.
+- `SingleCurveCSADiscountPolicy` uses its collateral index for payments in the
+  collateral currency, and `Collateral(payment_ccy, collateral_ccy)` for
+  payments in other currencies.
+- `FixedIncomeDiscountPolicy` can use the instrument's own index, or a
+  risk-free index configured for each currency.
 
-`PricerConfiguration` associates an instrument family with a typed pricing
-implementation and model assignments. Binding services use these assignments
-for supported families. Direct Rust callers construct the selected concrete
-pricer.
+Curve bootstrapping uses these policies to value calibration instruments. When
+you price, pass the right policy to the pricer as well.
+
+The context's base currency and base index are used to build the base
+collateral curves. A pricer you create directly may not apply a
+discount policy or convert results to the base currency on its own. Check the
+pricer's documentation.
+
+`PricerConfiguration` maps an instrument family to a pricing method and model.
+The bindings use it to pick pricers for supported families. When you call the
+library directly, you create the pricer you want yourself.
 
 ## Independent market views
 
-A `Scenario` borrows the base context and presents transformed quotes,
-including direct zero rates, through an independent request cache. It does not
-mutate the base store or require reconstructing every configured simulation.
-Unchanged calibrated values can be reused with detached AD wrappers; affected
-dependencies are rebuilt when consumed.
+A `Scenario` gives a shocked view of a base context. The shocked quotes,
+including direct zero rates, are used only in the view; the base context does
+not change. Market objects that the shock does not affect are reused. Affected
+objects are rebuilt when a pricer first asks for them. Simulations are not all
+rebuilt up front.
 
-Construction inputs can be retained between valuations, while each market
-view has its own cache and each valuation uses temporary differentiation
-state. These lifetimes determine when a curve can be reused and when it must
-be rebuilt. The [risk chapter](../risk/aad.md) explains how market inputs
-remain connected to the reported derivatives.
+The [risk chapter](../risk/aad.md) explains how sensitivities are linked back
+to the market inputs.
 
-`with_zero_rate_risk()` and `reproject_risk()` create `RiskContext` views for
-reporting sensitivities in another curve basis. They retain the pricing curves
-and change their AD connections to the reported pillars. Zero-rate views use
-rates implied from constructed discount factors; instrument views use the
-implied quotes of a supplied calibration basket. Both are accepted by existing
-Rust pricers through `MarketDataProvider`. See the
-[risk basis examples](../risk/aad.md#changing-the-curve-risk-basis).
+### Reporting risk in another basis
+
+`with_zero_rate_risk()` and `reproject_risk()` return a `RiskContext`. It
+reports sensitivities against different pillars while pricing on the same
+curves.
+
+- `with_zero_rate_risk()` reports risk to zero rates implied by the built
+  discount factors.
+- `reproject_risk()` reports risk to the implied quotes of a calibration basket
+  that you supply.
+
+A `RiskContext` is a `MarketDataProvider`, so any pricer accepts it. See
+the [risk basis examples](../risk/aad.md#changing-the-curve-risk-basis).
 
 ## Generating a future market
 
-`PricingContext::advance_to` generates horizon quotes, spot observations and
-intervening fixing histories, then returns an ordinary independent context.
-This fragment uses an existing source context, horizon, scenario, and trade:
+`PricingContext::advance_to` builds a market at a future date (the horizon).
+It generates quotes and spot values at the horizon and the fixings between
+today and the horizon. It returns a new, independent context.
+
+This fragment uses an existing context, horizon, scenario, and trade:
 
 ```rust,ignore
 let assumptions = ForwardMarketConfiguration::new(horizon)
@@ -107,48 +125,77 @@ let stressed = scenario.apply(&future)?;
 let result = pricer.evaluate(&trade, &[Request::Value], &stressed)?;
 ```
 
-`AdvanceInTime` is the component contract. Its configuration is serializable;
-its borrowed `ForwardMarketSource` supplies the market dependencies. Discount,
-projection, dividend and survival curves use source discount-factor ratios by
-default. `CurveRoll::ConstantTenor` instead preserves remaining-time shape.
-Calibration instruments are built using horizon settlement and schedule
-conventions; prices, spreads, yields and FX points remain in native quote units.
-Composite curves are composed from their advanced components. An explicit override
-on a composite exports that curve independently on its configured target grid.
-The resulting context rebuilds its own curves, surfaces and calibrated models.
-Stored simulations are regenerated from the horizon when requested.
+`AdvanceInTime` is the trait that performs this step. Its configuration can be
+serialized. A borrowed `ForwardMarketSource` supplies the market data it reads.
 
-`VolatilityRoll::ConstantTenor` preserves quoted volatility at the same remaining
-expiry and smile coordinate. `ForwardVariance` subtracts elapsed variance at
-that coordinate and rejects negative increments. It is an explicit deterministic
-scenario convention; it does not infer conditional smile dynamics from today's
-option prices. Source interpolation and extrapolation restrictions still apply.
+### Curves
 
-`FixingRoll::Project` retains source history and generates intervening business-day
-rate observations, equity spots and FX observations. Later-dated observations in a source fixing
-file are excluded to prevent look-ahead. `Preserve` retains the known history
-without generating intervening observations; horizon equity and FX spots still
-advance. Ordinary historical fixing requirements
-continue to apply when pricing at the horizon.
+- By default, discount, projection, dividend, and survival curves roll forward
+  using ratios of today's discount factors.
+- `CurveRoll::ConstantTenor` keeps the curve shape by time to maturity instead.
+- Calibration instruments are rebuilt with settlement and schedule conventions
+  at the horizon. Prices, spreads, yields, and FX points stay in their usual
+  quote units.
+- A composite curve is rebuilt from its advanced components. If you give a
+  composite curve its own override, it is exported on its configured target
+  grid instead.
+- The new context builds its own curves, surfaces, and calibrated models.
+  Stored simulations are regenerated from the horizon when requested.
 
-Call `scenario.apply(&context)?.advance_to(&assumptions)` to shock the source before
-advancement. Applying a scenario to the returned context shocks the horizon.
-These operations need not produce the same market. Generate different horizons
-directly from the original context to avoid repeated rebootstrap approximation.
+### Volatility
 
-The selected source quote level is retained; other levels are not manufactured.
-Dated contracts retain their dates. Use `with_quote_replacement` to replace an
-expired futures contract or another target definition. Supplied curves are
-exported into direct quote grids; `with_curve_grid` chooses their target tenors.
-Without a grid, future nodes are used, or 0D/1Y/2Y/5Y/10Y/30Y for curves without
-nodes. Supplied volatility markets require calibration instrument identities or
-an explicit `with_surface_grid` / `with_cube_grid`.
+- `VolatilityRoll::ConstantTenor` keeps the same volatility at the same time to
+  expiry and smile point.
+- `ForwardVariance` removes the variance that has elapsed at that point. It
+  fails if the remaining variance would be negative.
 
-`market_advancement_details()` records the source date, source observation instant and
-assumptions. Snapshots retain this metadata and dividend-curve construction
-inputs. As for other snapshots, retain the fixing store separately for replay. Its JSON schema supports parameterized index
-keys such as `EQ:AAPL` and `FX:EURUSD`, as well as ordinary rate indices.
-Generated quotes define horizon sensitivity coordinates. Sensitivity to today's
-inputs requires advancing and repricing shocked source markets; numeric quote
-generation does not retain the source AD graph. Rebootstrap preserves calibration
-quotes, with possible interpolation differences between target pillars.
+These are fixed scenario rules. They are not a model of how the smile evolves.
+The interpolation and extrapolation limits of the source surface still apply.
+
+### Fixings
+
+- `FixingRoll::Project` keeps the existing history and generates business-day
+  fixings for rates, equity spots, and FX up to the horizon. Fixings in the
+  source file dated after today are dropped, to avoid using future data.
+- `Preserve` keeps the existing history and generates no new fixings. Equity
+  and FX spots still move to their horizon values.
+
+When you price at the horizon, the usual rules for required past fixings apply.
+
+### Combining with scenarios
+
+- `scenario.apply(&context)?.advance_to(&assumptions)` shocks today's market,
+  then rolls it forward.
+- Applying a scenario to the returned context shocks the horizon market.
+
+The two orders do not have to give the same result. To build several horizons,
+advance each one directly from the original context. Advancing step by step
+repeats the bootstrap and adds approximation error.
+
+### Quotes and grids
+
+- Only the selected quote level is carried forward. Other levels are not
+  generated.
+- Contracts with fixed dates keep those dates. Use `with_quote_replacement` to
+  replace an expired futures contract or change another target definition.
+- Curves you supplied directly are exported as direct quotes on a grid.
+  `with_curve_grid` sets the tenors. Without a grid, the curve's future nodes
+  are used, or 0D/1Y/2Y/5Y/10Y/30Y if the curve has no nodes.
+- Volatility markets you supplied directly need the identifiers of their
+  calibration instruments, or an explicit `with_surface_grid` /
+  `with_cube_grid`.
+
+### Metadata and risk
+
+`market_advancement_details()` records the source date, source observation
+time, and assumptions. Snapshots keep this metadata and the inputs for dividend
+curves. As with other snapshots, keep the fixing store separately if you want
+to replay the market. Its JSON format accepts index keys such as `EQ:AAPL` and
+`FX:EURUSD`, as well as ordinary rate indices.
+
+Sensitivities in the advanced market are to the generated horizon quotes. The
+generated quotes are not linked to today's inputs by AD. To get sensitivity to
+today's inputs, shock today's market, advance it, and reprice.
+
+Rebootstrapping at the horizon reprices the calibration quotes. Values between
+the target pillars can differ because of interpolation.

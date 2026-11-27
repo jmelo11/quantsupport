@@ -1,24 +1,31 @@
-# Dated payoff programs
+# Scripting language
 
-Payoff scripts describe observations, state changes and payments in a dated
-sequence of events. They are useful for contracts whose coupon or redemption
-rules can be expressed directly as a small program. The native engine parses
-the events, determines their market-data requirements and evaluates them
-against simulated market states.
+A payoff script describes a contract as a list of dated events. Each event can
+observe market data, update variables, and make payments. Use scripts for
+contracts whose coupon or redemption rules are easy to write as a small
+program.
 
-Variables persist along each path, allowing a later payment to depend on
-earlier observations. Payment statements apply discounting and currency
-conversion through the configured market model.
+The script engine parses the events, works out which market data they need,
+and evaluates them on simulated market paths.
 
-`CodedEvent` pairs a date with source text. Conversion into an `EventStream`
-parses each program into an expression tree. Events must be nonempty, ordered
-and not precede the reference date; equal-date events execute in vector order.
-Every variable read must follow an assignment in the current or an earlier
-event.
+- Variables keep their values along a path, so a later payment can depend on
+  earlier observations.
+- Payments are discounted and converted to the right currency by the market
+  model.
+
+`CodedEvent` pairs a date with script text. Converting a list of events into an
+`EventStream` parses each script. Rules:
+
+- Events must not be empty, must be in date order, and must not be before the
+  reference date.
+- Events on the same date run in list order.
+- A variable must be assigned before it is read, in the same event or an
+  earlier one.
 
 ## State, observations and payments
 
-The following event describes one receive-fixed/pay-floating coupon:
+This event describes one coupon of a swap that receives fixed and pays
+floating:
 
 ```text
 swap = 0;
@@ -28,21 +35,27 @@ floating = RateIndex("SOFR", "2027-03-09", "2027-06-09");
 swap pays 10000000 * (fixed_rate - floating) * accrual on "2027-06-09";
 ```
 
-Attach this event to the fixing/start date, 9 March. The event observes the
-rate at that date and declares the payment due on 9 June.
+Attach the event to the fixing and start date, 9 March. It observes the rate
+on that date and schedules the payment for 9 June.
 
-Statements terminate with semicolons; blocks use braces. Assignment,
-compound assignment, arithmetic, power, comparisons, boolean logic, arrays
-and bounded `for` loops provide ordinary state manipulation. Identifiers are
-case-sensitive. Script strings follow the native payoff-language grammar, including its
-supported comment and expression syntax.
+Syntax:
 
-`RateIndex` requests a forward observation over the specified interval.
-`Spot("AAPL")` requests an equity spot; a currency pair such as
-`Spot("USD","CLP")` requests CLP per USD. `Df` requests a discount factor,
-and `cvg` delegates year-fraction measurement to a named day counter.
-The model must support the requested observations; parsing a name does not
-create a missing factor.
+- Statements end with a semicolon. Blocks use braces.
+- You can use assignment, compound assignment, arithmetic, powers,
+  comparisons, boolean logic, arrays, and bounded `for` loops.
+- Identifiers are case-sensitive.
+- Comments and expressions follow the payoff-language grammar.
+
+Market functions:
+
+- `RateIndex` asks for a forward rate over the given period.
+- `Spot("AAPL")` asks for an equity spot price.
+- `Spot("USD","CLP")` asks for an FX rate, here CLP per USD.
+- `Df` asks for a discount factor.
+- `cvg` computes a year fraction with a named day counter.
+
+The model must support every observation the script asks for. Writing a name in
+a script does not create a missing model factor.
 
 A payment has the form
 
@@ -50,20 +63,23 @@ A payment has the form
 accumulator pays amount on "2027-06-09" in "USD";
 ```
 
-Date and currency clauses can be omitted, in which case they use the event
-date and local currency. The amount is contractual before discounting.
-Evaluation converts/discounts it and deflates by the appropriate numeraire
-before adding to the accumulator. Every payment node receives a stable
-identity for cashflow reporting and claim conversion.
+- If you leave out the date, the payment is on the event date.
+- If you leave out the currency, the local currency is used.
+- The amount is the contract amount, before discounting.
+
+When the script runs, each payment is converted, discounted, and divided by the
+numeraire before it is added to the variable. Each payment gets a stable
+identifier, used in cashflow reports and in claim conversion.
 
 ## Conditional payoffs and smoothing
 
 A hard digital payoff \\(\mathbf1_{\\{X>K\\}}\\) has zero pathwise derivative
-away from its boundary. Merely recording its arithmetic does not produce a
-useful Monte Carlo digital sensitivity. Scripting deliberately smooths
-market-dependent conditionals with a finite-width transition.
+away from its boundary, so recording it gives no useful Monte Carlo
+sensitivity. To get one, scripts replace market-dependent conditions with a
+smooth transition of finite width.
 
-For a comparison reduced to \\(x=\text{lhs}-\text{rhs}\\), its truth degree is
+For a comparison written as \\(x=\text{lhs}-\text{rhs}\\), the degree to which
+it is true is
 
 \\[
 d_\varepsilon(x)=
@@ -74,25 +90,26 @@ d_\varepsilon(x)=
 \end{cases}
 \\]
 
-The evaluated state blends both branches as
+The result mixes both branches:
 \\(d_\varepsilon V_{\rm then}+(1-d_\varepsilon)V_{\rm else}\\).
-Equality uses a butterfly profile; boolean operations combine truth degrees
-through products/complements. Nested conditionals need separate branch-state
-snapshots.
 
-The engine's automatic width is
+- Equality uses a butterfly-shaped profile.
+- Boolean operators combine truth degrees with products and complements.
+- Nested conditions keep a separate copy of the state for each branch.
+
+The default width is
 
 \\[
 \varepsilon=\max\left(
 0.02\max(|\text{lhs}|,|\text{rhs}|),10^{-8}\right).
 \\]
 
-A 4% rate barrier therefore receives roughly 8 bp width, whereas an equity
-barrier at 150 receives width 3. These are economic approximations as well as
-numerical choices. Price and derivative belong to the smoothed program, not
-necessarily the exact discontinuous term sheet.
+So a 4% rate barrier gets a width of about 8 bp, and an equity barrier at 150
+gets a width of 3. This changes the payoff as well as the numerics. The price
+and its derivatives are those of the smoothed payoff, which can differ from the
+exact term sheet.
 
-For an explicitly chosen width, `fif(x,a,b,eps)` blends between two numerical
+To set the width yourself, use `fif(x,a,b,eps)`, which blends between two
 expressions:
 
 ```text
@@ -102,21 +119,28 @@ coupon = fif(
 );
 ```
 
-Here the digital-style coupon changes from zero to 5% across a 10 bp rate
-interval. Piecewise `min`/`max` payoffs remain differentiable only along their
-selected active branches.
+Here the coupon moves from zero to 5% over a 10 bp range of the rate.
+`min` and `max` payoffs are differentiable only along the branch that is
+active.
 
 ## Products and validation
 
-`ScriptedProduct` compiles an event stream and discovers payment nodes,
-including those in branches and loops. It requires at least one payment and
-rejects payments before the reference date. The same engine is shared by
-claims, avoiding repeated parsing for each coupon.
+`ScriptedProduct` compiles an event stream and finds every payment, including
+those inside branches and loops.
 
-Parsing and evaluation use the common `QSError` categories: `ParsingErr` for
-grammar, `InvalidValueErr` for structural rules, `ValueNotSetErr` for
-uninitialized state, `NotFoundErr` for unavailable responses/results and
-`EvaluationErr` for invalid expression operations. Context preserves the
-event/path that failed, and `root_cause()` exposes the underlying category.
-Validate the event stream before starting a long simulation so structural and
-grammar errors can be resolved first.
+- It needs at least one payment.
+- Payments before the reference date are errors.
+- All claims created from the product share one engine, so the script is
+  parsed only once.
+
+Errors use the usual `QSError` categories:
+
+- `ParsingErr`: grammar errors;
+- `InvalidValueErr`: structural rule violations;
+- `ValueNotSetErr`: a variable read before it is set;
+- `NotFoundErr`: a missing response or result;
+- `EvaluationErr`: an invalid operation in an expression.
+
+The error context names the event or path that failed, and `root_cause()`
+returns the underlying category. Validate the event stream before you start a
+long simulation, so you can fix grammar and structure errors first.

@@ -1,15 +1,17 @@
 # Inside automatic differentiation and the JIT
 
 Automatic differentiation (AD) applies the chain rule to a numerical program.
-QuantSupport records scalar arithmetic and uses reverse-mode, or adjoint, AD
-for valuation gradients. Its just-in-time (JIT) compiler turns the value and
-derivative calculations into native machine code using Cranelift. The same
-Rust pricing formula supplies the numerical value and the operations needed
-to differentiate it; generated code can then run with fresh input values.
+QuantSupport records scalar arithmetic and uses reverse-mode (adjoint) AD to
+compute valuation gradients. A just-in-time (JIT) compiler built on Cranelift
+turns the value and derivative calculations into native machine code.
 
-This chapter follows the implementation in `src/ad`, from a recorded number to
-a reusable native function. The [market sensitivities chapter](../risk/aad.md)
-explains how to request risk, interpret its units and change its reporting basis.
+The same pricing formula gives both the value and the operations needed to
+differentiate it. The compiled code can then be run again with new input
+values.
+
+This chapter follows the code in `src/ad`, from a recorded number to a reusable
+native function. To request risk, read its units, or change its reporting
+basis, see the [market sensitivities chapter](../risk/aad.md).
 
 ```mermaid
 flowchart TD
@@ -25,45 +27,54 @@ flowchart TD
 
 ## What a recorded scalar contains
 
-`Scalar` defines the arithmetic shared by `f64` and `Recorded`. Generic curves,
-cashflows and models can therefore express their numerical formulas using one
-scalar interface. `Recorded` is a small, copyable value containing a primal
-`f64`, an operation index, an owning capture token and a capture-policy flag.
-The primal is the ordinary numerical result of the calculation so far.
+`Scalar` defines the arithmetic shared by `f64` and `Recorded`, so generic
+curves, cashflows, and models can be written once for both types.
 
-During an active recording, an arithmetic operator calculates that primal and
-appends an `Operation` to a vector. An instruction such as `Mul(a, b)` refers to
-earlier instructions by index. Operand indices are stored inline; the recording
-contains the operations and their dependencies. The compiler generates local
-derivative formulas from those operation kinds later.
+`Recorded` is a small `Copy` value that holds:
 
-Independent inputs must be identified explicitly. In an ordinary pricing
-capture, `Recorded::new(value)` creates an input, while `Recorded::constant`,
-`Recorded::from` and `Recorded::detached` create values with no independent
-market derivative. Outside a capture, a `Recorded` can hold a persistent
-numerical value in an instrument or market object. The pricing boundary
-registers the market pillars that should become independent risk factors.
-`Graph::trace` registers its supplied input slice automatically.
+- the primal value: the ordinary `f64` result of the calculation so far;
+- the index of the operation that produced it;
+- a token for the recording that owns it;
+- a flag for the recording policy.
 
-The active recording lives in thread-local storage. Its token identifies which
-capture owns each expression. Strict graph expressions must remain inside their
-capture and on their owning thread. Persistent numerical market objects can be
-registered in a later pricing capture. `RecordingScope` temporarily suspends an
-enclosing recording and restores it on drop, including during unwinding. This
-lets isolated market construction run without mixing expression identities.
+While a recording is active, each arithmetic operation computes the primal
+value and appends an `Operation` to a list. An instruction such as `Mul(a, b)`
+refers to earlier instructions by index. The recording stores only the
+operations and their dependencies. The compiler derives the local derivative
+formulas from the operation kinds later.
+
+You must mark the independent inputs explicitly:
+
+- In a pricing recording, `Recorded::new(value)` creates an input.
+- `Recorded::constant`, `Recorded::from`, and `Recorded::detached` create
+  values with no market derivative.
+- Outside a recording, a `Recorded` is a plain number stored in an instrument or
+  market object.
+- Pricers register the market pillars that become risk factors.
+  `Graph::trace` registers its input slice automatically.
+
+The active recording is stored per thread. Its token shows which recording owns
+each expression.
+
+- Graph expressions must stay inside their recording and on its thread.
+- Market objects that hold plain numbers can be registered again in a later
+  pricing recording.
+- `RecordingScope` pauses the current recording and restores it when dropped,
+  including during a panic. This lets market construction run on its own
+  without mixing expressions from different recordings.
 
 ## From a financial formula to a graph
 
-Consider a payment of amount \\(C\\) after \\(T\\) years, discounted at a
-continuously compounded rate \\(r\\):
+Take a payment \\(C\\) due in \\(T\\) years, discounted at a continuously
+compounded rate \\(r\\):
 
 \\[
 V(C,r)=C\exp(-rT).
 \\]
 
-With \\(T=2\\) fixed in the formula, the runtime inputs are \\([C,r]\\).
-The dependencies can be read as follows; individual scalar instructions also
-represent the negation, multiplication and literal maturity:
+With \\(T=2\\) fixed in the formula, the inputs are \\([C,r]\\). The
+dependencies are below. The actual scalar instructions also include the
+negation, the multiplication, and the literal maturity:
 
 | Quantity | Calculation | Dependency |
 | --- | --- | --- |
@@ -73,13 +84,16 @@ represent the negation, multiplication and literal maturity:
 | \\(d\\) | \\(\exp(u)\\) | Discount factor |
 | \\(V\\) | \\(Cd\\) | Amount and discount factor |
 
-`Graph` validates a topologically ordered instruction list: input instructions
-form a prefix, every operand precedes its consumer, and the output identifies
-an existing instruction. This order allows a forward traversal to compute all
-required primal values.
+`Graph` checks that its instruction list is in dependency order:
 
-The following complete example records the formula once, compiles it once and
-checks two executions against its analytical derivatives:
+- input instructions come first;
+- every operand comes before the instruction that uses it;
+- the output refers to an existing instruction.
+
+A single forward pass can then compute every value.
+
+This complete example records the formula once, compiles it once, and checks
+two runs against the exact derivatives:
 
 ```rust
 # extern crate quantsupport;
@@ -101,28 +115,31 @@ for inputs in [[100.0, 0.05], [120.0, 0.03]] {
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-The closure runs during capture. Later calls execute the generated function
-with the supplied amount and rate. Maturity is a constant in this graph; to
-change it without recapturing, make it another runtime input. Gradient entries
-follow the input order. Here the rate derivative is per unit decimal rate, so
-multiplying it by `0.0001` estimates the PV change for a +1 bp move.
+The closure runs only while recording. Later calls run the generated function
+with the given amount and rate.
+
+- The maturity is a constant in this graph. To change it without recording
+  again, make it another input.
+- Gradient entries are in input order.
+- The rate derivative is per unit of decimal rate. Multiply it by `0.0001` to
+  estimate the PV change for a +1 bp move.
 
 ## How reverse differentiation works
 
 For an intermediate quantity \\(z\\), its adjoint
-\\(\bar z=\partial V/\partial z\\) measures how the output responds to that
-quantity. Reverse differentiation starts with \\(\bar V=1\\) and visits
-instructions in reverse dependency order. Each instruction adds its local
-chain-rule contributions to the adjoints of its operands.
+\\(\bar z=\partial V/\partial z\\) measures how the output responds to \\(z\\).
+Reverse differentiation starts with \\(\bar V=1\\) and visits the instructions
+in reverse order. Each instruction adds its chain-rule contribution to the
+adjoints of its operands.
 
 For \\(z=ab\\), the contributions are
 \\(\bar a\mathrel{+}=\bar z b\\) and
-\\(\bar b\mathrel{+}=\bar z a\\). Contributions add because one intermediate
-may influence the result through several later operations. For
-\\(z=\exp(a)\\), the contribution is \\(\bar a\mathrel{+}=\bar z z\\),
-using the forward value already computed for the exponential.
+\\(\bar b\mathrel{+}=\bar z a\\). Contributions are added because one
+intermediate value can affect the result through several later operations. For
+\\(z=\exp(a)\\), the contribution is \\(\bar a\mathrel{+}=\bar z z\\), using
+the forward value of the exponential.
 
-Applied to the payment:
+For the payment:
 
 | Reverse step | Contributions |
 | --- | --- |
@@ -130,87 +147,91 @@ Applied to the payment:
 | \\(d=\exp(u)\\) | \\(\bar u=Cd=V\\) |
 | \\(u=-rT\\) | \\(\bar r=-TV\\) |
 
-This produces all input derivatives of the scalar output from a forward
-calculation and a reverse calculation over its dependencies. The work follows
-the size of that calculation; it avoids a separate repricing for every input.
-The arithmetic uses floating-point values, and numerical approximations in the
-underlying pricing method still affect the result.
+One forward pass and one reverse pass give the derivatives with respect to all
+inputs. The cost grows with the size of the calculation, not with the number of
+inputs, so there is no repricing per input. The arithmetic is floating-point,
+and any approximation in the pricing method still affects the result.
 
 ## What Cranelift compiles
 
-`jit::compile_selected` first prunes operations that cannot affect the selected
-reverse root or requested observations. Input slots retain their ordering.
-It then constructs Cranelift intermediate representation, a lower-level
-description of the numerical instructions:
+`jit::compile_selected` first removes operations that cannot affect the
+selected output or the requested observations. Input slots keep their order. It
+then builds Cranelift intermediate representation (IR), a low-level
+description of the instructions:
 
-1. Input loads and constants supply native `f64` values. Arithmetic operations
-   become Cranelift floating-point instructions. Functions such as `exp`, `ln`,
-   `sin`, `cos`, `pow` and the normal CDF call registered host functions.
-2. Activity analysis identifies which values depend on the active input prefix.
-   Reverse traversal emits derivative arithmetic only for active dependencies.
-   Adjoint contributions become generated additions and multiplications.
-3. Cranelift compiles and finalizes the function with its optimization level set
-   to `speed`. The JIT module provides a callable function pointer and owns the
-   executable memory.
+1. Input loads and constants become native `f64` values. Arithmetic becomes
+   Cranelift floating-point instructions. Functions such as `exp`, `ln`, `sin`,
+   `cos`, `pow`, and the normal CDF call registered host functions.
+2. Activity analysis finds which values depend on the active inputs. The
+   reverse pass emits derivative code only for those values. Adjoint
+   contributions become generated additions and multiplications.
+3. Cranelift compiles the function with optimization level `speed`. The JIT
+   module returns a function pointer and owns the executable memory.
 
-The graph traversal and derivative-rule dispatch happen during compilation.
-The resulting native function executes the forward and reverse arithmetic
-directly. Cranelift assigns its intermediate values to machine registers or
-stack storage as needed.
+Graph traversal and choice of derivative rules happen at compile time. The
+native function runs the forward and reverse arithmetic directly. Cranelift
+keeps intermediate values in registers or on the stack.
 
-The function uses a C ABI with three pointers: inputs, output values and
-derivatives. `NativeKernel` checks the slice lengths before entering that code.
-`CompiledKernel` holds its owner through `Arc`, so clones can share executable
-code while each invocation supplies separate buffers. The last owner releases
-the JIT module's memory. The ownership mutex is used to retain and release the
-module; native evaluation calls the function pointer without locking it.
+The generated function uses the C ABI and takes three pointers: inputs, output
+values, and derivatives.
 
-A scalar `CompiledKernel::value_and_grad` call performs no recording or heap
-allocation. Other interfaces have their own workspace costs: second-order
-helpers and the large-graph execution route allocate temporary buffers.
+- `NativeKernel` checks the slice lengths before calling it.
+- `CompiledKernel` holds the code through an `Arc`. Clones share the code, and
+  each call supplies its own buffers.
+- The last owner frees the JIT module's memory. A mutex protects only this
+  ownership; calls to the function pointer do not lock.
+
+A scalar `CompiledKernel::value_and_grad` call does no recording and no heap
+allocation. The second-order helpers and the large-graph route allocate
+temporary buffers.
 
 ## Ordinary pricers, code caches and large graphs
 
-Built-in pricers manage recording around a valuation. They register market
-pillars, calculate a recorded PV and run native differentiation when a
-sensitivity request needs it. `Recorded::differentiate` clears earlier input
-derivatives; `differentiate_accumulating` adds the current result to them.
-Reported labels come from the registered market inputs.
+Built-in pricers handle recording around a valuation. They register market
+pillars, compute a recorded PV, and run native differentiation when
+sensitivities are requested.
 
-Before native differentiation, the recording exports the expression reachable
-from the result. Export resolves calibrated-input substitutions and places
-independent inputs in a canonical prefix. It also lifts reachable literal
-values into inactive runtime slots. These slots can carry changing numerical
-constants, including random draws, without generating derivatives for them.
+- `Recorded::differentiate` clears earlier input derivatives.
+- `differentiate_accumulating` adds the new result to them.
+- Reported labels come from the registered market inputs.
 
-Ordinary pricing captures the current arithmetic before looking up native
-code. Its thread-local cache hashes the exported graph and verifies matching
-instructions, input layout, active-input count and output before reuse. Hash
-equality alone does not establish compatibility. Cache budgets bound retained
-programs; an evicted program can be compiled again on a later call.
+Before differentiating, the recording exports the part of the expression that
+the result depends on. The export:
 
-`GradientKernel` limits compilation size for large ordinary-pricer graphs.
-The current implementation partitions graphs above 2,048 operations into
-blocks covering up to 384 non-input graph instructions. Each block has a
-compiled forward function for the values needed beyond its boundary and a
-compiled reverse function for the boundary adjoints.
+- substitutes calibrated inputs;
+- puts the independent inputs first, in a fixed order;
+- moves literal values into inactive input slots. These slots can hold changing
+  numbers, such as random draws, without derivatives being computed for them.
 
-Execution visits forward blocks in dependency order, retains their boundary
-values, then visits reverse blocks with the accumulated output seeds. Each
-reverse block computes a vector-Jacobian product and adds it to preceding
-boundaries. The outer execution manages buffers and block calls; the arithmetic
-and derivative rules inside each block execute as native code. Compatible
-blocks can share code through a bounded cache shared across threads.
+Ordinary pricing records the current calculation and then looks for matching
+compiled code. Its per-thread cache hashes the exported graph. Before reusing
+code, it also checks that the instructions, input layout, number of active
+inputs, and output match; a matching hash is not enough. The cache has a size
+limit. Evicted programs are compiled again when needed.
 
-`Recording::checkpoint` and `restart` address another source of repeated work:
-they retain an immutable setup prefix while discarding transient path
-instructions. Each path's native gradient already includes its setup
-dependencies, and its input derivatives can accumulate across paths.
+`GradientKernel` limits compilation size for large pricer graphs. Graphs above
+2,048 operations are split into blocks of up to 384 non-input instructions.
+Each block has:
+
+- a compiled forward function for the values needed outside the block;
+- a compiled reverse function for the adjoints at the block boundary.
+
+Execution runs the forward blocks in dependency order and keeps their boundary
+values. It then runs the reverse blocks, starting from the output seeds. Each
+reverse block computes a vector-Jacobian product and adds it to the preceding
+boundaries. The outer loop manages buffers and block calls; the arithmetic in
+each block runs as native code. Matching blocks can share code through a
+size-limited cache shared across threads.
+
+`Recording::checkpoint` and `restart` avoid repeating setup work. They keep a
+fixed setup section and discard the per-path instructions. Each path's gradient
+includes the setup dependencies, and input derivatives can be added up across
+paths.
 
 ## Branches and the conditions for reuse
 
-A Rust `if` executes while recording and captures its selected arm. The AD
-interfaces handle reuse according to how that control flow was captured:
+A Rust `if` runs while recording, and only the branch taken is recorded. Each
+interface handles comparisons that depend on inputs differently:
 
 | Interface | Handling of input-dependent Rust comparisons |
 | --- | --- |
@@ -218,13 +239,13 @@ interfaces handle reuse according to how that control flow was captured:
 | `CompiledProgram` | Stores comparison guards and checks them at every execution. A changed Boolean decision returns `ComparisonChanged`. |
 | Ordinary pricing recording | Captures the current calculation again before checking native-code compatibility. |
 
-Use recorded `max_val`, `min_val` or `select_greater` for numerical decisions
-that must vary inside one reusable graph. Selection retains both scalar arms
-and chooses the result at execution time. Its derivatives follow the selected
-arm; the predicate contributes zero derivative.
+For decisions that must change within one reusable graph, use the recorded
+functions `max_val`, `min_val`, or `select_greater`. They keep both results and
+choose one at run time. The derivative is that of the chosen result; the
+condition itself has zero derivative.
 
-This complete guarded example captures a positive-input branch, accepts
-another positive value and rejects an input that would take the other arm:
+This complete example records the positive branch. It accepts another positive
+input and rejects an input that would take the other branch:
 
 ```rust
 # extern crate quantsupport;
@@ -247,88 +268,98 @@ assert!(matches!(
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-Guard operands are additional observations, which is why the example allocates
-`program.output_count()` output slots. Guards are checked after the numerical
-function runs. Callers must discard results on an error and recapture for the
-new branch; the program does not recapture automatically.
+Guard operands are stored as extra observations, so the example allocates
+`program.output_count()` output slots. Guards are checked after the function
+runs. On an error, discard the results and record the calculation again for the
+new branch; the program does not do this for you.
 
-`CompiledProgram::trace_reusing` performs a fresh capture and retains previous
-machine code only when the instructions, constant bits, root, observation
-ordering, guards and input layouts match. Runtime values can change within
-that layout. This differs from the ordinary-pricer export described above,
-which explicitly lifts literals into inactive input slots.
+`CompiledProgram::trace_reusing` records the calculation again and reuses the
+previous machine code only if the instructions, constant bits, root,
+observation order, guards, and input layout all match. Input values can change
+freely. Unlike the pricer export above, it does not move literals into input
+slots.
 
-Local derivative conventions also matter. `max` and `min` give both operands
-zero derivatives at a tie; `abs` has zero derivative at zero. Hard selection
-predicates have zero pathwise derivatives. The normal CDF uses the library's
-numerical CDF value with analytic Gaussian derivative rules. These conventions
-describe the implemented local calculation at nonsmooth or approximated points.
+Derivative conventions at non-smooth points:
+
+- `max` and `min` give both operands zero derivative at a tie.
+- `abs` has zero derivative at zero.
+- Hard selection conditions have zero pathwise derivative.
+- The normal CDF uses the library's numerical value with the exact Gaussian
+  derivative.
 
 ## Prepared simulation programs
 
-`CompiledProgram` separates a scalar risk root from additional observed values.
-Its capture closure returns `(risk_root, observations)`: recording an exposure
-or payment as an observation does not automatically add it to the quantity
-being differentiated. Only the leading `active_inputs` receive derivatives;
-later input slots can hold fixed random draws or other inactive coefficients.
+`CompiledProgram` separates the risk output from other observed values. Its
+closure returns `(risk_root, observations)`. Recording an exposure or payment
+as an observation does not add it to the quantity being differentiated.
 
-Supported XVA and parallel scripting workloads prepare a numerical path
-program using this interface. Preparation obtains current model coefficients
-and their Jacobian to the published market factors. Each path supplies those
-coefficients and its indexed random draws, then the native program computes
-fresh values and coefficient gradients. The engine composes those gradients
-with the coefficient-to-market Jacobian to produce labelled risk.
+Only the first `active_inputs` inputs get derivatives. Later input slots can
+hold random draws or other coefficients that are not differentiated.
 
-Each worker owns its mutable execution buffers and shares the compiled code.
-`CompiledKernel::sum_paths` similarly accumulates unnormalized values and
-gradients using Rayon. Its reduction order is reproducible for a fixed pool
-size; callers apply their estimator's normalization.
+XVA and parallel scripting prepare a path program with this interface, for
+supported workloads:
 
-Code compatibility and current market binding are separate requirements.
-`XvaEngine::update_market` refreshes market snapshots and calibration; the next
-preparation refreshes coefficients and their risk map. Compatible code can
-remain shared. Changed contracts, model layouts or collateral agreements can
-require recapture and compilation. The [exposure chapter](../simulation/exposure.md)
-describes the engine lifecycle, and [script valuation](../scripting/engine.md)
-describes prepared and per-path recording routes.
+1. Preparation gets the current model coefficients and their Jacobian with
+   respect to the market factors.
+2. Each path supplies those coefficients and its random draws. The native
+   program computes values and gradients with respect to the coefficients.
+3. The engine multiplies those gradients by the coefficient-to-market Jacobian
+   to get labelled risk.
+
+Each worker has its own buffers and shares the compiled code.
+`CompiledKernel::sum_paths` adds up values and gradients over paths using
+Rayon, without dividing by the path count. The order of the sum is
+reproducible for a fixed thread-pool size. Callers apply their own
+normalization.
+
+Reusing code and refreshing market data are separate steps.
+`XvaEngine::update_market` refreshes the market data and calibration. The next
+`prepare` refreshes the coefficients and their risk map. Matching code is
+reused. A changed contract, model layout, or collateral agreement may need a
+new recording and compilation. See the
+[exposure chapter](../simulation/exposure.md) for the engine lifecycle and
+[script valuation](../scripting/engine.md) for the prepared and per-path routes.
 
 ## Second derivatives and calibration maps
 
-The default `DerivativeOrder::First` compiles value and gradient calculations.
-Selecting `Second` additionally builds a graph for
-\\(g(x,v)=\nabla f(x)^{\mathsf T}v\\). Its runtime inputs are \\([x,v]\\).
-Reverse differentiation of this graph with respect to \\(x\\) gives
-\\(H_f(x)v\\), with no bump step size. A dense Hessian repeats this
-directional evaluation for the coordinate directions and stores the result
-in row-major order. First-order calls continue to use only the first-order
-function. Dense storage grows quadratically with the input count.
+`DerivativeOrder::First` (the default) compiles the value and the gradient.
+`Second` also builds a graph for \\(g(x,v)=\nabla f(x)^{\mathsf T}v\\), whose
+inputs are \\([x,v]\\). Reverse differentiation of this graph with respect to
+\\(x\\) gives \\(H_f(x)v\\), with no bump size.
 
-`CompiledFunction` extends capture to vector outputs. Its Jacobian kernel
-shares a forward calculation and generates a reverse calculation per output
-row. A separate values-only kernel performs no derivative work. Optional
-second-order compilation supplies each output's Hessian.
+- A full Hessian repeats this for each coordinate direction and stores the
+  result row by row. Its memory grows with the square of the input count.
+- First-order calls still use only the first-order function.
 
-Calibration introduces a further chain rule. At a converged residual system
-\\(F(s,q)=0\\), solved states \\(s\\) depend on quotes \\(q\\) through
+`CompiledFunction` records functions with several outputs. Its Jacobian kernel
+shares one forward pass and generates one reverse pass per output. A separate
+values-only kernel computes no derivatives. Optional second-order compilation
+gives the Hessian of each output.
+
+Calibration adds another chain rule. At a solved residual system
+\\(F(s,q)=0\\), the solved states \\(s\\) depend on the quotes \\(q\\) through
 
 \\[
 F_s\frac{\partial s}{\partial q}=-F_q.
 \\]
 
-`ImplicitDerivatives` uses residual derivatives from a `CompiledFunction` to
-solve this system and compose downstream observations. The caller supplies
-converged states and appropriate residuals; the state Jacobian must be locally
-nonsingular. Optional second-order residuals also supply calibration curvature.
+`ImplicitDerivatives` solves this system using residual derivatives from a
+`CompiledFunction`, and applies the result to downstream values.
 
-Some pricing integrations instead attach an existing first-order calibration
-map using `Recorded::set_linearization`. Locally, a solved parameter is
-represented as \\(s_0+J(q-q_0)\\). This preserves its calibrated value and
-first derivatives, while the map itself supplies no calibration curvature.
-Rate-bootstrap and model-calibration paths still include numerical-difference
-maps, as detailed in [calibration coverage](../risk/aad.md#calibration-dependencies).
-The availability of native Hessian kernels therefore does not imply complete
-second-order risk through every market construction. Public pricing and XVA
-sensitivity requests currently report first-order risk.
+- You supply the solved states and the residuals.
+- The state Jacobian must be non-singular at the solution.
+- Optional second-order residuals give the curvature of the calibration.
+
+Some pricers instead attach a first-order calibration map with
+`Recorded::set_linearization`. Near the solution, a solved parameter is
+represented as \\(s_0+J(q-q_0)\\). This keeps its value and first derivatives,
+but gives no calibration curvature.
+
+Rate bootstrapping and model calibration use maps computed by numerical
+differences; see [calibration coverage](../risk/aad.md#calibration-dependencies).
+Native Hessian kernels therefore do not give full second-order risk through
+market construction. Pricing and XVA sensitivity requests report first-order
+risk only.
 
 ## Reading the source
 
@@ -341,7 +372,7 @@ sensitivity requests currently report first-order risk.
 | [compiledkernel.rs](https://github.com/jmelo11/quantsupport/blob/main/src/ad/compiledkernel.rs), [compiledprogram.rs](https://github.com/jmelo11/quantsupport/blob/main/src/ad/compiledprogram.rs) | Reusable scalar/path kernels, derivative orders and guarded multi-output programs |
 | [compiledfunction.rs](https://github.com/jmelo11/quantsupport/blob/main/src/ad/compiledfunction.rs), [implicitderivatives.rs](https://github.com/jmelo11/quantsupport/blob/main/src/ad/implicitderivatives.rs) | Vector residuals, Jacobians and derivatives through calibration |
 
-The [benchmark runners](https://github.com/jmelo11/quantsupport/blob/main/tools/README.md#benchmarks) separate capture,
-compilation, market refresh and repeated native execution. These costs matter
-at different workload sizes: a small valuation may be dominated by preparation,
-while repeated path calculations can amortize it over many executions.
+The [benchmark runners](https://github.com/jmelo11/quantsupport/blob/main/tools/README.md#benchmarks)
+time recording, compilation, market refresh, and repeated native runs
+separately. For a small valuation, preparation may take most of the time. For
+repeated path calculations, its cost is spread over many runs.

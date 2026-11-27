@@ -1,31 +1,34 @@
 # Differentiation and market sensitivities
 
-Automatic differentiation measures how a valuation changes when its inputs
-change. QuantSupport gives market inputs their quote labels, so each reported
-sensitivity identifies the deposit, swap, volatility quote or other observation
-that affects the price. When a curve or model is calibrated, the reported risk
-also depends on the map from its market quotes to its calibrated parameters.
+Automatic differentiation (AD) measures how a value changes when its inputs
+change. QuantSupport labels each market input with its quote identifier. Each
+reported sensitivity therefore names the deposit, swap, volatility quote, or
+other observation it refers to. For calibrated curves and models, the risk is
+mapped from the calibrated parameters back to the market quotes.
 
-For the recording data structures, reverse chain rule, Cranelift code generation
-and native-code reuse, read
+For how recording, the reverse chain rule, Cranelift code generation, and code
+reuse work, see
 [Inside automatic differentiation and the JIT](../implementation/ad-jit.md).
 
-A sensitivity is expressed in the units of its input. For example, if a rate
-quote \\(q\\) is an annual decimal rate, its reported sensitivity is
-\\(\partial V/\partial q\\). A first-order estimate of the effect of a one-basis-point
-increase is therefore \\(10^{-4}\partial V/\partial q\\). Use the corresponding
-input units when interpreting volatility, FX and spread sensitivities.
+A sensitivity is in the units of its input. If a rate quote \\(q\\) is an
+annual decimal rate, the reported value is \\(\partial V/\partial q\\). The
+first-order effect of a one-basis-point rise is then
+\\(10^{-4}\partial V/\partial q\\). Volatility, FX, and spread sensitivities
+are likewise in the units of their inputs.
 
 ## Requesting risk from a pricer
 
-Applications use the same pricing method for values and sensitivities. A
-`Request::Value` asks for the price, while `Request::Sensitivities` also asks
-for its first derivatives with respect to the registered market inputs. The
-pricer owns the capture and derivative execution; an application does not
-start a recording or manage intermediate derivatives itself.
+Use the same pricing method for values and sensitivities:
 
-The following fragment assumes that a trade, market provider and pricer have
-already been constructed:
+- `Request::Value` asks for the price.
+- `Request::Sensitivities` asks for first derivatives with respect to the
+  market inputs the pricer registers.
+
+The pricer handles recording and running the derivative code. You do not
+start a recording or handle intermediate derivatives.
+
+The following fragment assumes that a trade, market provider, and pricer
+already exist:
 
 ```rust,ignore
 let results = pricer.evaluate(
@@ -37,40 +40,44 @@ let price = results.price();
 let sensitivities = results.sensitivities();
 ```
 
-Most differentiable Rust instruments and curves use `Recorded`, which is
-available through `quantsupport::prelude`. Outside a capture, it can retain an
-ordinary numerical value in a contract or market object. During valuation,
-the pricer registers the labelled market pillars as independent inputs and
-records the arithmetic that depends on them. This allows the same pricing
-formulas to calculate both a value and the derivative program used for risk.
+Most differentiable instruments and curves use `Recorded`, which is in
+`quantsupport::prelude`. Outside a recording, a `Recorded` value is just a
+number stored in a contract or market object. During valuation, the pricer
+registers the labelled market pillars as inputs and records the calculations
+that depend on them. The same pricing formulas then give both the value and
+the code for its derivatives.
 
-The first-order derivative program is compiled to machine code by Cranelift.
-It contains no Hessian calculation. A value request does not ask the pricer to
-run that gradient program, although constructing a calibrated market may itself
-require derivatives. The set of inputs reported by each pricer remains part
-of that pricer's contract: differentiable arithmetic alone does not make every
-model assumption a reported market factor.
+Cranelift compiles the first-derivative code to machine code. No second
+derivatives are computed.
+
+- A value-only request does not run the derivative code. Building a calibrated
+  market may still need derivatives.
+- Each pricer decides which inputs it reports. A model assumption is not
+  reported as a market factor just because the arithmetic is differentiable.
 
 ## Recording, compiling and executing a calculation
 
-The numerical AD interfaces are defined directly in `quantsupport::ad`.
-`Recorded` supplies the scalar operations, `Graph` stores a scalar calculation,
-and `CompiledKernel` owns the generated machine code. These interfaces are
-useful when an application has a numerical calculation that it wants to reuse
-with several sets of inputs.
+The AD types are in `quantsupport::ad`:
 
-There are three stages. First, `Graph::trace` or `Graph::try_trace` runs a Rust
-closure with recorded scalar inputs and captures its numerical instructions.
-The sample values provide the values needed during that capture; the graph
-stores input slots so that those values can change later. Second, `compile`
-generates the value and first-gradient code. Finally, `value_and_grad` loads the
-current inputs into that code and writes the derivatives to a caller-owned
-buffer. It does not call the original Rust closure again.
+- `Recorded` is the scalar type that records operations.
+- `Graph` stores a recorded calculation.
+- `CompiledKernel` holds the generated machine code.
 
-For example, this calculation prices a discounted Black call with a fixed
-strike and expiry. Its four runtime inputs are the spot, continuously
-compounded rate, lognormal volatility and continuously compounded dividend
-yield:
+Use them when you have your own calculation that you want to run many times
+with different inputs. There are three steps:
+
+1. **Record.** `Graph::trace` or `Graph::try_trace` runs a Rust closure with
+   recorded inputs and stores its operations. The sample input values are used
+   during recording. The graph keeps input slots, so you can change the values
+   later.
+2. **Compile.** `compile` generates code for the value and the first
+   derivatives.
+3. **Run.** `value_and_grad` runs the code on the current inputs and writes the
+   derivatives into a buffer you provide. It does not call your closure again.
+
+This example prices a discounted Black call with a fixed strike and expiry. Its
+four inputs are spot, the continuously compounded rate, lognormal volatility,
+and the continuously compounded dividend yield:
 
 ```rust
 # extern crate quantsupport;
@@ -96,46 +103,50 @@ assert_eq!(kernel.derivative_order(), DerivativeOrder::First);
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-The gradient entries follow the input order and retain the inputs' numerical
-units. Because the changed market uses the same formula and contract structure,
-it can reuse the kernel. A different schedule, strike convention or embedded
-constant may require a new graph. `Graph::try_trace` propagates errors returned
-by a fallible formula; use `Graph::trace` when the closure is infallible.
+The gradient entries are in input order and in the units of each input.
 
-A captured scalar belongs to its capture. Keep those expression values inside
-the closure, and keep the resulting graph or kernel for reuse. Internally,
-`RecordingScope` suspends an enclosing capture during isolated market work and
-restores it when that work returns or unwinds. This prevents one valuation's
-expression identities from leaking into another.
+- You can reuse the kernel with new inputs, as long as the formula and contract
+  structure stay the same.
+- A different schedule, strike convention, or embedded constant may need a new
+  graph.
+- `Graph::try_trace` passes on errors from a formula that can fail. Use
+  `Graph::trace` when the closure cannot fail.
+
+Recorded values belong to their recording. Use them only inside the closure,
+and keep the resulting graph or kernel if you want to reuse it.
 
 ### Numerical choices and Rust control flow
 
-A Rust comparison produces a Boolean value while the closure is being
-captured. The simple `Graph` interface rejects input-dependent Rust comparisons
-and extraction of recorded primal values, because a later input could select a
-different calculation. Use scalar `max_val`, `min_val` or `select_greater` when a
-payoff must select a numerical arm during execution.
+A Rust comparison gives a `bool` at recording time, but a later input could
+need the other branch.
 
-`CompiledProgram` supports a guarded form of ordinary Rust comparisons. It
-retains the observed comparison and checks its operands on every execution.
-If that decision changes, execution returns `CompileError::ComparisonChanged`
-so that the caller can capture the appropriate calculation again. It does not
-silently reuse the previously selected branch. These checks use the ordinary
-`PartialOrd` and `PartialEq` traits.
+- The simple `Graph` interface rejects comparisons that depend on inputs, and
+  rejects reading the plain value of a recorded number.
+- To choose between results at run time, use the scalar functions `max_val`,
+  `min_val`, or `select_greater`.
 
-Max/min ties and the derivative of `abs` at zero follow the library's
-zero-derivative convention. Selection predicates have zero derivatives. The
-recorded normal CDF uses the numerical CDF value with analytic Gaussian
-derivatives, including at zero. These local conventions matter when a payoff
-is evaluated at a nondifferentiable point.
+`CompiledProgram` supports ordinary Rust comparisons with a guard. It records
+the result of each comparison and checks it again on every run. If a result
+changes, the run returns `CompileError::ComparisonChanged`, and you should
+record the calculation again. These checks use the standard `PartialOrd` and
+`PartialEq` traits.
+
+Derivative conventions at non-smooth points:
+
+- Ties in max and min, and `abs` at zero, have zero derivative.
+- Selection conditions have zero derivative.
+- The recorded normal CDF uses its numerical value with the exact Gaussian
+  derivative, including at zero.
+
+These matter when a payoff is evaluated exactly at a kink.
 
 ### Requesting second derivatives
 
-A kernel compiled with `DerivativeOrder::First`, which is the default, provides
-its value and first gradient. Select `DerivativeOrder::Second` when the
-calculation also needs Hessian-vector products or a dense Hessian. This adds a
-compiled derivative program; it does not estimate curvature by bumping inputs.
-First-order calls on that kernel still invoke only its first-order function.
+A kernel compiled with `DerivativeOrder::First` (the default) gives the value
+and the gradient. Use `DerivativeOrder::Second` if you also need
+Hessian-vector products or a full Hessian. This compiles exact second-derivative
+code; it does not bump inputs. First-derivative calls on the kernel still run
+only the first-order code.
 
 ```rust
 # extern crate quantsupport;
@@ -153,96 +164,99 @@ assert_eq!(product, [1.0, 0.0]);
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-The dense Hessian is stored in row-major order. It requires quadratic result
-storage and one directional evaluation per input, so a Hessian-vector product
-is often preferable for a large market-factor set. Public pricing and XVA
-sensitivity requests currently report first-order risk; the kernel interface
-above does not imply complete second-order risk through every calibration map.
+The full Hessian is stored row by row. It needs memory proportional to the
+square of the number of inputs and one extra pass per input. For many market
+factors, a Hessian-vector product is often cheaper.
+
+Pricing and XVA sensitivity requests report first-order risk only. The kernel
+interface above does not give second-order risk through calibration.
 
 ## Reusing calculations in simulations
 
-Repeated pricing calls and prepared simulations have different cost boundaries.
-Ordinary pricers capture the current calculation before looking for compatible
-native derivative code. This keeps the current inputs and control flow valid,
-but it can make compilation and capture significant for small calculations.
+The cost of AD depends on how you use it:
 
-Supported `XvaEngine::run` workloads instead prepare a whole numerical path
-program in the existing engine. `prepare` can pay that cost explicitly before
-`run`. Each execution then supplies the indexed random draws and current model
-coefficients, evaluates fresh exposures and adjustments, and maps the coefficient
-gradients back to the published market labels. Identical market-request blocks
-share response slots, while claims keep their separate identities and payoffs.
+- **Pricers** record the current calculation on each call and then look for
+  matching compiled code. This keeps results correct when inputs or branches
+  change. For small calculations, recording and compiling can dominate the
+  run time.
+- **`XvaEngine::run`** compiles a program for all simulated paths, for
+  supported workloads. Call `prepare` to pay this cost before `run`. Each run
+  then takes the random draws and current model coefficients, computes fresh
+  exposures and adjustments, and maps the gradients back to the market labels.
+  Identical market requests share results, while each claim keeps its own
+  payoff.
 
-When market quotes change, use `update_market` to refresh the engine's market
-snapshots and calibration. Its next preparation refreshes the coefficients and
-their quote Jacobian; a compatible program can retain its machine code. A
-changed contract or collateral agreement can require a different program.
-Code reuse therefore does not justify using a stale numerical market binding.
+When market quotes change, call `update_market`. The next `prepare` refreshes
+the model coefficients and their sensitivity to quotes, and reuses the compiled
+code when it still matches. A new contract or collateral agreement may need a
+new program. Always update the market after quotes change; reusing compiled
+code does not refresh market values.
 
 The parallel scripting API also prepares supported model and script layouts.
-Other control-flow layouts capture each path and execute its native gradient,
-while retaining a shared setup prefix. Each worker uses its own mutable
-buffers, and compiled code can be shared across workers. `CompiledKernel::sum_paths`
-returns unnormalized value and first-gradient sums; the caller chooses the
-normalization required by its estimator.
+Other layouts record each path and run its compiled gradient, sharing a common
+setup. Each worker thread has its own buffers and shares the compiled code.
+`CompiledKernel::sum_paths` returns the sum of values and gradients over paths,
+not the average. Divide by the number of paths, or apply whatever normalization
+your estimator needs.
 
-Materialized simulation paths have a narrower risk boundary. They contain
-numbers whose generation inputs are held fixed. The stored-path equity pricer
-therefore reports discounting and FX risk, whereas a scripted model valuation
-can differentiate its simulated model inputs. Compare performance only after
-checking that the requested outputs and risk boundaries are the same. The
-[benchmark runners](../../../tools/README.md#benchmarks) record capture, compilation,
-market refresh and repeated execution separately.
+Stored simulation paths give less risk. The numbers on them were generated with
+fixed inputs. The stored-path equity pricer therefore reports discounting and
+FX risk only, while a scripted model valuation can differentiate the model
+inputs used to simulate. Before comparing speed, check that both calculations
+return the same outputs and the same risk. The
+[benchmark runners](../../../tools/README.md#benchmarks) time recording,
+compilation, market refresh, and repeated runs separately.
 
 ## Calibration dependencies
 
-A curve or model calibration connects solved parameters to its market quotes.
-`CompiledFunction` generates values, Jacobians and optional output Hessians from
-shared residual equations. `ImplicitDerivatives` then uses those residual
-partials to obtain the local response of the calibrated states and downstream
-observations. Complete second-order risk also requires the calibration's own
-curvature; a stored first-order map alone cannot provide it.
+Calibration links solved parameters to market quotes. `CompiledFunction`
+generates values, Jacobians, and optional output Hessians from one set of
+residual equations. `ImplicitDerivatives` then uses the residual derivatives to
+find how calibrated states and downstream values respond to quotes. Full
+second-order risk would also need the curvature of the calibration itself; a
+stored first-order map cannot provide it.
 
-The current coverage is:
+How each area computes its derivatives:
 
 | Area | Derivative calculation |
 | --- | --- |
-| Credit calibration | The shared CDS equations use compiled partial derivatives and implicit differentiation, including tested observation curvature. |
+| Credit calibration | Compiled partial derivatives of the CDS equations plus implicit differentiation, including tested curvature of observations. |
 | Vector numerical equations | `CompiledFunction` generates native Jacobians and optional output Hessians from one residual definition. |
-| Rate-bootstrap Newton steps | The solver still forms its residual Jacobian with central differences. |
-| Parent-curve bootstrap links | The connection to source pillars still uses reconstruction differences. |
-| Hull–White quote maps | The calibration still estimates sigma/volatility response with differences. |
-| Curve-risk reprojection | The zero-rate basis uses compiled AD; instrument reconstruction still uses differences. |
-| Public pricing and XVA risk | The requests report first derivatives; they do not yet expose complete second-order calibrated risk. |
+| Rate-bootstrap Newton steps | The residual Jacobian uses central differences. |
+| Parent-curve bootstrap links | The link to parent pillars uses differences of rebuilt curves. |
+| Hull–White quote maps | The sigma response to volatility is estimated with differences. |
+| Curve-risk reprojection | The zero-rate basis uses compiled AD; the instrument basis uses differences of rebuilt curves. |
+| Pricing and XVA risk | First derivatives only; no full second-order calibrated risk. |
 
-For calibrated rate curves, the nonlinear solve uses numerical `f64` values.
-Its local first-order calibration map reconnects the solved nodes to market
-quotes. That connection can include parent curves: for example, a Term SOFR
-swap discounted on SOFR can expose both basis and OIS quotes. Gaussian model
-calibration has further boundaries: its current sigma Jacobians estimate the
-independent-fit volatility response, rather than joint schedule-calibration
-risk or full curve/strike-induced recalibration.
+Calibrated rate curves are solved with plain `f64` numbers. A first-order
+calibration map then links the solved nodes back to market quotes. This link
+can include parent curves. For example, a Term SOFR swap discounted on SOFR
+can show risk to both basis and OIS quotes.
 
-A `SensitivityMap` stores matching labels and derivative values. Aggregation
-adds repeated labels reached through several dependencies. Reporting remains
-pricer-specific, so consult the selected pricer when checking zero rows, model
-parameters and independently reported factors such as a bond's Z-spread or OAS.
+Gaussian model calibration has more limits. Its sigma Jacobians measure the
+response of separate single-option fits. They do not capture a joint fit of the
+schedule, or refitting caused by moves in curves or strikes.
+
+A `SensitivityMap` stores labels and their derivatives. If a label is reached
+through several dependencies, its contributions are added. Each pricer decides
+what it reports. Check the pricer's documentation for zero rows, model
+parameters, and separately reported factors such as a bond's Z-spread or OAS.
 
 ## Changing the curve risk basis
 
-`PricingContext` provides two transformations that return a `RiskContext`
-implementing `MarketDataProvider`. Pass the resulting view to the same pricer
-and request `Request::Sensitivities` as usual. Both transformations preserve the
-original curve values and interpolation, including prices between nodes.
+`PricingContext` has two methods that return a `RiskContext`, which implements
+`MarketDataProvider`. Pass it to the same pricer and request
+`Request::Sensitivities` as usual. Both methods keep the original curve values
+and interpolation, so prices, including between nodes, do not change.
 
-The complete runnable example is
+The complete example is
 [`risk-reprojection.rs`](../../../examples/sensitivity/src/bin/risk-reprojection.rs).
 Run `cargo run -p sensitivity --bin risk-reprojection` from the repository root
-to compare deposit, OIS and post-bootstrap zero-rate sensitivities for the same
-swap. The example displays the NPV differences between the three bases; its
-inline regression test checks that both transformations preserve the exact price.
+to compare deposit, OIS, and zero-rate sensitivities for the same swap. The
+example prints the NPV in each basis, and its test checks that the price is
+unchanged.
 
-This fragment reports sensitivities to zero rates implied from bootstrapped
+This fragment reports sensitivities to zero rates implied by the bootstrapped
 discount factors:
 
 ```rust,ignore
@@ -262,15 +276,17 @@ let result = pricer.evaluate(
 )?;
 ```
 
-Each grid defaults to that curve's future nodes. Add
-`.with_dates(vec![date_1, date_2, ...])` to select another grid; curves without
-nodes, such as composites, require explicit dates. Labels include the curve,
-date and rate convention. Exposures are derivatives per unit of annual decimal
-zero rate; multiply by `1e-4` for a first-order +1 bp change. Selected curves'
-parent quote dependencies enter the transformation jointly. Other curve quotes
-retain their original coordinates.
+- By default, the grid is the curve's future nodes. Use
+  `.with_dates(vec![date_1, date_2, ...])` for another grid. Curves without
+  nodes, such as composites, need explicit dates.
+- Labels include the curve, date, and rate convention.
+- Exposures are derivatives per unit of annual decimal zero rate. Multiply by
+  `1e-4` for a first-order +1 bp change.
+- Quotes of parent curves of the selected curves are included in the
+  transformation. Quotes of other curves keep their original labels.
 
-This fragment reports curve risk against another set of calibration instruments:
+This fragment reports curve risk against a different set of calibration
+instruments:
 
 ```rust,ignore
 let instruments: Vec<QuoteDetails> = [
@@ -283,35 +299,45 @@ let projected_context = context.reproject_risk(&instruments)?;
 let result = pricer.evaluate(&trade, &[Request::Sensitivities], &projected_context)?;
 ```
 
-The target contracts need not have observations in the quote store. Their
-implied quotes are solved against the original curves. The view exposes
-`target_labels()` and `target_values()` for inspection. The target basket must
-span all native discount/forward curve pillars in the context; the example
-assumes two pillars on each of its two curves. Instrument reprojection requires
-configuration-driven curves. Supplied runtime curves support zero-rate risk.
+- The target instruments do not need quotes in the quote store. Their implied
+  quotes are solved from the original curves.
+- `target_labels()` and `target_values()` show the targets and their implied
+  quotes.
+- The targets must cover all discount and forward curve pillars in the context.
+  The example assumes two pillars on each of its two curves.
+- Instrument reprojection needs curves built from configuration. Curves you
+  supplied directly support zero-rate risk only.
 
-For target quotes `x` and original curve quotes `q`, reprojection computes
-`J = dx/dq` and reports `dV/dx = dV/dq * J⁺`. Zero-rate Jacobians use AD;
-instrument Jacobians use central differences of reconstructed source curves.
-Insufficient or singular bases return an error. With more target factors than
-source factors, the pseudoinverse chooses minimum Euclidean-norm exposures in
-the supplied quote units. These transformations are local and first order;
-construct a fresh view when market inputs change. FX spots, volatility and
-other independent factors are held fixed in the curve basis calculation and
-keep their native reported risk. This does not add model recalibration or
-simulation-path dependencies omitted by the original pricer.
+How it works: for target quotes `x` and original quotes `q`, reprojection
+computes `J = dx/dq` and reports `dV/dx = dV/dq * J⁺`.
+
+- Zero-rate Jacobians use AD. Instrument Jacobians use central differences of
+  rebuilt curves.
+- A basis that is too small or singular is an error.
+- With more targets than source quotes, the pseudoinverse picks the
+  exposures with the smallest Euclidean norm, in the units of the quotes.
+- The transformation is local and first order. Create a new view when market
+  inputs change.
+- FX spots, volatilities, and other factors are held fixed in the
+  transformation and keep their usual risk.
+- It does not add risk that the original pricer leaves out, such as model
+  recalibration or simulation paths.
 
 ## Validation and numerical accuracy
 
-AD differentiates the active implemented program. Branches use their selected
-local behavior; hard digitals have zero pathwise derivative almost everywhere.
-Scripting can smooth comparisons, introducing a deliberate approximation.
-Numerical integration, finite-difference calibration and time/state grids
-retain their errors.
+AD differentiates the code that actually runs.
 
-Reverse work often avoids a separate pricing run for every market input, but
-there is no universal fixed runtime multiplier. Memory, calibration graph,
-trade count and path count matter. Validation should compare selected labeled
-derivatives against same-input, same-seed
-[full revaluation](scenarios.md), with a bump size small enough to test local
-behavior and large enough to avoid numerical cancellation.
+- At a branch, the derivative is that of the branch taken. A hard digital has
+  zero pathwise derivative almost everywhere.
+- Scripting can smooth comparisons, which is an approximation.
+- Numerical integration, finite-difference calibration, and time or state grids
+  keep their own errors.
+
+Reverse-mode AD often avoids a separate pricing run for each market input, but
+the speed-up is not a fixed ratio. It depends on memory, the calibration graph,
+and the number of trades and paths.
+
+To validate, compare selected derivatives with
+[full revaluation](scenarios.md) using the same inputs and the same random
+seed. Choose a bump small enough to test local behavior and large enough to
+avoid rounding error.

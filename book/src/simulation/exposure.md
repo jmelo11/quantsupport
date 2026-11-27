@@ -1,22 +1,29 @@
 # Claims, exposure and the XVA engine
 
-Exposure measures the value of a trade or portfolio at future dates. To
-calculate it, QuantSupport converts supported positions into scheduled
-`ContingentClaim` payments and simulates the market observations needed to
-value them. At each exposure date, the remaining payments are valued under
-the simulated market state.
+Exposure is the value of a trade or portfolio at future dates. To compute it,
+QuantSupport:
 
-The resulting path values can be inspected as exposure profiles or combined
-under netting and collateral agreements to calculate valuation adjustments.
+1. converts supported trades into scheduled `ContingentClaim` payments;
+2. simulates the market data needed to value them;
+3. at each exposure date, values the remaining payments on each simulated path.
+
+You can read the results as exposure profiles, or combine them under netting
+and collateral agreements to compute valuation adjustments.
 
 ## Claim-level valuation
 
-A claim retains payment/fixing/accrual dates, currencies, notional, side and
-stable trade/leg identifiers. Its strategy describes deterministic amounts,
-rate coupons, optional rates, spot/path-dependent payoffs, exercise-contingent
-payments or a scripted payment.
+A claim holds payment, fixing, and accrual dates, currencies, notional, side,
+and stable trade and leg identifiers. Its strategy says how the amount is
+computed. It can be:
 
-For a native claim, the implemented contribution is
+- a fixed amount;
+- a rate coupon;
+- a coupon with optionality;
+- a payoff on spot or a path;
+- a payment that depends on exercise;
+- a scripted payment.
+
+For a native claim, the value is
 
 \\[
 v_{j,p,k}
@@ -24,16 +31,18 @@ v_{j,p,k}
 X_{j,p,k}\\,s_jN_j.
 \\]
 
-The strategy determines the raw amount \\(a\\); discount, currency conversion,
-sign and notional supply the remaining factors. A scripted claim obtains its
-payment value from the compiled script response block instead. Claim
-construction must use the strategy's amount/notional convention consistently
-to avoid double scaling.
+The strategy gives the raw amount \\(a\\). Discounting, currency conversion,
+sign, and notional give the other factors. A scripted claim gets its value from
+the compiled script instead. When you build claims, apply the notional only
+once, following the strategy's convention.
 
-Before simulation, `FixingPreprocessor` installs realized or partially
-realized observations. Compression can merge compatible deterministic claims
-to reduce repeated evaluation. The claim converter checks supported contract
-features, including overnight observation rules, before these steps.
+Before simulation:
+
+- the converter checks that the contract's features are supported, including
+  overnight observation rules;
+- `FixingPreprocessor` fills in fixings that are already known, fully or in
+  part;
+- compression merges compatible fixed claims so they are valued once.
 
 ## Cubes and pointwise profiles
 
@@ -45,38 +54,48 @@ EPE_k=\frac1n\sum_p\max(V_{p,k},0),\qquad
 ENE_k=\frac1n\sum_p\min(V_{p,k},0).
 \\]
 
-ENE is signed and nonpositive. These are **pointwise date profiles**; the
-methods do not calculate a time-average EPE or a PFE quantile.
-`XvaAggregator` reduces each path into an adjustment contribution, with
-implementations for CVA, DVA and FVA. Contributions are normalized by the
-total path count and summed across paths.
+- ENE is signed and never positive.
+- These are profiles at each date. There is no time-averaged EPE or PFE
+  quantile.
 
-Returned cubes and these profiles remain raw, pre-margin values. Adjustment
-aggregators can consume netted, post-margin exposure instead. A sum of
-trade-level EPE is generally not the EPE of the netted sum:
+`XvaAggregator` turns each path into an adjustment contribution. There are
+implementations for CVA, DVA, and FVA. Contributions are divided by the total
+number of paths and summed.
+
+Cubes and profiles are raw values before margin. Adjustment aggregators can use
+netted exposure after margin instead.
+
+The EPE of a netted portfolio is generally not the sum of trade EPEs:
 
 \\[
 \max\left(\sum_jV_j,0\right)
 \neq\sum_j\max(V_j,0).
 \\]
 
-Calculate netted profiles from the summed path values before taking their
-positive and negative parts.
+To get netted profiles, sum the path values first and then take the positive
+and negative parts.
 
 ## High-level orchestration
 
-`XvaEngine` receives a market provider and `XvaEngineConfig`. Rate factors
-identify mean reversion/parameter sources or reuse driver factors; FX
-configuration adds foreign currencies, volatilities and supported correlations.
-The configured frequency determines the simulation/exposure grid.
+`XvaEngine` takes a market provider and an `XvaEngineConfig`.
 
-At a high level, `run` preprocesses claims, determines required curves and
-factors, builds the date grid, prepares system discount factors and per-netting
-set factories, then evaluates shared model paths. Foreign currencies and
-policy-selected discount identities need corresponding supported models.
-The engine reports an error if a required factor is missing.
+- Each rate factor gives its mean reversion and parameter source, or reuses
+  another factor as its driver.
+- FX settings add foreign currencies, volatilities, and supported correlations.
+- The configured frequency sets the simulation and exposure date grid.
 
-The following fragment assumes prepared `context`, `configuration` and
+`run` does the following:
+
+1. prepares the claims;
+2. finds the curves and factors they need;
+3. builds the date grid;
+4. computes the system discount factors and sets up each netting set;
+5. values all claims on shared model paths.
+
+Each foreign currency and each discount curve chosen by the policy needs a
+supported model. If a required factor is missing, the engine returns an error.
+
+The following fragment assumes prepared `context`, `configuration`, and
 `netting_sets`:
 
 ```rust,ignore
@@ -90,31 +109,38 @@ for adjustment in result.xva_values.iter().flatten() {
 }
 ```
 
-One run returns trade-level cubes, optional adjustments by netting set and
-optional aggregated labeled sensitivities. High-level construction supplies
-CVA and FVA factories. DVA exists through lower-level aggregators with
-explicit own-credit inputs, not an automatic third output of `run`.
+One run returns:
+
+- a cube for each trade;
+- optional adjustments for each netting set;
+- optional aggregated sensitivities, by label.
+
+The high-level engine computes CVA and FVA. DVA is not returned by `run`. To
+compute it, use the lower-level aggregators with explicit own-credit inputs.
 
 ## Prepared execution and market refresh
 
-An `XvaEngine` retains the native path program prepared for a supported
-simulation. Its first `run` prepares that program automatically, even for a
-small path count. An application can instead call `prepare` explicitly to pay
-the capture and compilation cost before requesting results. Both forms use
-the same engine and the same `run` method.
+An `XvaEngine` keeps a compiled path program for supported simulations. The
+first `run` prepares it automatically, even for a small number of paths. You
+can call `prepare` yourself to pay the recording and compilation cost before
+asking for results. Both use the same engine and the same `run` method.
 
-Preparation computes the deterministic curve and model terms, then captures
-the path, claim, collateral and adjustment arithmetic. It also calculates the
-map from numerical coefficients to the labelled market inputs used for risk.
-Each subsequent run supplies fresh random draws and evaluates new exposures,
-adjustments and first derivatives. A changed contract or collateral agreement
-can invalidate that prepared binding.
+Preparation:
 
-This setup cost can dominate a small, one-off valuation. Separate first-call
-and repeated execution costs when deciding whether preparation is worthwhile;
-the benchmark report measures both.
+- computes the fixed curve and model terms;
+- records the path, claim, collateral, and adjustment calculations;
+- computes the map from model coefficients to the labelled market inputs used
+  for risk.
 
-The following fragment assumes `engine`, `netting_sets` and a freshly initialized
+Each later run uses fresh random draws and computes new exposures, adjustments,
+and first derivatives. A changed contract or collateral agreement can require a
+new preparation.
+
+For a small, one-off valuation, preparation can take most of the time. Compare
+the cost of the first call with the cost of repeated runs to decide whether
+preparing is worthwhile. The benchmark report measures both.
+
+The following fragment assumes `engine`, `netting_sets`, and a newly initialized
 `new_context`:
 
 ```rust,ignore
@@ -125,33 +151,39 @@ engine.prepare(&mut netting_sets)?;
 let updated = engine.run(&mut netting_sets)?;
 ```
 
-Calling `update_market` refreshes the engine's market snapshots and calibration.
-The next preparation refreshes the coefficient values and their quote
-Jacobian. If the instructions and input layout are compatible, it can retain
-the existing machine code; a structural change requires compilation again.
+`update_market` refreshes the engine's market data and calibration. The next
+`prepare` refreshes the coefficients and their sensitivity to quotes. If the
+calculation has the same structure, the compiled code is reused. Otherwise it
+is compiled again.
 
-Scripted and path-dependent claims currently use a separate execution route
-within the same engine: each path captures its calculation and executes native
-gradients. Explicit preparation returns an error for an unsupported strategy,
-while ordinary `run` selects the appropriate route. Both routes report
-first-order risk. The [calibration coverage](../risk/aad.md#calibration-dependencies)
-explains the remaining derivative maps and the boundary on second-order XVA.
+Scripted and path-dependent claims run differently inside the same engine: each
+path is recorded and its gradient is compiled and run. Calling `prepare`
+explicitly returns an error for these strategies, while `run` picks the right
+method automatically. Both report first-order risk. See
+[calibration coverage](../risk/aad.md#calibration-dependencies) for which
+derivatives use approximations and for the limits on second-order XVA risk.
 
-[XVA benchmark runners](../../../tools/README.md#benchmarks) include cold
-preparation, reuse, market updates, small-case overhead and numerical agreement.
+The [XVA benchmark runners](../../../tools/README.md#benchmarks) measure first
+preparation, reuse, market updates, overhead on small cases, and numerical
+agreement.
 
 ## Numerical and modeling boundaries
 
-Shared paths make netting internally coherent, but finite grids and samples
-remain approximations. LGM path construction, calibration targets and
-correlations determine the future-state distribution. Optional payoffs may
-require numerical conditioning or smoothing. Comparisons with native pricers
-need matching payoff, model and payment-selection assumptions, together with
-tolerances for numerical and sampling error.
+All trades in a netting set use the same paths, so netting is consistent.
+Finite grids and path counts are still approximations.
 
-The engine's system discount sequence is stored numerically and held fixed
-during AD. Credit/funding factories also introduce particular independent
-leaves rather than replay every original calibration. The
-[adjustment chapter](../xva/cva-dva-fva.md) explains the resulting derivative
-meaning; [collateral](../xva/netting-csa.md) explains which exposures those
-adjustments actually consume.
+- LGM path generation, calibration targets, and correlations set the
+  distribution of future states.
+- Payoffs with optionality may need smoothing for stable results.
+- To compare with a native pricer, use the same payoff, model, and payment
+  selection, and allow for numerical and sampling error.
+
+AD limits:
+
+- The system discount factors are stored as numbers and held fixed.
+- Credit and funding inputs enter as their own AD inputs. Their original
+  calibrations are not replayed.
+
+The [adjustment chapter](../xva/cva-dva-fva.md) explains what the derivatives
+mean. The [collateral chapter](../xva/netting-csa.md) explains which exposures
+the adjustments use.

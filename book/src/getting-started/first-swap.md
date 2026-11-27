@@ -1,9 +1,12 @@
 # A first valuation
 
-Consider a five-year USD interest-rate swap with a notional of USD 10 million.
-It receives a fixed coupon of 3%, using simple compounding and ACT/360 accrual,
-and pays a floating coupon every six months. We use `MakeSwap` to define the
-contract, then value it against a flat curve.
+This chapter prices a five-year USD interest-rate swap with a notional of
+USD 10 million. The swap:
+
+- receives a 3% fixed coupon, with simple compounding and ACT/360 accrual;
+- pays a floating coupon every six months.
+
+We define the contract with `MakeSwap` and value it on a flat curve.
 
 The complete example is
 [`examples/valuation/swaps/src/main.rs`](https://github.com/jmelo11/quantsupport/blob/main/examples/valuation/swaps/src/main.rs).
@@ -15,15 +18,19 @@ cargo run -p valuation-swaps
 
 ## From contract to market
 
-The program below builds the instrument and wraps it in a `SwapTrade` to
-record the position. It then supplies a flat, continuously compounded 3%
-curve for both projection and discounting. This keeps the market setup small;
-the [curve chapters](../curves/overview.md) explain how to replace it with
-curves calibrated to market quotes.
+The program below:
 
-The floating leg uses one SOFR-indexed observation per coupon period.
-Daily compounded overnight coupons are available through
-`MakeOvernightIndexSwap`, introduced in [Swaps](../pricing/swaps.md).
+1. builds the swap and wraps it in a `SwapTrade`, which records the position;
+2. creates a flat 3% curve, continuously compounded, used for both projection
+   and discounting;
+3. asks the pricer for the value, cashflows, and sensitivities.
+
+A flat curve keeps the example short. The [curve chapters](../curves/overview.md)
+show how to build curves from market quotes instead.
+
+The floating leg uses one SOFR observation per coupon period. For daily
+compounded overnight coupons, use `MakeOvernightIndexSwap`, described in
+[Swaps](../pricing/swaps.md).
 
 ```rust
 # extern crate quantsupport;
@@ -78,35 +85,38 @@ fn main() -> Result<()> {
 }
 ```
 
-No fixing is required here because the first observation occurs on the
-evaluation date and can be forecast when no same-day fixing is supplied.
-Seasoned coupons require the relevant historical observations.
+You do not need to supply a fixing here. The first SOFR observation falls on
+the evaluation date. When no fixing is given for that date, the pricer projects
+the rate from the curve. A swap that started in the past needs historical
+fixings for its past observations.
 
 ## Interpreting the result
 
-The native example produces an NPV of approximately **−10,723.59 USD**, with
-flat-rate derivative **−47,405,484.05 USD per unit rate**, or approximately
-**−4,740.55 USD for a +1 bp move** to first order.
+The example gives:
 
-To understand the value, consider the floating coupon. A continuously compounded
-3% curve implies a simple forward over an accrual interval \\(\tau\\) of
+- an NPV of about **−10,723.59 USD**;
+- a sensitivity to the flat rate of **−47,405,484.05 USD per unit rate**;
+- about **−4,740.55 USD for a +1 bp move**, to first order.
+
+Why is the value negative? A continuously compounded 3% curve gives a simple
+forward rate over an accrual period \\(\tau\\) of
 
 \\[
 L=\frac{e^{0.03\tau}-1}{\tau},
 \\]
 
-which is slightly above the fixed coupon of 3%. The receive-fixed position
-therefore has a small negative value. The fixed coupon and the curve rate use
-different compounding conventions even though both were entered as `0.03`.
+which is slightly above the 3% fixed coupon. The receive-fixed position
+therefore has a small negative value. Both rates were entered as `0.03`, but
+they use different compounding conventions.
 
-The sensitivity is labelled `SOFR_flat`, the name assigned to the flat rate.
-It measures the PV change per unit change in that decimal rate. Multiplying
-by `0.0001` gives the first-order change for a one-basis-point increase. With
-calibrated curves, the report uses the original quote pillars instead.
+The sensitivity is labelled `SOFR_flat`, the label given to the flat rate. It
+is the change in PV per unit change in that decimal rate. Multiply it by
+`0.0001` to get the first-order change for a one-basis-point rise. With curves
+built from market quotes, the report lists the quote pillars instead.
 
-The cashflow table contains 24 rows, including principal exchanges generated
-on both legs. It reports signed contractual amounts: receipts are positive
-and payments are negative, including initial advances. The table includes all supplied
-cashflows and has no discounted-PV column, so reconciling it to NPV requires
-payment selection and discounting. [Swaps](../pricing/swaps.md)
-describes these reporting conventions in more detail.
+The cashflow table has 24 rows, because both legs exchange principal. Amounts
+are signed and undiscounted: receipts are positive and payments are negative,
+including the initial principal payment. The table lists every cashflow of the
+instrument and has no present-value column. To reconcile it to the NPV, select
+the payments that the pricer includes and discount them.
+[Swaps](../pricing/swaps.md) explains these reporting conventions.

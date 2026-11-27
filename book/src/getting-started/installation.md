@@ -1,43 +1,42 @@
 # Installation
 
-This repository provides the QuantSupport Rust library, native examples,
-benchmarks and the financial reference book.
+This repository contains the QuantSupport library, examples, benchmarks, and
+this Book.
 
-## Rust applications
+## Adding QuantSupport to an application
 
-QuantSupport uses the Rust 2021 edition. A stable toolchain installed through
-[rustup](https://rustup.rs) supplies the compiler and Cargo. Add the published
-crate to an application with:
+QuantSupport uses the Rust 2021 edition. Install a stable toolchain with
+[rustup](https://rustup.rs), then add the crate to your application:
 
 ```sh
 cargo add quantsupport
 ```
 
-A local application can instead use a path dependency during development:
+During development you can use a local checkout as a path dependency instead:
 
 ```toml
 [dependencies]
 quantsupport = { path = "../quantsupport" }
 ```
 
-The optional `plot` feature enables plotting support; it is not necessary for
-core pricing. Applications loading JSON add their own `serde_json` dependency.
-The library owns serializable financial types, while the application owns file
-locations and I/O.
+Optional dependencies:
 
-Build the library with the stable Rust toolchain. Updating the stable channel
-before a source build keeps the compiler aligned with the channel used by CI:
+- The `plot` feature adds plotting helpers. Pricing does not need it.
+- To load JSON files, add `serde_json` to your own application. The library
+  types can be serialized, but your application reads and writes the files.
+
+Build the library with the stable toolchain. Update the toolchain first so you
+use the same compiler version as CI:
 
 ```sh
 rustup update stable
 cargo +stable build -p quantsupport
 ```
 
-Automatic differentiation is included in the library. The
-[differentiation guide](../risk/aad.md) explains how pricing requests register
-market inputs, compile derivatives and reuse prepared calculations.
+Automatic differentiation is part of the library and needs no extra setup. See
+the [differentiation guide](../risk/aad.md) for how sensitivities are computed.
 
-For the source checkout:
+To build from source:
 
 ```sh
 git clone https://github.com/jmelo11/quantsupport
@@ -46,8 +45,8 @@ cargo build -p quantsupport
 cargo run -p valuation-swaps
 ```
 
-The workspace includes the library, Rust examples and benchmarks. Run `cargo test -p quantsupport` to check the native library and its
-doctests. Contributor checks also include Clippy and documentation builds.
+The workspace contains the library, the examples, and the benchmarks. Run
+`cargo test -p quantsupport` to test the library and its doctests. Contributors
+should also run Clippy and build the documentation.
 
-
-Continue with the [first valuation](first-swap.md) for a complete Rust example.
+Continue with the [first valuation](first-swap.md) for a complete example.

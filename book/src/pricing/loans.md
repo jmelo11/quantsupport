@@ -1,34 +1,46 @@
 # Loans, prepayment and credit
 
-A loan promises interest and principal payments according to a contractual
-repayment schedule. Its value also depends on expected prepayment and default.
-QuantSupport keeps the contractual schedule fixed while the pricer projects
-these expected receipts under the chosen market assumptions.
+A loan pays interest and principal according to a repayment schedule in the
+contract. Its value also depends on expected prepayment and default.
+QuantSupport keeps the contractual schedule fixed. The pricer projects the
+expected receipts under your market assumptions.
 
-`Loan<T>` stores the contract as a `Leg<T>` of coupons, redemptions and the
-initial advance. Coupon notionals and principal redemptions are contractual
-`f64` amounts. Supply a leg directly or use `MakeLoan<T>` to generate it from
+`Loan<T>` stores the contract as a `Leg<T>` of coupons, redemptions, and the
+initial advance. Coupon notionals and principal redemptions are fixed `f64`
+amounts. You can supply a leg directly, or use `MakeLoan<T>` to generate it from
 repayment and schedule terms.
 
-The builder defaults to monthly payments, French
-amortization, Actual/365 accrual, a null calendar, unadjusted payments, zero
-fixing lag, no prepayment or credit, and 40% recovery. Set the calendar, fixing
-lag, and payment convention to the contract's actual terms.
+Builder defaults:
 
-Coupons use the same positional list as `SteppedCouponBond`, supplied through
-`with_coupons(Vec<CashflowType<T>>)`. The final supplied coupon repeats through
-maturity. Lists can step fixed coupons, spreads or floating indices. Empty lists,
-non-coupon entries and lists longer than the generated schedule are rejected.
-An embedded coupon's `PayoffOps` expression evaluates the observed index, and
-its separate spread is added afterward. Serialization preserves the complete
-expression tree.
+- monthly payments;
+- French amortization;
+- Actual/365 accrual;
+- a null calendar and unadjusted payment dates;
+- zero fixing lag;
+- no prepayment and no credit risk;
+- 40% recovery.
+
+Set the calendar, fixing lag, and payment convention to match the real
+contract.
+
+Coupons are given with `with_coupons(Vec<CashflowType<T>>)`, as a positional
+list like the one used by `SteppedCouponBond`.
+
+- The last coupon repeats until maturity.
+- The list can step fixed coupons, spreads, or floating indices.
+- Empty lists, entries that are not coupons, and lists longer than the schedule
+  are errors.
+
+For a coupon with an embedded payoff, the `PayoffOps` expression is applied to
+the observed index, and then the spread is added. Serialization keeps the full
+expression.
 
 ## Contractual principal
 
-The builder computes principal before considering any prepayment function.
-For initial principal \\(B\\) and annual amortization rate \\(r\\), let
-\\(\tau_k\\) be the contractual day-count fraction and \\(B_f\\) the
-final balloon. With \\(B_{k-1}\\) the opening scheduled balance,
+The builder computes principal before any prepayment. Let \\(B\\) be the
+initial principal, \\(r\\) the annual amortization rate, \\(\tau_k\\) the
+day-count fraction of period \\(k\\), \\(B_f\\) the final balloon, and
+\\(B_{k-1}\\) the scheduled balance at the start of period \\(k\\). Then
 
 \\[
 i_k=r\tau_k,\qquad
@@ -40,39 +52,53 @@ I_k=B_{k-1}i_k,\qquad
 R_k=A-I_k.
 \\]
 
-Here \\(A\\) is the constant scheduled instalment, \\(I_k\\) interest and
-\\(R_k\\) scheduled principal.
+\\(A\\) is the constant scheduled instalment, \\(I_k\\) is interest, and
+\\(R_k\\) is scheduled principal.
 
-These annuity factors use contractual interest accrual; they are independent of
-market discount curves. Unequal intervals and final stubs use their own
-fractions. If every contractual fraction is exactly \\(1/12\\), a 100,000
-principal, 6% coupon and 360 payments produce an instalment of 599.550525.
-This numerical example assumes equal accrual fractions. Actual schedule
-fractions depend on the payment dates and day counter. At zero interest and
-with no balloon, the instalment is principal divided by the number of periods.
+These factors use the contract's interest accrual, not market discount curves.
+Uneven periods and final stubs use their own fractions.
 
-Rust makers built with `MakeInstrument::build_using` obtain the initial all-in rate from
-the first coupon's fixing or forecast, including spread and payoff rules. An
-explicit `with_initial_amortization_rate` overrides that observation. Direct
-`build()` construction requires an explicit initial all-in `amortization_rate`
-for floating-first French/balloon loans. The builder
-retains a contractual baseline and recasts known fixed coupon steps. During
-valuation, French and balloon loans recalculate the installment at each
-contractual coupon/reset change from the opening balance and remaining maturity.
-The installment stays level within each rate period, including unequal accrual
-lengths. Bullet loans repay principal at maturity.
+Example: if every period's fraction is exactly \\(1/12\\), a principal of
+100,000 at 6% over 360 payments gives an instalment of 599.550525. Real
+fractions depend on the payment dates and the day counter. With zero interest
+and no balloon, the instalment is the principal divided by the number of
+periods.
 
-Accrual day counters belong to coupons. A floating coupon uses its explicit
-day counter, falling back to its index convention when omitted. Fixed coupons
-use their `InterestRate` day counter. The loan uses those same conventions for
-principal amortization and preserves them when generating each cashflow.
-Set the day counter on the coupon rather than the loan builder. With an initial
-amortization rate matching the first all-in floating fixing, French payments are level through the first
-reset, including months with different accrual lengths. Later resets set a new
-level installment for their rate period.
+### Initial amortization rate
 
-The following Rust fragment builds a floating mortgage; its market and trade
-are supplied by the surrounding application.
+- `MakeInstrument::build_using` takes the initial all-in rate from the first
+  coupon's fixing or forecast, including the spread and payoff rules.
+- `with_initial_amortization_rate` sets the rate explicitly and takes priority.
+- `build()` needs an explicit initial `amortization_rate` for French and
+  balloon loans whose first coupon is floating.
+
+The builder stores this baseline schedule and recalculates it at each known
+fixed-coupon step.
+
+During valuation, French and balloon loans recalculate the instalment each time
+the coupon or reset changes, from the balance at that point and the remaining
+maturity. The instalment stays the same within each rate period, even when
+periods have different accrual lengths. Bullet loans repay all principal at
+maturity.
+
+### Day counts
+
+Day counters belong to the coupons, not to the loan:
+
+- A floating coupon uses its own day counter, or its index convention if none
+  is set.
+- A fixed coupon uses the day counter of its `InterestRate`.
+
+The loan uses the same conventions to amortize principal and keeps them on each
+generated cashflow. Set the day counter on the coupon, not on the loan builder.
+
+If the initial amortization rate equals the first all-in floating fixing,
+French payments stay level until the first reset, even in months with
+different lengths. Each later reset sets a new level instalment for its rate
+period.
+
+The following fragment builds a floating-rate mortgage. The market and
+trade come from the surrounding application.
 
 ```rust,ignore
 use quantsupport::prelude::*;
@@ -101,36 +127,46 @@ pricer.set_discount_policy(Box::new(
 
 ## Coupon observation requests
 
-Payment frequency, reset frequency, and index tenor are independent.
-`RateIndexDetails::frequency()` defines the index observation frequency, separately
-from its quote compounding frequency. The builder reads this metadata rather
-than matching particular index names. EURIBOR12m, for example, supplies annual
-resets and a 12-month observation tenor for monthly-payment loans. Explicit
-builder frequencies and tenors override the metadata. Daily indices default to
-point observations at the loan's payment boundaries; specify the loan's actual
-reset conventions explicitly when these differ.
+Payment frequency, reset frequency, and index tenor are separate settings.
 
-Each floating coupon carries a `ForwardRateRequest` for its applicable reset.
-Monthly coupons can share the same annual request. The request contains the
-fixing date and full index observation start/end dates. This separates the rate
-observation from the coupon's interest accrual interval. Coupon changes occur at
-payment accrual boundaries. Each contiguous run of a floating index starts a
-new reset grid; changing only its spread or bounds preserves the existing grid.
+- `RateIndexDetails::frequency()` gives how often the index is observed. This
+  is separate from the compounding frequency of its quotes.
+- The builder reads this from the index details, not from the index name. For
+  example, EURIBOR12m gives annual resets and a 12-month observation period,
+  even for a loan with monthly payments.
+- Frequencies and tenors you set on the builder take priority.
+- Daily indices default to a single observation at each payment date. Set the
+  loan's real reset conventions if they differ.
 
-The pricer resolves required historical resets from exact stored fixings. Today's
-fixing is used when present and forecast otherwise. Future observations use the
-index curve and its quote convention. It installs fixings on a cloned leg,
-leaving the instrument unchanged.
+Each floating coupon has a `ForwardRateRequest` for its reset. Monthly coupons
+can share one annual request. The request holds the fixing date and the start
+and end dates of the index period, which can differ from the coupon's accrual
+period.
+
+Coupon terms change only at accrual boundaries. Each continuous run of one
+floating index starts a new reset grid. Changing only the spread or the
+floor/cap keeps the existing grid.
+
+The pricer resolves fixings as follows:
+
+- Past resets use exact stored fixings.
+- Today's reset uses the stored fixing if present, and a forecast otherwise.
+- Future resets use the index curve and its quote convention.
+
+Fixings are applied to a copy of the leg. The instrument itself is not changed.
 
 ## Prepayment functions
 
-A `Loan<T>` carries a `PrepaymentModel<T>` function independently of its
-contractual cashflows. `PrepaymentModelConfiguration::Cpr`, `CprCurve`, and
-`Refinancing` implement that function for any supported scalar. Custom models
-passed to `MakeLoan<T>::with_custom_prepayment_model` use the same `T` as the
-coupon templates. For a `MakeLoan<Recorded>` already containing the
-contract terms, a custom function can be
-attached as in this Rust fragment:
+A `Loan<T>` holds a `PrepaymentModel<T>` separately from its contractual
+cashflows.
+
+- `PrepaymentModelConfiguration::Cpr`, `CprCurve`, and `Refinancing` provide
+  built-in models for any supported scalar.
+- A custom model passed to `MakeLoan<T>::with_custom_prepayment_model` must use
+  the same `T` as the coupon templates.
+
+For a `MakeLoan<Recorded>` that already has the contract terms, this
+fragment adds a custom function:
 
 ```rust,ignore
 let loan = builder.with_custom_prepayment_model(
@@ -141,119 +177,181 @@ let loan = builder.with_custom_prepayment_model(
 ).build()?;
 ```
 
-Changing a loan's scalar type requires an explicit target-scalar prepayment
-model. Use `loan.into_scalar::<Recorded>(Arc::new(model))`, and the same method on
-`LoanTrade<T>` to preserve its date and side. For portable configurations, pass
-the same configuration again. For custom models, supply an equivalent
-implementation for the target scalar; converting an arbitrary model
-automatically could discard its AD dependencies. Implicit `From`/`Into`
-conversions between loan scalar types are therefore unavailable.
+### Changing the scalar type
 
-The pricer evaluates the function after scheduled principal. A regular monthly
-interval converts annual CPR to `1 - (1 - CPR)^(1/12)`; partial or irregular
-intervals use actual days divided by 365. Prepayment is a principal receipt.
-The projected remaining share of the contractual balance reduces future expected
-interest and scheduled principal proportionally. No contractual leg is modified.
-For seasoned loans the projection starts from contractual outstanding principal
-at the evaluation date; prior actual prepayments are not inferred.
+To change a loan's scalar type, pass a prepayment model for the new scalar:
+`loan.into_scalar::<Recorded>(Arc::new(model))`. `LoanTrade<T>` has the same
+method, which keeps the trade date and side.
 
-Refinancing-incentive models receive an explicitly configured index benchmark.
-Its observation tenor comes from the index's metadata. This benchmark excludes
-replacement-loan lending spreads, fees, and transaction costs. The state exposes
-it as `refinancing_benchmark_rate()`, alongside `contractual_coupon_rate()` and
-`outstanding_principal()`. Models return an interval probability through
-`conditional_prepayment_probability()`. Native prepayment functions can retain
-AD dependencies on market rates without changing the cashflows' `f64` notionals.
+- For built-in models, pass the same configuration again.
+- For a custom model, write an equivalent version for the new scalar.
+
+There is no `From`/`Into` conversion between loan scalar types.
+
+### How prepayment is applied
+
+- The pricer applies prepayment after scheduled principal.
+- For a regular monthly period, annual CPR becomes `1 - (1 - CPR)^(1/12)`.
+  Partial or irregular periods use actual days divided by 365.
+- Prepayment is received as principal.
+- The remaining share of the balance reduces expected future interest and
+  scheduled principal in proportion.
+- The contractual leg is not changed.
+- For a loan that started in the past, projection starts from the contractual
+  balance at the evaluation date. Actual past prepayments are not inferred.
+
+### Refinancing models
+
+Refinancing models compare the loan's rate with a benchmark index that you
+configure. The benchmark's observation tenor comes from the index details. It
+does not include lending spreads, fees, or transaction costs of a new loan.
+
+The model state provides:
+
+- `refinancing_benchmark_rate()`;
+- `contractual_coupon_rate()`;
+- `outstanding_principal()`.
+
+Models return the probability of prepaying in the period through
+`conditional_prepayment_probability()`. Built-in models can depend on market
+rates through AD while the cashflow notionals stay `f64`.
 
 ## Valuation and cashflows
 
-`LoanPricer` implements the standard request handlers. `Request::Cashflows(true)`
-uses `HandleCashflows` over projected legs containing existing cashflow variants:
-leg 0 contains scheduled coupons/redemptions, leg 1 prepayment redemptions, and
-leg 2 recovery redemptions. Prepayment is projected from origination, including
-periods before evaluation. Historical coupon and refinancing observations needed
-to replay this history are required; missing fixings raise an error.
+`LoanPricer` supports the standard requests. Cashflow reports use
+`HandleCashflows` over three projected legs:
 
-`Request::Cashflows(true)` reports payments strictly after evaluation. Use
-`Request::Cashflows(false)` to include the full schedule and initial advance.
-The report window does not affect PV, which includes future receipts and excludes
-the initial advance. Floating rows include their contractual `fixing_date`; monthly
-coupons sharing an annual reset have the same date. Fixed and principal rows have
-no fixing date.
+- leg 0: scheduled coupons and redemptions;
+- leg 1: prepayment redemptions;
+- leg 2: recovery redemptions.
 
-Payment schedules accept forward/backward generation, month-end alignment,
-`first_coupon_date` and `next_to_last_coupon_date`. The first anchor ends an
-initial stub; the penultimate anchor starts a final stub. `Backward` generation
-places an automatically generated stub at the beginning; `Forward` places it at
-the end.
-The default French convention
-keeps the same scheduled installment for a stub, with interest based on its actual
-accrual fraction and the remainder allocated to principal.
+Prepayment is projected from the loan's start, including periods before the
+evaluation date. This needs the past coupon and refinancing fixings; a missing
+fixing is an error.
 
-Bounded floating templates retain `OptionEmbeddedCoupon`. Their floor/cap payoff
-is applied to the resolved index observation with the loan's accrual basis.
-This is a deterministic cashflow projection; it does not add option time value.
+Report window:
 
-With a borrower `credit_index`, receipts are weighted by survival conditional
-on the evaluation date. Default between payments pays recovery on opening
-principal at the period-end payment date. This is a discrete recovery timing
-approximation. Credit and prepayment affect pricing state, not the contract.
+- `Request::Cashflows(true)` reports payments strictly after the evaluation
+  date.
+- `Request::Cashflows(false)` reports the whole schedule, including the initial
+  advance.
 
-Set the refinancing benchmark and fair-rate schedule choices on the native
-pricer. The defaults use no refinancing benchmark and preserve amortization
-during fair-rate trials. Configure a `FixedIncomeDiscountPolicy` explicitly:
-the loan carries its payment currency, while the policy chooses the discount
-curve. The same contract can therefore be valued against ESTR, EURIBOR or a
-funding curve by changing the policy.
+The window does not change the PV. PV includes future receipts and excludes the
+initial advance.
 
-Sensitivities are derivatives with respect to labelled market pillars. Multiply
-a rate-quote derivative by 0.0001 for the first-order PV change from a one-basis-point
-increase. Native refinancing and survival weights participate in AD; contractual
-rate-dependent principal schedules participate in market sensitivity calculations.
+Floating rows show their `fixing_date`. Monthly coupons that share an annual
+reset show the same date. Fixed and principal rows have no fixing date.
+
+### Schedules and stubs
+
+Payment schedules support forward or backward generation, month-end alignment,
+`first_coupon_date`, and `next_to_last_coupon_date`.
+
+- The first-coupon date ends an initial stub. The next-to-last date starts a
+  final stub.
+- `Backward` generation puts an automatic stub at the start. `Forward` puts it
+  at the end.
+- By default, French amortization keeps the same instalment for a stub. Interest
+  uses the stub's actual accrual fraction, and the rest goes to principal.
+
+### Floors and caps
+
+Floating templates with a floor or cap become `OptionEmbeddedCoupon`. The
+floor/cap is applied to the resolved index rate on the loan's accrual basis.
+This is a cashflow projection only; it adds no option time value.
+
+### Credit
+
+With a borrower `credit_index`, receipts are weighted by the probability of
+survival from the evaluation date. On default between payments, recovery on
+the balance at the start of the period is paid on the period's payment date.
+This is an approximation of recovery timing. Credit and prepayment affect only
+the valuation, not the contract.
+
+### Pricer settings
+
+Set the refinancing benchmark and the fair-rate schedule option on the pricer.
+By default there is no refinancing benchmark, and fair-rate trials keep the
+existing amortization.
+
+Configure a `FixedIncomeDiscountPolicy` explicitly. The loan has a payment
+currency, and the policy chooses the discount curve. You can value the same
+contract on ESTR, EURIBOR, or a funding curve by changing the policy.
+
+### Sensitivities
+
+Sensitivities are derivatives with respect to labelled market pillars.
+Multiply a rate-quote derivative by 0.0001 to get the first-order PV change for
+a one-basis-point rise. Refinancing and survival weights are included in AD.
+Principal schedules that depend on rates are included in market
+sensitivities.
 
 ## Fair rate and schedule choice
 
-`FairRate` bootstraps one fixed coupon or floating spread per contiguous
-contractual segment at or before origination. A change in fixed rate, spread,
-coupon type, or floating index starts a segment; index fixing resets do not.
-First shorten the loan to the first segment's end and repay all remaining
-capital there. Solve that segment's rate so receipt PV equals the original
-advance PV, lock the result, extend through the next segment, and repeat.
-Every solved prefix therefore lends at par with its outstanding principal
-repaid at that prefix's end. Bounded coupons remain unsupported.
+`FairRate` solves one fixed coupon or floating spread per segment of the
+contract. A new segment starts when the fixed rate, spread, coupon type, or
+floating index changes. Index resets do not start a new segment. The
+evaluation date must be on or before the loan's start date.
 
-`Request::FairRate(index)` selects one zero-based segment and returns its scalar
-in `fair_rate`. Only earlier segments needed for that target are solved. Use
-separate evaluations for several targets; invalid indices are errors.
+The solver works segment by segment:
 
-The pricer's `rebuild_amortization_for_fair_rate` parameter controls how solver
-trials treat principal. The default `false` preserves the already created
-amortization schedule. With `true`, each trial regenerates the builder's French,
-bullet, or balloon schedule using the first trial coupon's all-in rate. Once
-the first segment is solved, its rate stays fixed during later trials. A custom leg needs explicit repayment
-metadata to use this mode. Neither mode changes the original instrument. Both apply the French reset rule
-during receipt projection.
+1. Shorten the loan to the end of the first segment and repay all remaining
+   principal there.
+2. Solve that segment's rate so the PV of receipts equals the PV of the
+   original advance.
+3. Fix that rate, extend the loan to the end of the next segment, and repeat.
 
-Use `LoanPricer::new().with_fair_rate_amortization_rebuild(true)` for
-rebuilding. The solver searches within [-5%, 50%], reducing the upper bound when
-a trial rate would produce invalid amortization. It reports unbracketed
-solutions as errors. To reprice a preserving-mode solution through the builder,
-retain the original initial amortization rate while changing the coupon/spread.
-To reprice a rebuilding-mode solution, use the candidate all-in rate for
-amortization. In both modes, retain the original coupon's day count,
-compounding and frequency when inserting the solved rate. For example, the
-mortgage example uses an Actual/360 fixed coupon, whereas
-`CashflowType::fixed(rate)` creates an Actual/365 coupon. Using that convenience
-constructor to reprice this mortgage would change the contract and would no
-longer reproduce the par target.
+Each solved part of the loan therefore lends at par, with the remaining
+principal repaid at its end. Coupons with a floor or cap are not supported.
 
-Run `cargo run -p valuation-loans` for the complete native example. It uses
-the illustrative EUR and borrower-credit inputs in
+`Request::FairRate(index)` selects one zero-based segment and returns its rate
+in `fair_rate`. Only the earlier segments needed for that target are solved.
+Use separate evaluations for several targets. An invalid index is an error.
+
+### Amortization during the solve
+
+The pricer setting `rebuild_amortization_for_fair_rate` controls how trial
+rates affect principal:
+
+- `false` (default): keep the existing amortization schedule.
+- `true`: on each trial, regenerate the French, bullet, or balloon schedule
+  using the first trial coupon's all-in rate. Once the first segment is solved,
+  its rate stays fixed for later trials. A custom leg needs explicit repayment
+  details to use this mode.
+
+Neither mode changes the original instrument. Both apply the French reset rule
+when projecting receipts.
+
+To rebuild, use `LoanPricer::new().with_fair_rate_amortization_rebuild(true)`.
+
+The solver searches between -5% and 50%. It lowers the upper bound if a trial
+rate would give an invalid amortization schedule. If it cannot bracket a
+solution, it returns an error.
+
+### Repricing with the solved rate
+
+- In keep-amortization mode, keep the original initial amortization rate and
+  change only the coupon or spread.
+- In rebuild mode, use the solved all-in rate for amortization too.
+- In both modes, keep the original coupon's day count, compounding, and
+  frequency.
+
+For example, the mortgage example uses an Actual/360 fixed coupon, while
+`CashflowType::fixed(rate)` creates an Actual/365 coupon. Repricing the
+mortgage with that shortcut would change the contract and would not reproduce
+par.
+
+## Example and scenarios
+
+Run `cargo run -p valuation-loans` for the complete example. It uses sample
+EUR market and borrower-credit data in
 `examples/valuation/loans/data/loan_*.json`.
 
 `Scenario::new(vec![Shock::new(target, value, ScenarioType::Absolute)])`
-creates a quote shock. `scenario.apply(&context)?` returns a borrowed
-`MarketDataProvider` accepted by pricers and `Evaluator`; the context stays
-unchanged. Funding-spread sensitivities retain the original quote identifiers
-`ZeroRate_EUR_OTHER:FUNDINGSPREAD_<tenor>`. Multiply decimal-rate derivatives
-by `0.0001` for the approximate EUR change under a one-basis-point move.
+creates a quote shock. `scenario.apply(&context)?` returns a
+`MarketDataProvider` that pricers and `Evaluator` accept. The original context
+is unchanged.
+
+Funding-spread sensitivities keep the original quote identifiers
+`ZeroRate_EUR_OTHER:FUNDINGSPREAD_<tenor>`. Multiply decimal-rate derivatives by
+`0.0001` to get the approximate EUR change for a one-basis-point move.

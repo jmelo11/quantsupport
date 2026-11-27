@@ -1,68 +1,87 @@
 # Cross-currency contracts
 
-A cross-currency contract exchanges payments in two currencies. Valuation
-requires curves for projecting each leg, discount curves consistent with the
-collateral agreement, and an FX rate for converting between currencies.
-Cross-currency market quotes help calibrate the collateral-adjusted curves.
+A cross-currency contract exchanges payments in two currencies. To value it you
+need:
 
-For a USD-collateralized USD/CLP swap, for example, SOFR can provide USD
-projection and discounting, ICP can project CLP coupons, and a separate
-USD-collateralized CLP curve discounts those payments.
+- a projection curve for each floating leg;
+- discount curves that match the collateral agreement;
+- an FX rate to convert between the currencies.
+
+Cross-currency quotes are used to calibrate the collateral-adjusted curves.
+
+For example, for a USD/CLP swap collateralized in USD:
+
+- SOFR projects and discounts the USD leg;
+- ICP projects the CLP coupons;
+- a separate USD-collateralized CLP curve discounts the CLP payments.
 
 ## Swaps and collateral curves
 
-Fixed–floating and floating–floating cross-currency builders create two currency
-legs with initial/final principal exchanges. Notionals can be chosen to be
-spot-equivalent at inception: for USD→CLP spot \\(S\\) quoted in CLP per USD,
-CLP principal is USD principal times \\(S\\). State this orientation explicitly
-when supplying spot or interpreting results.
+The fixed–floating and floating–floating cross-currency builders create two
+legs in different currencies, with principal exchanged at the start and at the
+end.
 
-A USD CSA policy selects SOFR for USD payments and
-`Collateral(CLP, USD)` for CLP payments. The latter is not the local CLP ICP
-projection curve. Calibration can use FX forward quotes and cross-currency
-swaps, with an FX store supplying consistent inception notionals.
+You can make the notionals equal at today's spot rate. For a USD→CLP spot
+\\(S\\) quoted in CLP per USD, the CLP principal is the USD principal times
+\\(S\\). Always state which direction the spot rate is quoted in, both when you
+supply it and when you read results.
 
-For a CLP payment converted to USD under that policy, the implemented
-discount-and-convert contribution has the form
+A USD CSA policy uses:
+
+- SOFR for USD payments;
+- `Collateral(CLP, USD)` for CLP payments. This is not the local ICP
+  projection curve.
+
+The collateral curve can be calibrated from FX forward quotes and
+cross-currency swaps. An FX store supplies the spot rate used for the starting
+notionals.
+
+Under this policy, a CLP payment converted to USD contributes
 
 \\[
 PV_{\rm USD}=C_{\rm CLP}\\,S_{\rm CLP\to USD}
 \\,P_{\rm CLP|USD}(0,T).
 \\]
 
-The pricer's actual currency rule must be checked for each product; this is not
-a universal context-level reporting conversion. Generic DCF payment filtering
-and zero-based `FairRate(index)` leg selection described in [Swaps](swaps.md) apply.
+Currency conversion is done by each pricer, not by the context. Check the rule
+of the pricer you use. The payment selection and the zero-based
+`FairRate(index)` leg selection described in [Swaps](swaps.md) also apply.
 
-Risk follows the construction graph. USD projection/discounting reaches SOFR
-quotes; CLP coupon projection reaches ICP; collateral discounting reaches
-cross-currency and FX-forward calibration inputs. Spot risk also requires
-recorded spot inputs. The existence of a spot store alone does not guarantee
-that every particular sensitivity report includes all spot dependencies.
+Sensitivities follow the curves each leg uses:
+
+- USD projection and discounting give risk to SOFR quotes.
+- CLP coupon projection gives risk to ICP quotes.
+- Collateral discounting gives risk to the cross-currency and FX-forward
+  quotes used to calibrate it.
+
+Spot FX risk appears only if the spot rate is recorded as an AD input. Having
+an FX store does not guarantee that a sensitivity report includes every spot
+dependency.
 
 ## FX forwards: the implemented convention
 
-`MakeFxForward` creates a future currency exchange, with optional
-non-deliverable settlement configuration. `FxForwardPricer` requires an
-explicit discount policy and supports value, fair rate and sensitivities.
-Its current implementation computes
+`MakeFxForward` creates a future currency exchange. It can optionally be set up
+as a non-deliverable forward (NDF).
+
+`FxForwardPricer` needs an explicit discount policy. It supports value, fair
+rate, and sensitivities. When the contract has a forward price \\(K\\), it
+computes
 
 \\[
 F_{\rm impl}=S\frac{P_{\rm quote}(0,T)}{P_{\rm base}(0,T)},\qquad
 V=N\\,s\\,(F_{\rm impl}-K)P_{\rm quote}(0,T)
 \\]
 
-when a contractual forward price is present.
+**Caveat:** with spot quoted as quote currency per base currency, this formula
+uses the reciprocal of the usual covered-interest-parity discount ratio. The
+FX option pricer uses the usual base/quote ratio. Keep this in mind when you
+compare the two pricers, reproduce forward values, or test put–call parity.
 
-For spot expressed as quote currency per base currency, this implementation
-uses the reciprocal of the usual covered-interest-parity discount ratio.
-The FX-option pricer uses the usual base/quote ratio. This discrepancy affects
-comparisons between the two pricers and must be accounted for when
-reproducing forward values or testing option parity.
+Forwards can be calibrated from outright rates or from forward points:
 
-An outright forward rate and forward points are different calibration
-strategies. `AnchorOutrightPrice` uses the outright quote;
-`AnchorForwardPoints` uses the configured points interpretation. Their market
-identities and native implementation must match the feed's units. Replicating
-a vendor forward requires validating orientation, quote units, collateral
-curves and settlement behavior together.
+- `AnchorOutrightPrice` uses the outright quote.
+- `AnchorForwardPoints` uses forward points, as configured.
+
+The quote identifiers must match the units of your data feed. To reproduce a
+vendor's forward, check the spot direction, quote units, collateral curves, and
+settlement rules together.

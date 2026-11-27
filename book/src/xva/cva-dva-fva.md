@@ -1,92 +1,104 @@
 # Credit, funding and XVA risk
 
-Credit and funding adjustments combine future exposure with counterparty,
-own-credit or funding assumptions. QuantSupport first generates market paths
-and values the portfolio, then applies a measure-specific aggregator to each
-path. Netting and variation margin determine the exposure supplied to that
-aggregator.
+Credit and funding adjustments combine future exposure with assumptions about
+counterparty credit, own credit, or funding cost. QuantSupport:
 
-The formulas below describe the implemented integration and the inputs held
-fixed when its sensitivities are calculated.
+1. generates market paths and values the portfolio on them;
+2. applies netting and variation margin to get the exposure;
+3. applies an aggregator for each measure to each path.
 
-Let \\(U_{p,k}\\) be exposure after the netting/collateral rules applied for
-the adjustment, \\(D_k\\) the numerical system discount factor, and
-\\(\Delta t_k\\) the ACT/365 year fraction between consecutive grid dates.
-The implemented integration uses right-endpoint exposure.
+This chapter gives the formulas used and the inputs held fixed when
+sensitivities are computed.
+
+Notation:
+
+- \\(U_{p,k}\\) is the exposure after the netting and collateral rules for the
+  adjustment;
+- \\(D_k\\) is the system discount factor;
+- \\(\Delta t_k\\) is the ACT/365 year fraction between consecutive grid dates.
+
+The sums use the exposure at the end of each grid interval.
 
 ## CVA and DVA
 
-For counterparty survival \\(Q_k\\) and recovery \\(R\\),
+For counterparty survival probability \\(Q_k\\) and recovery \\(R\\),
 
 \\[
 \mathrm{CVA}=(1-R)\frac1n
 \sum_p\sum_{k=1}^{m}D_k\max(U_{p,k},0)(Q_{k-1}-Q_k).
 \\]
 
-Flat spread \\(s\\) is converted to hazard \\(\lambda=s/(1-R)\\), then
-\\(Q(t)=e^{-\lambda t}\\). With a credit curve, survival comes from
-log-linear survival interpolation and the implemented terminal hazard
-continuation. A credit spread is not interchangeable with hazard, and recovery
-can affect both the flat hazard and the loss multiplier.
+- A flat spread \\(s\\) is converted to a hazard rate \\(\lambda=s/(1-R)\\),
+  and then \\(Q(t)=e^{-\lambda t}\\).
+- With a credit curve, survival is interpolated log-linearly, and the last
+  hazard rate is extended beyond the final pillar.
+- A credit spread is not a hazard rate. The recovery rate affects both the
+  flat hazard rate and the loss amount.
 
-DVA uses own-credit survival/recovery and \\(\max(-U,0)\\). It therefore
-turns a negative exposure into a positive own-default benefit measure.
-`DvaAggregator` and its factory are lower-level facilities. `XvaEngine::run`
-automatically constructs CVA and FVA, not a fully specified bilateral
-CVA/DVA model.
+DVA uses own-credit survival and recovery, and \\(\max(-U,0)\\). A negative
+exposure therefore gives a positive DVA.
 
-The aggregators produce named measures; they do not prescribe a universal
-accounting sign for adding/subtracting those measures from a clean price.
-State that convention at the application boundary.
+`XvaEngine::run` computes CVA and FVA only. For DVA, use `DvaAggregator` and its
+factory from the lower-level interface.
+
+Aggregators return named measures. They do not decide whether a measure is
+added to or subtracted from a clean price. Choose and document that sign in
+your application.
 
 ## Signed funding integration
 
-The implemented FVA is
+FVA is
 
 \\[
 \mathrm{FVA}=\frac1n\sum_p\sum_{k=1}^{m}
 D_k\\,U_{p,k}\\,s_f(t_k)\\,\Delta t_k.
 \\]
 
-This symmetric funding convention uses signed exposure, so positive and
-negative contributions can cancel. It uses one spread for both directions;
-separate borrowing and lending spreads are outside this model. As a result,
-a reduction in EPE alone does not determine the change in FVA.
+- FVA uses signed exposure, so positive and negative contributions can cancel.
+- One spread is used for both borrowing and lending. Separate borrowing and
+  lending spreads are not supported.
+- A lower EPE alone therefore does not tell you how FVA changes.
 
-Funding inputs can be flat, dated explicit spreads, or spreads derived from
-a configured funding curve relative to the system curve. System discount
-factors are optional at lower levels; high-level construction supplies them.
-Without them, aggregation is not automatically present-valued by another
-hidden discounting stage.
+The funding spread can be flat, a dated curve of spreads, or derived from a
+funding curve relative to the system curve. At the lower level, system discount
+factors are optional. If you leave them out, the result is not discounted. The
+high-level engine always supplies them.
 
 ## What the returned sensitivities mean
 
-The engine returns one aggregated list of labeled derivatives across the run.
-Rate-path leaves can retain original curve calibration/IFT dependencies.
-Fixed model lambda and configured correlations are not automatically
-independent risk factors. Calibrated Gaussian sigma includes the supplied
-volatility Jacobian but omits curve/strike-induced recalibration.
+The engine returns one list of labelled derivatives for the whole run.
 
-The numerical system discount sequence \\(D_k\\) is held fixed during AD.
-A quote scenario that recalculates it can therefore disagree with the
-reported partial derivative for a legitimate reason.
+- Rate-path inputs can carry risk back through curve calibration to the
+  market quotes.
+- Fixed model lambda and the configured correlations are not reported as risk
+  factors.
+- Calibrated Gaussian sigma includes the volatility Jacobian, but not
+  refitting caused by curve or strike moves.
+- The system discount factors \\(D_k\\) are held fixed. A quote scenario that
+  recomputes them can therefore differ from the reported derivative.
 
-Credit-curve CVA has another important boundary. High-level construction
-snapshots numerical survival pillars and their labels; `CreditCurveCvaFactory`
-creates independent survival leaves. A label such as `CVA.<quote-like label>`
-therefore describes a derivative with respect to a **survival pillar**, not a
-replayed original CDS-spread calibration derivative. Recovery is separately
-labeled. Quote-like text does not change a leaf's numerical units.
+### Credit-curve CVA
 
-Similarly, funding-index construction snapshots derived forward spreads.
-`FundingCurveFvaFactory` creates independent spread leaves, generally labeled
-with `FVA.` prefixes, rather than differentiating their derivation from all
-funding/system curve quotes. Explicit funding-spread curves can contribute
-their own dated zero-rate leaves. Distinguish these factory risks from direct
-deterministic credit/funding-curve sensitivities.
+The high-level engine copies the survival probabilities at the credit pillars,
+with their labels. `CreditCurveCvaFactory` uses these as independent AD inputs.
+A label such as `CVA.<quote-like label>` is therefore a derivative with respect
+to a **survival pillar**, not to the CDS spread quote. Recovery has its own
+label. A label that looks like a quote does not change the units of the input.
 
-Value and gradient share simulated paths and sampling noise. Validate selected
-dependencies with same-seed runs and carefully specified bumps, but compare
-like with like: a full quote shock reconstructs more than a partial
-survival/spread/model derivative may include. Reporting the leaf meaning,
-units and held-fixed assumptions is as important as reporting the number.
+### Funding
+
+Spreads derived from a funding index are also copied as numbers.
+`FundingCurveFvaFactory` uses them as independent AD inputs, usually with an
+`FVA.` label prefix. Their sensitivity is not carried back to the funding or
+system curve quotes. Explicit funding-spread curves report risk to their own
+dated zero-rate pillars. Keep these apart from direct sensitivities to credit
+or funding curves.
+
+### Validation
+
+The value and its gradient use the same paths and share the same sampling
+noise. To check a sensitivity, run with the same seed and a carefully chosen
+bump. Compare like with like: a full quote shock rebuilds more than a
+derivative to a survival pillar, spread, or model input includes. When you
+report a sensitivity, state what input it is for, its units, and what was held
+fixed.

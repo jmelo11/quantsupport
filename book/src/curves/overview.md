@@ -1,34 +1,38 @@
 # Discount factors and rate conventions
 
-Interest-rate curves provide the discount factors used to value future
-payments and the forward rates used to project floating coupons. QuantSupport
-exposes these queries through `InterestRatesTermStructure<T>`, so a pricer can
-use a calibrated curve, a flat curve or a composite funding curve through the
-same interface.
+Interest-rate curves give two things:
 
-A curve's rate conventions determine how discount factors translate into
-quoted rates. Understanding these conventions is useful both when constructing
-a market and when interpreting a forward-rate query.
+- discount factors, used to value future payments;
+- forward rates, used to project floating coupons.
 
-Write \\(P(0,t)\\) for the discount factor from reference date zero to date
-\\(t\\). For an interval with year fraction \\(\tau\\),
+All curves implement `InterestRatesTermStructure<T>`. A pricer can therefore
+use a calibrated curve, a flat curve, or a composite funding curve in the same
+way.
+
+A curve's rate conventions decide how its discount factors convert to quoted
+rates. You need them both when you build a market and when you read a forward
+rate from a curve.
+
+Write \\(P(0,t)\\) for the discount factor from the reference date to date
+\\(t\\). For a period with year fraction \\(\tau\\),
 
 \\[
 P(t_1,t_2)=\frac{P(0,t_2)}{P(0,t_1)},\qquad
 L(t_1,t_2)=\frac{P(0,t_1)/P(0,t_2)-1}{\tau}.
 \\]
 
-The second expression is a simple annualized forward rate. The equivalent
-continuously compounded forward is
-\\(-\log(P(t_1,t_2))/\tau\\). Both describe the same accumulation; their numbers
-need not agree. A curve's interpolation clock and a coupon's accrual basis
-must also be distinguished when translating between them.
+\\(L\\) is the simple annualized forward rate. The continuously compounded
+forward over the same period is \\(-\log(P(t_1,t_2))/\tau\\). Both describe the
+same growth, but the numbers are different.
+
+When you convert between them, also keep apart the curve's time measure (used
+for interpolation) and the coupon's accrual basis.
 
 ## Rate definitions
 
-`RateDefinition` combines day counter, compounding and frequency.
-`InterestRate` uses that definition to translate a rate into compound and
-discount factors. For year fraction \\(\tau\\), principal conventions are
+A `RateDefinition` is a day counter, a compounding method, and a frequency.
+`InterestRate` uses it to turn a rate into compound and discount factors. For
+a year fraction \\(\tau\\), the main methods are
 
 \\[
 C_{\rm simple}=1+r\tau,\qquad
@@ -36,68 +40,91 @@ C_{\rm periodic}=(1+r/m)^{m\tau},\qquad
 C_{\rm continuous}=e^{r\tau}.
 \\]
 
-Mixed simple/periodic conventions additionally switch behavior according to
-their interval rule. Frequency matters for periodic compounding even when
-payment dates follow another schedule. The first-swap example illustrates why
-identical displayed percentages under different conventions are not equal
-financial prices.
+- `SimpleThenCompounded` uses simple compounding for periods up to one
+  compounding period (\\(1/m\\) years) and periodic compounding for longer
+  periods. `CompoundedThenSimple` does the reverse.
+- For periodic compounding, the frequency matters even if payments follow a
+  different schedule.
 
-Day counters include ACT/360, ACT/365, 30/360 variants, Actual/Actual and
-Business/252. The day counter measures the accrual fraction between dates,
-while the calendar determines any business-day adjustment to those dates.
+The [first valuation](../getting-started/first-swap.md) shows that the same
+percentage under two conventions gives two different prices.
 
-`ActualActual` splits at calendar-year boundaries and includes every complete
-intervening year. `Thirty360US` adjusts February
-month-ends after its 31st-day adjustments, differing from common US/NASD rules.
-Validate these conventions against the required dates; their API references
-describe the implemented rules. The examples here use ACT/360 or ACT/365.
+Available day counters include ACT/360, ACT/365, 30/360 variants,
+Actual/Actual, and Business/252. The day counter measures the accrual fraction
+between two dates. The calendar decides how those dates are adjusted for
+holidays.
+
+Two day counters differ from some common definitions:
+
+- `ActualActual` splits the period at calendar-year boundaries and counts each
+  full year in between.
+- `Thirty360US` adjusts February month-ends after its rules for the 31st. This
+  differs from the common US/NASD rule.
+
+Check these conventions against your contract dates. The API reference
+describes the exact rules. The examples in this Book use ACT/360 or ACT/365.
 
 ## Curve representations
 
-`DiscountTermStructure<T>` stores dated discount factors. Its first factor is
-one at the reference date, and date/value vectors must agree. Pricing values
-are interpolated on year fractions. With log-linear interpolation,
+`DiscountTermStructure<T>` stores discount factors on dates.
+
+- The first factor is one, at the reference date.
+- The date and value lists must have the same length.
+- Values are interpolated on year fractions.
+
+With log-linear interpolation,
 
 \\[
 \log P(t)=(1-w)\log P(t_i)+w\log P(t_{i+1}),
 \quad w=\frac{t-t_i}{t_{i+1}-t_i},
 \\]
 
-so the instantaneous forward is constant between adjacent nodes. Linear and
-cubic-spline choices describe different interpolation models. Extrapolation
-is a separate permission: log-linear continuation extends the terminal
-forward, while linear/cubic choices use their implemented linear
-extrapolation. Disabled extrapolation makes out-of-domain queries errors.
+so the instantaneous forward rate is constant between two nodes. Linear and
+cubic-spline interpolation give different shapes.
 
-`FlatForwardTermStructure<T>` represents the term structure with one rate and
-rate definition. An explicit `ZeroRateTermStructure` interpolates zero rates,
-and tenor-based zero curves resolve pillar dates from the reference date. Choose
-the representation and interpolator together, since they determine the implied
-shape between pillars.
+Extrapolation is a separate setting:
 
-A spread representation can express a continuously compounded adjustment:
+- Log-linear extrapolation extends the last forward rate.
+- Linear and cubic interpolators extrapolate linearly.
+- If extrapolation is disabled, a query outside the curve's dates is an error.
+
+Other representations:
+
+- `FlatForwardTermStructure<T>` uses a single rate and rate definition.
+- `ZeroRateTermStructure` interpolates zero rates. Tenor-based zero curves
+  compute their pillar dates from the reference date.
+
+Choose the representation and interpolator together, because together they set
+the curve shape between pillars.
+
+A spread curve can be written as a continuously compounded adjustment:
 
 \\[
 s(t)=-\frac{\log(P_{\rm target}(t)/P_{\rm base}(t))}{t},
 \qquad P_s(t)=e^{-s(t)t}.
 \\]
 
-`CompositeTermStructure` multiplies component factors,
-\\(P=P_bP_s\\). Matching reference dates and day counters keep the component
-clocks consistent. This is useful for separating benchmark and funding inputs,
-and is supported through serializable curve configurations as well as direct
-construction.
+`CompositeTermStructure` multiplies the discount factors of its components,
+\\(P=P_bP_s\\). Its components should have the same reference date and day
+counter. A composite curve is useful to keep a benchmark curve and a funding
+spread separate. You can build it directly or from a serializable curve
+configuration.
 
 ## Pricing nodes and risk pillars
 
-A calibrated curve has discount-factor nodes used for interpolation and
-market quote pillars used for sensitivity reporting. Calibration connects
-the two: changing a deposit, swap or bond quote changes the solved discount
-factors and hence the value of a trade. On some directly constructed curves,
-the pricing nodes themselves are the independent risk inputs.
+A calibrated curve has two sets of points:
 
-`Pillars<Recorded>` exposes labels, values and compiler-input registration.
-Calibration supplies a Jacobian to connect pricing nodes to independent market
-inputs. A derivative labeled `OIS_USD_SOFR_5Y` is therefore a derivative with
-respect to that quoted contract, not necessarily a five-year zero rate or a
-discount-factor node. The next chapter derives that connection.
+- **nodes**: the discount factors used for interpolation;
+- **pillars**: the market quotes used to report sensitivities.
+
+Calibration links them. If a deposit, swap, or bond quote changes, the solved
+discount factors change, and so does the value of a trade. For some curves
+built directly, the nodes themselves are the risk inputs.
+
+`Pillars<Recorded>` gives the labels and values of the pillars and registers
+them as AD inputs. Calibration provides a Jacobian that links the nodes to the
+market quotes.
+
+So a sensitivity labelled `OIS_USD_SOFR_5Y` is a sensitivity to that quoted
+contract. It is not necessarily a sensitivity to a five-year zero rate or to a
+discount-factor node. The next chapter explains how this link is computed.

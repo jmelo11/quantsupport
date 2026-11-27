@@ -1,94 +1,126 @@
 # Volatility markets and model calibration
 
-Option markets quote implied volatility across expiries, strikes and, for
-swaptions, underlying swap tenors. QuantSupport constructs surfaces and cubes
-from these observations. Pricers can query them directly or use them as targets
-when calibrating a stochastic model.
+Option markets quote implied volatility by expiry and strike. For swaptions
+they also quote by the tenor of the underlying swap. QuantSupport builds
+volatility surfaces and cubes from these quotes. Pricers can read them
+directly, or use them as targets to calibrate a stochastic model.
 
-Calibration converts the selected volatility quotes into option prices, then
-fits model parameters to those prices. The resulting parameters describe the
-model's dynamics and use units appropriate to that model.
+Calibration turns the selected volatility quotes into option prices and then
+fits the model parameters to those prices. The parameters are in the units of
+that model.
 
 ## Coordinates and interpolation
 
-`VolatilitySurfaceConfiguration` selects expiry/smile quotes.
-`VolatilityCubeConfiguration` adds underlying tenor, as needed for swaptions.
-The volatility type is Black or Normal; the smile coordinate can be strike,
-delta or log-moneyness. The generic `Strike::resolve` maps `Absolute`, `Atm`
-and `Relative` to \\(K\\), \\(F\\) and \\(F+\text{spread}\\). Consumers do
-not all use that helper: the Black and Hull–White caplet/cap pricers interpret
-`Relative(p)` multiplicatively as \\(F(1+p)\\). Prefer an absolute strike
-when specifying an unambiguous contractual rate.
+- `VolatilitySurfaceConfiguration` selects quotes by expiry and smile point.
+- `VolatilityCubeConfiguration` adds the underlying tenor, as needed for
+  swaptions.
 
-Configured identifiers supply the actual coordinates. Equivalent tenors such
-as `1Y` and `12M` cannot define duplicate nodes. Builders reject empty sets,
-nonpositive expiry/tenor, nonfinite keys and negative or nonfinite volatilities.
-The selected bid/mid/ask level supplies the quoted values.
+The volatility type is Black or Normal. The smile coordinate can be strike,
+delta, or log-moneyness.
 
-Interpolated surfaces first interpolate within each smile, then across expiry.
-Cubes interpolate smile, tenor and finally expiry. Rectangular grids reproduce
-bilinear/trilinear interpolation, but sparse grids can have different strikes
-per slice and different tenor sets per expiry. Exact nodes reproduce quoted
-values without needing a neighboring slice.
+Strikes are given as `Absolute`, `Atm`, or `Relative`. The generic
+`Strike::resolve` turns them into \\(K\\), \\(F\\), and
+\\(F+\text{spread}\\). The Black and Hull–White caplet and cap pricers read
+`Relative(p)` differently, as \\(F(1+p)\\). When you need an exact contract
+rate, use an absolute strike.
 
-`ExtrapolationPolicy::Reject` is the default. A query must lie within each
-selected slice; a singleton coordinate must match exactly. `Flat` clamps to
-boundaries and treats singleton axes as constant. Both reject nonfinite
-queries. Interpolation is in the implemented volatility coordinates, not an
-automatic guarantee of arbitrage-free total variance.
+The configured quote identifiers give the actual coordinates. Rules:
 
-An FX market can store one pair orientation. `OrientedFxVolSurface` resolves a
-reciprocal request and maps inverse strike with \\(K\mapsto1/K\\). Smile-type
-metadata elsewhere does not guarantee universal conversion between strike,
-delta and moneyness. In particular, the current equity option pricer passes a
-resolved strike directly; configure a compatible surface rather than assume a
-delta inversion is being solved.
+- Equivalent tenors such as `1Y` and `12M` cannot both appear as nodes.
+- Builders reject empty quote sets, zero or negative expiries or tenors,
+  non-finite coordinates, and negative or non-finite volatilities.
+- The selected bid, mid, or ask level gives the quoted values.
+
+Interpolation order:
+
+- Surfaces interpolate along each smile first, then across expiries.
+- Cubes interpolate along the smile, then across tenors, then across expiries.
+
+On a full rectangular grid this is ordinary bilinear or trilinear
+interpolation. A sparse grid can have different strikes in each slice and
+different tenors for each expiry. A query exactly on a node returns the quoted
+value.
+
+Extrapolation:
+
+- `ExtrapolationPolicy::Reject` is the default. A query must fall inside every
+  slice it uses. On an axis with a single point, the query must match that
+  point exactly.
+- `Flat` clamps queries to the boundary and treats a single-point axis as
+  constant.
+- Both reject non-finite queries.
+
+Interpolation works directly on volatilities. It does not guarantee an
+arbitrage-free surface.
+
+An FX market can store one direction of a currency pair. `OrientedFxVolSurface`
+answers requests for the reverse pair and maps the strike with \\(K\mapsto1/K\\).
+
+The smile type of a surface does not mean the library converts between strike,
+delta, and moneyness for you. The equity option pricer passes a strike to the
+surface. Configure a surface that uses strikes; the pricer does not solve for
+delta.
 
 ## Source instruments and risk pillars
 
-Constructed volatility objects retain calibration-instrument identities.
-These encode option expiry, tenor and strike and allow model calibration to
-select a meaningful basket. Risk pillars identify differentiable inputs whose
-labels appear in sensitivity results. An interpolated quote grid commonly uses
-the same identifiers for both purposes, but the roles are conceptually
-different.
+Each built volatility object keeps the identifiers of the options it was built
+from. An identifier gives the option's expiry, tenor, and strike, so model
+calibration can pick a sensible basket.
 
-`CalibrationBasket` selects expiries, tenors and a strike rule from the
-configured source. Omitted axes include all available values. Every explicitly
-requested value must exist and participate after the other filters are applied.
-A caplet surface's tenor is the index observation tenor; a cube's tenor is
-the underlying swap tenor. A three-month caplet source cannot satisfy a
-six-month basket by silently reinterpreting those contracts.
+Risk pillars are the inputs whose labels appear in sensitivity results. On an
+interpolated quote grid, the pillars usually have the same identifiers as the
+source options, but they serve a different purpose.
+
+`CalibrationBasket` selects expiries, tenors, and a strike rule from the
+configured source:
+
+- If you leave out an axis, all its values are included.
+- Every value you list must exist and must remain after the other filters.
+- For a caplet surface, the tenor is the index tenor. For a cube, it is the
+  underlying swap tenor. A basket asking for six-month caplets cannot use a
+  surface of three-month caplets.
 
 ## Parameter sources
 
-`ParameterSource::Fixed` supplies a complete model parameter set.
-`ParameterSource::Calibrated` names a surface or cube and a semantic basket.
-Hull–White and LGM use Gaussian sigma parameters; lognormal Brownian motion
-uses a volatility parameter. These are distinct units and parameterizations,
-even when they are ultimately fitted to the same option premium.
+- `ParameterSource::Fixed` gives a complete set of model parameters.
+- `ParameterSource::Calibrated` names a surface or cube and a calibration
+  basket.
 
-Gaussian calibration converts each selected caplet or swaption's Black or
-Normal volatility into an option price. It fits a constant sigma to each
-instrument independently, then assembles the fitted values into a piecewise
-schedule. Repricing under that combined schedule can differ from the targets
-because the individual fits do not jointly solve its interval volatilities.
+Hull–White and LGM use Gaussian sigma parameters. Lognormal Brownian motion
+uses a volatility parameter. These have different units and meanings, even if
+both are fitted to the same option prices.
 
-Hull–White quality reports retain instrument identity, target volatility/price,
-fitted price, sigma, forward and strike. Their fitted prices describe the
-individual constant-sigma solves, not repricing under the assembled schedule.
+### Gaussian models (Hull–White, LGM)
 
-For lognormal Brownian motion, term-volatility stripping instead enforces
+Calibration converts the Black or Normal volatility of each selected caplet or
+swaption into an option price. It then:
+
+1. fits a constant sigma to each option on its own;
+2. combines the fitted values into a piecewise sigma schedule.
+
+Because each option is fitted separately, repricing with the combined schedule
+can differ from the target prices.
+
+Hull–White quality reports list, for each option: identifier, target
+volatility and price, fitted price, sigma, forward, and strike. The fitted
+price comes from the single-option fit, not from repricing with the combined
+schedule.
+
+### Lognormal Brownian motion
+
+Term volatilities are stripped so that
 
 \\[
 \int_0^{T_i}\sigma(u)^2\\,du=\sigma_{\rm term}(T_i)^2T_i.
 \\]
 
-Negative forward variance is rejected. The stripped interval volatilities
-reproduce the accumulated variance implied by the selected term quotes.
+Negative forward variance is an error. The stripped period volatilities
+reproduce the total variance implied by the selected quotes.
 
-The Gaussian calibration Jacobian uses diagonal forward differences with
-absolute volatility bump \\(h=10^{-6}\\):
+### Calibration sensitivities
+
+The Gaussian calibration Jacobian uses forward differences with an absolute
+volatility bump \\(h=10^{-6}\\), one quote at a time:
 
 \\[
 \frac{\partial\sigma_i}{\partial\nu_j}
@@ -96,9 +128,10 @@ absolute volatility bump \\(h=10^{-6}\\):
 \frac{\sigma_i(\nu_i+h)-\sigma_i(\nu_i)}{h}.
 \\]
 
-This numerical response holds curve inputs and calibration strikes fixed.
-It is not a full joint schedule-calibration Jacobian. Direct pricing may still
-have curve risk. Cube calibration selects at
-most one underlying tenor per expiry and must respect the source domain.
-Materialized numerical simulations introduce further derivative limits,
-explained in [Stochastic models](../simulation/monte-carlo.md).
+- Curve inputs and calibration strikes are held fixed in this calculation.
+- It is not the Jacobian of a joint fit of the whole schedule.
+- Direct pricing may still have curve risk.
+
+Cube calibration uses at most one underlying tenor per expiry, within the
+range of the source cube. Stored Monte Carlo simulations add further limits on
+derivatives; see [Stochastic models](../simulation/monte-carlo.md).

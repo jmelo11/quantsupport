@@ -1,15 +1,23 @@
 # QuantSupport
 
-QuantSupport (QS) is a quantitative finance library written in Rust. It supports valuation across several asset classes,
-market sensitivities using automatic differentiation, interest-rate and credit
-curve construction, volatility markets, Monte Carlo simulation and XVA.
+QuantSupport (QS) is a quantitative finance library written in Rust. It provides:
 
-Observable quotes and fixings are stored separately from constructed market
-objects, such as bootstrapped curves and implied-volatility surfaces.
-Instruments define contractual terms, and trades add the position held.
-Pricers combine those trades with the market data needed for valuation.
+- valuation of products across several asset classes;
+- market sensitivities computed with automatic differentiation (AD);
+- interest-rate and credit curve construction;
+- volatility surfaces and cubes;
+- Monte Carlo simulation and XVA.
 
-Add the Rust crate to your project with:
+The library uses a few core objects:
+
+- **Market data** holds what you observe: quotes, fixings, and FX rates.
+- **Market objects** are built from that data, for example bootstrapped curves
+  and implied-volatility surfaces.
+- **Instruments** describe the contract terms. **Trades** add your position,
+  such as notional and side.
+- **Pricers** value a trade using the market objects it needs.
+
+Add the crate to your project with:
 
 ```sh
 cargo add quantsupport
@@ -17,31 +25,38 @@ cargo add quantsupport
 
 ## Bindings
 
-Python and Excel are maintained in separate repositories. Each owns its core
-dependency pin, package version, build and release workflows, and documentation.
+The Python and Excel bindings live in their own repositories, with their own
+versions, releases, and documentation.
 
 - **Python:** typed instruments, market data, pricing, and risk analytics. See the [Python README](https://github.com/jmelo11/quantsupport-python/blob/main/README.md) for installation, build instructions, examples, and the API reference.
 - **Excel:** a native XLL for 64-bit Windows Excel. See the [Excel README](https://github.com/jmelo11/quantsupport-excel/blob/main/README.md) for downloads, installation, build instructions, and the worksheet API reference.
 
 ## Documentation
 
-| Reading purpose | Entry point |
+| What you want | Where to look |
 | --- | --- |
-| Financial concepts, architecture, conventions, and Rust workflows | [QuantSupport Book](https://jmelo11.github.io/quantsupport/) |
-| Exact native Rust signatures, errors, and numerical contracts | [Rust API reference](https://docs.rs/quantsupport/latest/quantsupport/) |
-| Independently usable binding guides and declarations | [Python documentation](https://jmelo11.github.io/quantsupport-python/python/) and [Excel documentation](https://jmelo11.github.io/quantsupport-excel/excel/) |
-| Executable quantitative-finance studies | [Notebook collection](https://github.com/jmelo11/quantsupport-python/blob/main/examples/README.md) |
+| Guides, financial concepts, and conventions | [QuantSupport Book](https://jmelo11.github.io/quantsupport/) |
+| Exact signatures, errors, and details of each type | [API reference](https://docs.rs/quantsupport/latest/quantsupport/) |
+| Guides for the Python and Excel bindings | [Python documentation](https://jmelo11.github.io/quantsupport-python/python/) and [Excel documentation](https://jmelo11.github.io/quantsupport-excel/excel/) |
+| Example notebooks | [Notebook collection](https://github.com/jmelo11/quantsupport-python/blob/main/examples/README.md) |
 
 ## Quick start: price and risk a swap
 
-Consider a five-year USD swap that receives a fixed coupon of 3% and pays
-a floating coupon every six months on USD 10 million. We construct it with
-`MakeSwap`, create a trade and supply a flat curve for projection and
-discounting. The pricer returns NPV, par coupon, cashflows and sensitivities.
+This example prices a five-year USD swap on a notional of USD 10 million. The
+swap receives a 3% fixed coupon and pays a floating coupon every six months.
 
-The fixed coupon uses simple ACT/360 accrual, while the 3% curve is continuously
-compounded. The floating leg uses one SOFR-indexed observation per coupon
-period. For daily compounded overnight coupons, use `MakeOvernightIndexSwap`.
+The steps are:
+
+1. Build the swap with `MakeSwap` and wrap it in a trade.
+2. Use a flat 3% curve for both projection and discounting.
+3. Ask the pricer for the NPV, par coupon, cashflows, and sensitivities.
+
+Conventions used here:
+
+- The fixed coupon accrues with simple ACT/360.
+- The 3% curve rate is continuously compounded.
+- The floating leg uses one SOFR observation per coupon period. For daily
+  compounded overnight coupons, use `MakeOvernightIndexSwap` instead.
 
 ```rust
 use std::{cell::RefCell, rc::Rc};
@@ -99,7 +114,7 @@ fn main() -> Result<()> {
     let requests = [
         Request::Value,
         Request::FairRate(0),
-        Request::Cashflows,
+        Request::Cashflows(true),
         Request::Sensitivities,
     ];
     let results = pricer.evaluate(&trade, &requests, &context)?;
@@ -126,23 +141,27 @@ fn main() -> Result<()> {
 }
 ```
 
-A related program with a detailed cashflow report is available in
+A related program with a detailed cashflow report is in
 [`examples/valuation/swaps`](examples/valuation/swaps).
 
-The NPV is approximately -10,723.59 USD and the flat-rate derivative is
--47,405,484.05 USD per unit decimal rate, corresponding to about -4,740.55 USD
-for a one-basis-point increase. The continuous curve implies simple floating
-coupons slightly above the agreed fixed coupon, giving the receive-fixed
-position its small negative value. Sensitivity is measured against the flat
-rate supplied to the curve. The cashflow table contains unsigned,
-undiscounted amounts; apply direction and discounting to reconcile it to NPV.
+Expected results:
+
+- The NPV is about -10,723.59 USD.
+- The sensitivity to the flat curve rate is -47,405,484.05 USD per unit of
+  decimal rate. A one-basis-point rise is therefore worth about -4,740.55 USD.
+
+The NPV is slightly negative because the continuously compounded 3% curve gives
+floating coupons a little above the 3% fixed coupon. The receive-fixed side
+therefore loses a small amount.
+
+The cashflow table shows signed, undiscounted amounts: receipts are positive and
+payments are negative. To reconcile it to the NPV, discount each amount.
 
 ## Architecture and components
 
-QuantSupport separates market observables, calibrated market objects, product
-definitions, and valuation engines. This keeps the same market construction and
-risk machinery reusable across deterministic pricing, Monte Carlo, scripting,
-and XVA.
+QuantSupport keeps four parts separate: market data, built market objects,
+product definitions, and pricing engines. The same curves, surfaces, and risk
+code are then used by deterministic pricing, Monte Carlo, scripting, and XVA.
 
 ```mermaid
 flowchart LR
@@ -159,34 +178,37 @@ flowchart LR
 
 ### Market inputs and conventions
 
-`QuoteStore`, `FixingStore`, and `FxStore` contain observable data: instrument
-quotes, historical index fixings, and spot FX rates. Dates, calendars, schedules,
-day-count rules, compounding, currencies, and indices provide the conventions
-used to interpret those observations and build product cashflows.
+Market data lives in three stores:
 
-Scenarios also operate at this input layer. A shocked valuation rebuilds affected market objects from changed inputs,
-preserving their construction dependencies.
+- `QuoteStore` holds instrument quotes.
+- `FixingStore` holds historical index fixings.
+- `FxStore` holds spot FX rates.
+
+Dates, calendars, schedules, day counts, compounding, currencies, and indices
+define how to read those values and how to generate product cashflows.
+
+Scenarios shock these inputs. When you price under a scenario, every market
+object that depends on a shocked input is rebuilt.
 
 ### Market construction
 
-`PricingContext` is the boundary between raw inputs and objects that can be used
-for valuation. It combines the stores with serializable configuration and builds
-the dependency graph in order:
+`PricingContext` takes the market data stores and the configuration (which can
+be loaded from JSON) and builds the market objects that pricers use. It builds
+them in this order:
 
 1. discount and forwarding curves, including multi-curve and collateralized FX
-   dependencies;
+   curves;
 2. credit curves bootstrapped from CDS quotes;
 3. volatility surfaces and cubes;
-4. calibrated model configurations and Monte Carlo simulations.
+4. calibrated models and Monte Carlo simulations.
 
-The resulting `ConstructedElementStore` is shared by all downstream engines.
-Pricers request only the curves, fixings, FX rates, volatility objects, or paths
-needed by a particular trade. The [market lifecycle](book/src/concepts/pricing-context.md)
-chapter develops the distinction between observations, construction, and
-valuation dependencies.
+The built objects are kept in a `ConstructedElementStore`, which all pricing
+engines share. Each pricer asks only for the curves, fixings, FX rates,
+volatility objects, or paths its trade needs. See the
+[market lifecycle](book/src/concepts/pricing-context.md) chapter for details.
 
-For example, a production context can be assembled from JSON-backed stores and
-configuration, then initialized once before pricing a portfolio:
+For example, build a context from stores and configuration, then initialize it
+once before pricing a portfolio:
 
 ```rust,ignore
 let mut context = PricingContext::new()
@@ -202,9 +224,10 @@ let mut context = PricingContext::new()
 context.initialize()?;
 ```
 
-A scenario borrows the context and builds an independent market view. Here
-SOFR quote inputs rise by one basis point. Pricing requests construct the
-required curves and their dependencies; the base market stays available:
+A scenario creates a shocked copy of the market from the context. In this
+example, the SOFR quotes rise by one basis point. Curves are rebuilt as pricing
+needs them, and the original context is unchanged, so you can price the base
+case as well:
 
 ```rust,ignore
 let scenario = Scenario::new(vec![
@@ -221,26 +244,27 @@ for quote-level risk across dependent curves.
 
 ### Products: native instruments and scripts
 
-There are two ways to represent a product:
+There are two ways to describe a product:
 
-- **Native instruments** model standard products such as bonds, swaps, caps,
+- **Native instruments** cover standard products such as bonds, swaps, caps,
   swaptions, equity and FX options, cross-currency swaps, futures, and CDSs.
-  An instrument defines the economics and cashflows; a trade adds ownership
-  information such as notional, side, and trade date.
-- **Scripted products** describe bespoke payoffs as dated events that observe
-  rates, discount factors, FX, or equity spots and emit payments. Scripts use
-  the same market models and compiled automatic differentiation as native products,
-  so they produce NPV, expected cashflows, and quote-level sensitivities without
-  requiring a new Rust instrument or pricer.
+  The instrument defines the terms and cashflows. The trade adds the position:
+  notional, side, and trade date.
+- **Scripted products** describe custom payoffs as a list of dated events. Each
+  event can read rates, discount factors, FX rates, or equity prices and make
+  payments. Scripts use the same market models and AD as native products. They
+  return NPV, expected cashflows, and sensitivities to market quotes, and you do
+  not need to write a new instrument or pricer.
 
-Native products are the preferred path when a standard cashflow or closed-form
-model exists. Scripting is intended for structured coupons, digitals, range
-accruals, autocallables, and products whose terms change more quickly than the
-library API. The [scripting language](book/src/scripting/language.md) and
-[model-backed runtime](book/src/scripting/engine.md) chapters explain this route.
+Use a native instrument when the product is standard or has a closed-form
+model. Use a script for structured coupons, digitals, range accruals,
+autocallables, and products whose terms change often. See the
+[scripting language](book/src/scripting/language.md) and
+[script engine](book/src/scripting/engine.md) chapters.
 
-A scripted product is a dated financial event stream. For example, the following event observes SOFR for one
-accrual period and adds the discounted coupon to the `note` variable, which would represent the value of the product:
+A scripted product is a list of events, each with a date and some script code.
+The event below observes SOFR for one accrual period and pays the coupon into
+the `note` variable, which holds the value of the product:
 
 ```rust,ignore
 let events = vec![CodedEvent::new(
@@ -265,41 +289,55 @@ let (values, cashflows) =
     engine.evaluate_with_cashflows(&mut market_model, Some("note"))?;
 ```
 
-The same `EventStream` can be wrapped in `ScriptedProduct` and converted to
-contingent claims for XVA. [`examples/scripting`](examples/scripting) compares
-this path with a native swap for NPV, pillar sensitivities, and exposure.
+For XVA, wrap the same `EventStream` in a `ScriptedProduct` and convert it to
+contingent claims. [`examples/scripting`](examples/scripting) compares a
+scripted swap with a native swap for NPV, pillar sensitivities, and exposure.
 
 ### Pricing and risk
 
-Pricers combine a trade with the market objects supplied by `PricingContext`.
-Cashflow products use generic discounting, while options and optional rates
-products can use Black, Hull-White, LGM, or Monte Carlo engines. A successful
-valuation returns an `EvaluationResults` object. Its optional fields contain
-the measures requested and supported by that engine; an absent measure is not
-a zero value.
+A pricer values a trade using the market objects in `PricingContext`.
 
-Automatic differentiation runs through market construction and valuation.
-Market pillars become labelled compiler inputs, and calibrated curves
-reconnect first-order risk through numerical calibration Jacobians. Reported
-derivatives apply to the inputs actually differentiated by each engine;
-stored numerical simulations hold path-generation inputs fixed and therefore
-omit their model and volatility dependencies. This is the common risk
-mechanism for native pricers, scripted payoffs, and XVA. Full revaluation under
-quote scenarios complements AAD for stress tests and non-linear moves.
+- Cashflow products are priced by discounting their cashflows.
+- Options and rate products with optionality can use Black, Hull-White, LGM, or
+  Monte Carlo engines.
+
+A pricer returns an `EvaluationResults` object. It has one optional field per
+measure. A field is set only if you requested that measure and the engine
+supports it. A missing value means "not computed", not zero.
+
+Sensitivities come from automatic differentiation through both curve building
+and pricing. Each market pillar is a labelled input. For bootstrapped curves,
+risk is mapped back to the input quotes through the calibration Jacobian. The
+same approach is used by native pricers, scripted products, and XVA.
+
+Sensitivities cover only the inputs that each engine differentiates. When a
+pricer reuses stored Monte Carlo paths, the inputs used to generate those paths
+are held fixed. The result then has no sensitivity to the model parameters or
+volatilities behind the paths.
+
+For stress tests and large moves, reprice under quote scenarios instead of
+relying on AD sensitivities.
 
 ### Exposure and XVA
 
-Supported trades and scripted products can be converted into contingent claims,
-each representing a payment. The exposure engine evaluates them across simulated
-paths and aggregates them by netting set and CSA. The high-level XVA engine
-produces pre-margin NPV cubes, pointwise exposure profiles, and CVA/FVA from
-net-of-margin exposures when variation margin is enabled. DVA is available
-through the lower-level aggregator interface. FVA uses signed exposure; ENE
-profiles are likewise signed, not absolute loss magnitudes.
+Supported trades and scripted products can be converted into contingent
+claims. Each claim represents one payment. The exposure engine values the claims
+on simulated paths and aggregates them by netting set and CSA.
+
+The high-level XVA engine returns:
+
+- NPV cubes before margin;
+- exposure profiles at each simulation date;
+- CVA and FVA. When variation margin is enabled, these use exposure after margin.
+
+DVA is available through the lower-level aggregator interface.
+
+FVA uses signed exposure. ENE profiles are also signed: they are not absolute
+loss amounts.
 
 ## Installation
 
-Add the latest Rust crate release:
+Add the latest release:
 
 ```bash
 cargo add quantsupport
@@ -312,7 +350,7 @@ To work from this checkout instead:
 quantsupport = { path = "../quantsupport" }
 ```
 
-The main Rust workflows are re-exported through the prelude:
+The prelude exports the types used in most workflows:
 
 ```rust
 use quantsupport::prelude::*;
@@ -325,9 +363,9 @@ cargo build -p quantsupport
 cargo test -p quantsupport
 ```
 
-## Runnable Rust examples
+## Runnable examples
 
-All examples below are workspace packages and use local JSON market data where appropriate.
+Each example is a workspace package. Some read market data from local JSON files.
 
 | Example | Demonstrates | Run |
 | --- | --- | --- |
