@@ -26,6 +26,8 @@ pub mod estr;
 pub mod euribor;
 /// Provides the `FedFunds` (USD) index implementation.
 pub mod fedfunds;
+/// Provides the IBR (COP) index implementation.
+pub mod ibr;
 /// Provides the ICP (CLP) index implementation.
 pub mod icp;
 /// Provides the KOFR (KRW) index implementation.
