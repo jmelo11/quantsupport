@@ -116,5 +116,5 @@ Scripted and native claims can be in the same netting set. If the product has
 an exercise rule, write it into the script. Scripted claims do not solve for
 optimal exercise of callable products.
 
-The examples in [`examples/scripting`](../../../examples/scripting) compare
+The examples in [`examples/scripting`](https://github.com/jmelo11/quantsupport/tree/main/examples/scripting) compare
 native and scripted swaps on matching setups.

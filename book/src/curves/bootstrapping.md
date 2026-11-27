@@ -152,7 +152,7 @@ interpolation, and valuation assumptions, not only the quoted rates. Also:
 - The curve's day counter measures interpolation time only. It does not change
   the fixed or floating day counts of the swap quotes.
 
-The [Euribor 3M reconciliation](../../../examples/bootstrap/src/bin/euribor3m-reconciliation.rs)
+The [Euribor 3M reconciliation](https://github.com/jmelo11/quantsupport/blob/main/examples/bootstrap/src/bin/euribor3m-reconciliation.rs)
 example compares annual and semiannual fixed legs and checks the cashflows
 independently.
 

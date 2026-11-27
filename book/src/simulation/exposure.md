@@ -163,7 +163,7 @@ method automatically. Both report first-order risk. See
 [calibration coverage](../risk/aad.md#calibration-dependencies) for which
 derivatives use approximations and for the limits on second-order XVA risk.
 
-The [XVA benchmark runners](../../../tools/README.md#benchmarks) measure first
+The [XVA benchmark runners](https://github.com/jmelo11/quantsupport/blob/main/tools/README.md#benchmarks) measure first
 preparation, reuse, market updates, overhead on small cases, and numerical
 agreement.
 

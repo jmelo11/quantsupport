@@ -204,7 +204,7 @@ fixed inputs. The stored-path equity pricer therefore reports discounting and
 FX risk only, while a scripted model valuation can differentiate the model
 inputs used to simulate. Before comparing speed, check that both calculations
 return the same outputs and the same risk. The
-[benchmark runners](../../../tools/README.md#benchmarks) time recording,
+[benchmark runners](https://github.com/jmelo11/quantsupport/blob/main/tools/README.md#benchmarks) time recording,
 compilation, market refresh, and repeated runs separately.
 
 ## Calibration dependencies
@@ -250,7 +250,7 @@ parameters, and separately reported factors such as a bond's Z-spread or OAS.
 and interpolation, so prices, including between nodes, do not change.
 
 The complete example is
-[`risk-reprojection.rs`](../../../examples/sensitivity/src/bin/risk-reprojection.rs).
+[`risk-reprojection.rs`](https://github.com/jmelo11/quantsupport/blob/main/examples/sensitivity/src/bin/risk-reprojection.rs).
 Run `cargo run -p sensitivity --bin risk-reprojection` from the repository root
 to compare deposit, OIS, and zero-rate sensitivities for the same swap. The
 example prints the NPV in each basis, and its test checks that the price is
