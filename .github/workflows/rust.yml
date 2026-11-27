@@ -35,6 +35,8 @@ jobs:
         python-version: '3.12'
     - name: Test release automation
       run: python -m unittest discover -s tools/tests -p 'test_release.py' -v
+    - name: Test benchmark comparison harness
+      run: python -m unittest discover -s tools/tests -p 'test_benchmark_scaling.py' -v
     - name: Test Excel download staging
       run: python -m unittest discover -s tools/tests -p 'test_*downloads.py' -v
     - name: Build

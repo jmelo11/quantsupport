@@ -1,6 +1,6 @@
 //! Cross-branch benchmarks of the existing non-Monte-Carlo pricing methods.
 //!
-//! Run: `engine_benchmark case samples repeats result.json`.
+//! Run: `engine_benchmark case samples repeats result.json [value|risk] [trades]`.
 
 use quantsupport::{
     prelude::*,
@@ -178,8 +178,12 @@ fn swap(start: Date, end: Date) -> Result<Swap<BenchmarkScalar>> {
 
 /// Constructs an existing pricer and its fixed contract/market valuation closure.
 #[allow(clippy::too_many_lines)] // One common fixture registry for the two branches.
-fn fixture(kind: &str) -> Result<Valuation> {
-    let requests = [Request::Value, Request::Sensitivities];
+fn fixture(kind: &str, with_risk: bool, portfolio_trades: usize) -> Result<Valuation> {
+    let requests = if with_risk {
+        vec![Request::Value, Request::Sensitivities]
+    } else {
+        vec![Request::Value]
+    };
     let context = context(match kind {
         "tree" => Some(PricerImplementation::TreeBased {
             time_grid: TimeGridConfiguration::new(12, 256, DayCounter::Actual365),
@@ -263,18 +267,16 @@ fn fixture(kind: &str) -> Result<Valuation> {
             let mut pricer = DiscountedCashflowPricer::new();
             pricer.set_discount_policy(policy());
             if kind == "portfolio" {
-                let portfolio = Portfolio::new(
-                    "PORTFOLIO".into(),
-                    vec![
-                        SwapTrade::new(
-                            swap(date(1), date(4))?,
-                            reference(),
-                            1e6,
-                            Side::LongReceive,
-                        ),
-                        trade,
-                    ],
-                )?;
+                let mut trades = Vec::with_capacity(portfolio_trades);
+                for _ in 0..portfolio_trades {
+                    trades.push(SwapTrade::new(
+                        swap(date(1), date(4))?,
+                        reference(),
+                        1e6,
+                        Side::LongReceive,
+                    ));
+                }
+                let portfolio = Portfolio::new("PORTFOLIO".into(), trades)?;
                 let pricer = PortfolioPricer::new(pricer);
                 Ok(Box::new(move || {
                     pricer.evaluate(&portfolio, &requests, &context)
@@ -471,8 +473,17 @@ fn fixture(kind: &str) -> Result<Valuation> {
 }
 
 /// Captures the finite price and every labelled first sensitivity for comparison.
-fn snapshot(result: &EvaluationResults) -> BenchResult<Value> {
+fn snapshot(result: &EvaluationResults, with_risk: bool) -> BenchResult<Value> {
     let value = result.price().ok_or("missing engine price")?;
+    if !value.is_finite() {
+        return Err("nonfinite price".into());
+    }
+    if !with_risk {
+        if result.sensitivities().is_some() {
+            return Err("value-only request unexpectedly returned sensitivities".into());
+        }
+        return Ok(json!({"price": value, "sensitivities": {}}));
+    }
     let risk = result
         .sensitivities()
         .ok_or("missing engine sensitivities")?;
@@ -483,8 +494,8 @@ fn snapshot(result: &EvaluationResults) -> BenchResult<Value> {
         }
         *sensitivities.entry(label.clone()).or_insert(0.0) += value;
     }
-    if !value.is_finite() || sensitivities.is_empty() {
-        return Err("nonfinite price or empty risk".into());
+    if sensitivities.is_empty() {
+        return Err("empty risk".into());
     }
     Ok(json!({"price":value,"sensitivities":sensitivities}))
 }
@@ -492,16 +503,28 @@ fn snapshot(result: &EvaluationResults) -> BenchResult<Value> {
 /// Runs the standalone comparison driver and emits its timing and numerical results.
 fn main() -> BenchResult<()> {
     let arguments = args().skip(1).collect::<Vec<_>>();
-    if arguments.len() != 4 {
-        return Err("usage: case samples repeats result.json".into());
+    if !(4..=6).contains(&arguments.len()) {
+        return Err(
+            "usage: case samples repeats result.json [value|risk] [positive trades]".into(),
+        );
     }
     let samples: usize = arguments[1].parse()?;
     let repeats: u32 = arguments[2].parse()?;
-    if samples == 0 || repeats == 0 {
+    let mode = arguments.get(4).map_or("risk", String::as_str);
+    let with_risk = match mode {
+        "value" => false,
+        "risk" => true,
+        _ => return Err("request mode must be value or risk".into()),
+    };
+    let portfolio_trades: usize = arguments.get(5).map_or(Ok(2), |value| value.parse())?;
+    if samples == 0 || repeats == 0 || portfolio_trades == 0 {
         return Err("counts must be positive".into());
     }
+    if arguments[0] != "portfolio" && portfolio_trades != 2 {
+        return Err("trade count applies only to the portfolio case".into());
+    }
     let start = Instant::now();
-    let mut evaluate = fixture(&arguments[0])?;
+    let mut evaluate = fixture(&arguments[0], with_risk, portfolio_trades)?;
     let setup = start.elapsed().as_secs_f64() * 1e3;
     let start = Instant::now();
     let result = evaluate()?;
@@ -515,7 +538,7 @@ fn main() -> BenchResult<()> {
         times.push(start.elapsed().as_secs_f64() * 1e3 / f64::from(repeats));
     }
     times.sort_by(f64::total_cmp);
-    let report = json!({"case":arguments[0],"setup_ms":setup,"first_call_ms":first,"median_call_ms":times[times.len()/2],"snapshot":snapshot(&result)?});
+    let report = json!({"case":arguments[0],"request_mode":mode,"portfolio_trades":portfolio_trades,"samples":samples,"repeats":repeats,"sample_ms":times,"setup_ms":setup,"first_call_ms":first,"median_call_ms":times[times.len()/2],"snapshot":snapshot(&result, with_risk)?});
     fs::write(&arguments[3], serde_json::to_vec(&report)?)?;
     println!(
         "{}",

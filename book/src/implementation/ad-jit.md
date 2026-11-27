@@ -292,6 +292,63 @@ require recapture and compilation. The [exposure chapter](../simulation/exposure
 describes the engine lifecycle, and [script valuation](../scripting/engine.md)
 describes prepared and per-path recording routes.
 
+## Explicit prepared cashflow valuations
+
+For repeated linear-cashflow valuation, `DiscountedCashflowPricer::prepare`
+returns a `PreparedDcfValuation`. Preparation runs the ordinary discounting and
+fixing formulas on private copies of the native legs. It exports the reachable
+pricing expression, lifts numerical coefficients into runtime inputs, preserves
+current calibration dependencies, and maps the published risk labels to the
+active input slots. A value-only kernel and a combined value/gradient kernel
+share the same input binding. Warm calls use reusable gradient storage and do
+no market requests, recording, export or structural matching.
+
+```rust
+# extern crate quantsupport;
+use quantsupport::prelude::*;
+
+fn revalue_swap(
+    trade: &SwapTrade<Recorded>,
+    context: &PricingContext,
+    updated_context: &PricingContext,
+) -> Result<EvaluationResults> {
+    let pricer = DiscountedCashflowPricer::<Swap<Recorded>, SwapTrade<Recorded>>::new();
+    let mut prepared = pricer.prepare(trade, context)?;
+    let requests = [Request::Value, Request::Sensitivities];
+    let result = prepared.evaluate(&requests)?;
+
+    // After changing quotes, fixings, terms, dates or the discount policy:
+    let code_reused = pricer.refresh(&mut prepared, trade, updated_context)?;
+    prepared.evaluate(&requests)
+}
+```
+
+The prepared object owns an explicit numerical snapshot. Mutable market curves
+currently have no revision IDs; therefore the binding does not try to infer
+whether an external mutation occurred. Calling `evaluate` keeps using the last
+successfully bound snapshot. Calling `refresh` resolves the current financial
+calculation again, including calibration coefficients and quote Jacobians, and
+then checks exact executable compatibility. Compatible graphs reuse code;
+changed graph layouts compile new code. Failed refreshes invalidate the binding
+until a later refresh succeeds. This prevents silently reusing an old market
+following a reported update failure.
+
+`prepare_portfolio` and `refresh_portfolio` apply the same lifecycle to an
+ordered `Portfolio`. Repeated positions keep their multiplicity. Compatible
+members share immutable executable code, while numerical execution and
+compensated portfolio aggregation avoid intermediate per-member reports.
+Cloning a single-contract binding gives a worker its own input and gradient
+buffers while retaining shared code.
+
+This is a narrow prototype: it supports only `Value` and `Sensitivities` and
+limits each member to 2,048 graph operations to bound native compilation work.
+Use ordinary valuation for other measures or larger graphs. Ordinary value-only
+DCF requests also skip recording when no sensitivity is requested.
+Preparation and refresh remain separate costs: a fast warm snapshot does not
+imply faster evaluation for a market changing on every call. The
+[prepared DCF measurements](https://github.com/jmelo11/quantsupport/blob/main/docs/benchmarks.md#prepared-dcf-prototype-20-november-2026)
+report both boundaries and comparisons with the old ordinary tape API.
+
 ## Second derivatives and calibration maps
 
 The default `DerivativeOrder::First` compiles value and gradient calculations.

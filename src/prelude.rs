@@ -181,6 +181,7 @@ pub use crate::{
         prepaymentmodelconfiguration::PrepaymentModelConfiguration,
         prepaymentmodelstate::PrepaymentModelState,
     },
+    pricers::cashflows::prepareddcf::{PreparedDcfPortfolio, PreparedDcfValuation},
     pricers::{
         cashflows::discountedcashflowpricer::DiscountedCashflowPricer,
         credit::cdspricer::CdsPricer,

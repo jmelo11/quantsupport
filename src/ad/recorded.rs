@@ -634,6 +634,46 @@ impl Recorded {
     pub fn identity(&self) -> Option<(u64, usize)> {
         self.is_recorded().then_some((self.token, self.id))
     }
+
+    /// Returns the independent-input position of a current pricing observation.
+    pub(crate) fn input_position(&self) -> Result<usize, CompileError> {
+        CURRENT.with(|slot| {
+            let state = slot.borrow();
+            let trace = state.as_ref().ok_or(CompileError::CaptureMissing)?;
+            if trace.token != self.token {
+                return Err(CompileError::ForeignValue);
+            }
+            match trace.ops.get(self.id) {
+                Some(Op::Input(index)) => Ok(*index),
+                _ => Err(CompileError::InvalidGraph(
+                    "risk observation is not an input".into(),
+                )),
+            }
+        })
+    }
+
+    /// Freezes a pricing expression and its current numeric binding without retaining its capture.
+    pub(crate) fn pricing_snapshot(&self) -> Result<(Graph, Vec<f64>, usize), CompileError> {
+        CURRENT.with(|slot| {
+            let state = slot.borrow();
+            let trace = state.as_ref().ok_or(CompileError::CaptureMissing)?;
+            if self.token == 0 {
+                let inputs = trace.input_values.clone();
+                let mut operations: Vec<_> = (0..inputs.len()).map(Op::Input).collect();
+                let output = operations.len();
+                operations.push(Op::Constant(self.primal));
+                return Ok((
+                    Graph::new(operations, inputs.len(), output)?,
+                    inputs,
+                    trace.inputs,
+                ));
+            }
+            if trace.token != self.token {
+                return Err(CompileError::ForeignValue);
+            }
+            trace.export(self.id)
+        })
+    }
     /// Attaches a detached observation to the current capture when needed.
     #[must_use]
     pub fn ensure_recorded(&self) -> Self {

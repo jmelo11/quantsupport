@@ -1,5 +1,6 @@
+use super::prepareddcf::{DcfCapture, PreparedDcfPortfolio, PreparedDcfValuation};
 use crate::{
-    ad::{Recorded, Recording},
+    ad::{Recorded, Recording, RecordingScope},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -10,6 +11,8 @@ use crate::{
             fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
+        pillars::Pillars,
+        portfolio::Portfolio,
         pricer::Pricer,
         pricerstate::PricerState,
         request::{
@@ -36,6 +39,8 @@ struct DCFState<'a> {
     legs: &'a [Leg<Recorded>],
     /// The evaluation date, used to determine if a fixing is in the past.
     eval_date: Date,
+    /// Whether the requested measures need a differentiable valuation.
+    record_risk: bool,
 }
 
 impl PricerState for DCFState<'_> {
@@ -120,6 +125,219 @@ where
 impl<I, T> Default for DiscountedCashflowPricer<I, T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<I, T> DiscountedCashflowPricer<I, T>
+where
+    I: Instrument,
+    T: LegsProvider<Recorded> + Trade<I>,
+{
+    /// Captures one contract and market snapshot for repeated native PV/risk calls.
+    ///
+    /// The returned binding owns numeric data, so later provider/contract changes
+    /// take effect only after [`Self::refresh`]. Other requests continue to use
+    /// [`Pricer::evaluate`]. Preparation uses the ordinary financial formulas and
+    /// preserves their calibration, fixing, position and currency-risk semantics.
+    ///
+    /// # Errors
+    /// Propagates valuation, risk-layout and native compilation failures; rejects
+    /// graphs above the prototype limit of 2048 operations per member.
+    pub fn prepare(
+        &self,
+        trade: &T,
+        context: &impl MarketDataProvider,
+    ) -> Result<PreparedDcfValuation> {
+        PreparedDcfValuation::from_capture(self.capture_prepared(trade, context)?, None)
+    }
+
+    /// Rebinds current terms and market data, retaining compatible executable code.
+    ///
+    /// Re-evaluates fixing selection, dates, discount policy and calibration maps.
+    /// Returns whether the preceding executable code was retained. A failed
+    /// refresh invalidates the binding until a later refresh succeeds.
+    ///
+    /// # Errors
+    /// Propagates invalid contracts, missing market inputs and compilation errors.
+    pub fn refresh(
+        &self,
+        prepared: &mut PreparedDcfValuation,
+        trade: &T,
+        context: &impl MarketDataProvider,
+    ) -> Result<bool> {
+        prepared.invalidate();
+        let updated = PreparedDcfValuation::from_capture(
+            self.capture_prepared(trade, context)?,
+            Some(prepared),
+        )?;
+        let reused = prepared.shares_code_with(&updated);
+        *prepared = updated;
+        Ok(reused)
+    }
+
+    /// Prepares ordered members and their shared numerical risk aggregation layout.
+    ///
+    /// Repeated positions retain their multiplicity. Compatible members share
+    /// executable code, while each owns its binding and execution buffers.
+    ///
+    /// # Errors
+    /// Propagates member preparation or portfolio-layout errors.
+    pub fn prepare_portfolio(
+        &self,
+        portfolio: &Portfolio<T>,
+        context: &impl MarketDataProvider,
+    ) -> Result<PreparedDcfPortfolio> {
+        let members = portfolio
+            .trades()
+            .iter()
+            .enumerate()
+            .map(|(index, trade)| {
+                self.prepare(trade, context).map_err(|error| {
+                    error.context(format!("preparing portfolio member {}", index + 1))
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        PreparedDcfPortfolio::new(portfolio.identifier().to_owned(), members)
+    }
+
+    /// Refreshes every member transactionally and invalidates the book on failure.
+    ///
+    /// Returns whether all preceding member kernels were reused in their positions.
+    ///
+    /// # Errors
+    /// Propagates member binding and aggregation-layout errors.
+    pub fn refresh_portfolio(
+        &self,
+        prepared: &mut PreparedDcfPortfolio,
+        portfolio: &Portfolio<T>,
+        context: &impl MarketDataProvider,
+    ) -> Result<bool> {
+        prepared.invalidate();
+        let members = portfolio
+            .trades()
+            .iter()
+            .enumerate()
+            .map(|(index, trade)| {
+                PreparedDcfValuation::from_capture(
+                    self.capture_prepared(trade, context)?,
+                    prepared.members().get(index),
+                )
+                .map_err(|error| {
+                    error.context(format!("refreshing portfolio member {}", index + 1))
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let updated = PreparedDcfPortfolio::new(portfolio.identifier().to_owned(), members)?;
+        let reused = prepared.members().len() == updated.members().len()
+            && prepared
+                .members()
+                .iter()
+                .zip(updated.members())
+                .all(|(old, new)| old.shares_code_with(new));
+        *prepared = updated;
+        Ok(reused)
+    }
+
+    fn capture_prepared(&self, trade: &T, context: &impl MarketDataProvider) -> Result<DcfCapture> {
+        let _scope = RecordingScope::new();
+        // Coupon fixing cells are resolved on private copies of the native legs.
+        let legs = trade.legs().to_vec();
+        let date = context.evaluation_date();
+        let mut request = self
+            .market_data_request(trade)
+            .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?;
+        let fixings = Self::fixing_requests(trade, date, context.anchor_fixings(), None)?;
+        if !fixings.is_empty() {
+            request = request.with_fixings_request(fixings);
+        }
+        let mut state = DCFState {
+            value: None,
+            md_response: Some(
+                context
+                    .handle_request(&request)?
+                    .with_anchor_fixings(context.anchor_fixings()),
+            ),
+            legs: &legs,
+            eval_date: date,
+            record_risk: true,
+        };
+        self.handle_value(trade, &mut state)?;
+        let risks = self
+            .prepared_risk_inputs(trade, &state)?
+            .into_iter()
+            .map(|(label, input)| {
+                input
+                    .input_position()
+                    .map(|position| (label, position))
+                    .map_err(|error| QSError::EvaluationErr(error.to_string()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let (graph, inputs, active) = state
+            .value
+            .ok_or_else(|| QSError::ValueNotSetErr("Prepared DCF value".into()))?
+            .pricing_snapshot()
+            .map_err(|error| QSError::EvaluationErr(error.to_string()))?;
+        Ok(DcfCapture {
+            date,
+            identifier: trade.instrument().identifier(),
+            graph,
+            inputs,
+            active,
+            risks,
+        })
+    }
+
+    fn prepared_risk_inputs(
+        &self,
+        trade: &T,
+        state: &DCFState<'_>,
+    ) -> Result<Vec<(String, Recorded)>> {
+        let mut inputs = Vec::new();
+        let mut seen = HashSet::new();
+        for leg in trade.legs() {
+            for index in leg
+                .forward_index()
+                .cloned()
+                .into_iter()
+                .chain(leg.discount_index())
+            {
+                if seen.insert(index.clone()) {
+                    let curve = state.get_discount_curve_element(&index)?.curve();
+                    inputs.extend(
+                        curve
+                            .pillars()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|(label, value)| (label, *value)),
+                    );
+                }
+            }
+        }
+        if let Some(policy) = &self.discount_policy {
+            for leg in trade.legs() {
+                let index = policy.accept(leg)?;
+                if seen.insert(index.clone()) {
+                    let curve = state.get_discount_curve_element(&index)?.curve();
+                    inputs.extend(
+                        curve
+                            .pillars()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|(label, value)| (label, *value)),
+                    );
+                }
+            }
+        }
+        if let Some(store) = state.get_fx_store() {
+            inputs.extend(
+                store
+                    .pillars()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(label, value)| (label, *value)),
+            );
+        }
+        Ok(inputs)
     }
 }
 
@@ -367,11 +585,11 @@ where
 
     /// Resolve observations independently of discounting principal advances.
     fn resolve_coupons(
-        trade: &T,
+        _trade: &T,
         state: &DCFState<'_>,
         window: Option<(Date, Date)>,
     ) -> Result<()> {
-        for leg in trade.legs() {
+        for leg in state.legs {
             if !leg.is_linear() {
                 return Err(QSError::InvalidValueErr(
                     "DiscountedCashflowPricer only supports linear payoffs".into(),
@@ -489,7 +707,7 @@ where
     #[allow(clippy::too_many_lines)]
     fn handle_value(&self, trade: &T, state: &mut DCFState<'_>) -> Result<f64> {
         // Check that all legs are linear
-        for leg in trade.legs() {
+        for leg in state.legs {
             if !leg.is_linear() {
                 return Err(QSError::InvalidValueErr(format!(
                     "Leg {} is not linear. DiscountedCashflowPricer only supports linear payoffs",
@@ -498,17 +716,19 @@ where
             }
         }
 
-        Recording::start();
-        Recording::checkpoint();
+        let _numeric_scope = (!state.record_risk).then(RecordingScope::new);
+        if state.record_risk {
+            Recording::start();
+            Recording::checkpoint();
+            state.register_pillars()?;
+        }
 
         let mut pv = Recorded::new(0.0);
 
-        // Put pillars on capture for sensitivity calculation
-        state.register_pillars()?;
         Self::resolve_coupons(trade, state, None)?;
 
         // Iterate through all legs
-        for leg in trade.legs() {
+        for leg in state.legs {
             let leg_discount_index = self.select_discount_index(leg, state)?;
 
             let side = leg.side().sign();
@@ -561,7 +781,9 @@ where
 
         state.value = Some(pv);
 
-        Recording::stop();
+        if state.record_risk {
+            Recording::stop();
+        }
         Ok(state
             .value
             .ok_or_else(|| QSError::ValueNotSetErr("PV value".into()))?
@@ -714,6 +936,7 @@ where
             ),
             legs: trade.legs(),
             eval_date,
+            record_risk: requests.contains(&Request::Sensitivities),
         };
 
         // Only price-dependent requests need a PV and its differentiation capture.

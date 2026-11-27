@@ -90,8 +90,10 @@ for adjustment in result.xva_values.iter().flatten() {
 }
 ```
 
-One run returns trade-level cubes, optional adjustments by netting set and
-optional aggregated labeled sensitivities. High-level construction supplies
+One run returns a cube for each netting set, optional adjustments by netting
+set and optional aggregated labelled sensitivities. Each cube's `trade_id` holds
+the netting-set identifier. The lower-level `ExposureEvaluator` can retain
+separate trade cubes. High-level construction supplies
 CVA and FVA factories. DVA exists through lower-level aggregators with
 explicit own-credit inputs, not an automatic third output of `run`.
 
