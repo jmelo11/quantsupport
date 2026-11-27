@@ -139,7 +139,7 @@ while ordinary `run` selects the appropriate route. Both routes report
 first-order risk. The [calibration coverage](../risk/aad.md#calibration-dependencies)
 explains the remaining derivative maps and the boundary on second-order XVA.
 
-[Measured XVA comparisons](../../../docs/benchmarks.md) include cold
+[XVA benchmark instructions](../../../docs/benchmarks.md#xva-and-pfe) cover cold
 preparation, reuse, market updates, small-case overhead and numerical agreement.
 
 ## Numerical and modeling boundaries

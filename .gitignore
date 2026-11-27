@@ -1,5 +1,8 @@
 target
 Cargo.lock
+# Generated reports; benchmark input fixtures live under benchmarks/data/.
+/benchmarks/*_results.json
+/examples/sensitivity/data/qs_results.json
 .env
 test.ipynb
 .vscode

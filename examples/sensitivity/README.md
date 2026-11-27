@@ -36,3 +36,4 @@ cargo run -p sensitivity
 The original example loads `data/quotes.json` and `data/curve_specs.json`, prices
 SOFR, Term SOFR, ICP and cross-currency swaps, and writes curve nodes, cashflows
 and sensitivities to `data/qs_results.json`.
+That file is generated output and is excluded from version control.

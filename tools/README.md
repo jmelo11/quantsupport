@@ -25,7 +25,7 @@ The Book runner requires Cargo and mdBook. Workbook generators use
 also need `bindings/excel/examples/requirements-live.txt` and desktop Excel.
 
 The AD scaling runner requires Python 3.11 or later and the stable Rust
-toolchain. See [benchmark methodology and results](../docs/benchmarks.md) for
+toolchain. See the [benchmark guide](../docs/benchmarks.md) for
 isolated-worktree setup, request/portfolio scaling and serial/parallel path
 comparisons. Its `--smoke` mode checks the harness; measured runs use multiple
 fresh processes and compare complete numerical snapshots.
@@ -44,5 +44,5 @@ these same tools and discover their tests separately.
 ordinary tape API, recording cold preparation, warm evaluation and changed-market
 refresh separately. It uses the scaling runner's prepared baseline fixtures and
 requires separate build targets. See the prepared DCF section in
-[benchmark results](../docs/benchmarks.md#prepared-dcf-prototype-20-november-2026)
+[benchmark guide](../docs/benchmarks.md#prepared-dcf)
 for the full command and the interpretation of snapshot reuse.

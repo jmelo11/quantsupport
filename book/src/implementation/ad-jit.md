@@ -346,8 +346,8 @@ Use ordinary valuation for other measures or larger graphs. Ordinary value-only
 DCF requests also skip recording when no sensitivity is requested.
 Preparation and refresh remain separate costs: a fast warm snapshot does not
 imply faster evaluation for a market changing on every call. The
-[prepared DCF measurements](https://github.com/jmelo11/quantsupport/blob/main/docs/benchmarks.md#prepared-dcf-prototype-20-november-2026)
-report both boundaries and comparisons with the old ordinary tape API.
+[prepared DCF benchmark](https://github.com/jmelo11/quantsupport/blob/main/docs/benchmarks.md#prepared-dcf)
+measures both boundaries against the old ordinary tape API.
 
 ## Second derivatives and calibration maps
 
