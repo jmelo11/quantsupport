@@ -17,6 +17,7 @@ use crate::indices::{
         euribor::Euribor1wIndex,
         euribor::{Euribor12mIndex, Euribor1mIndex, Euribor3mIndex, Euribor6mIndex},
         fedfunds::FedFundsIndex,
+        ibr::IBRIndex,
         icp::ICPIndex,
         kofr::KOFRIndex,
         nibor::{NIBOR12mIndex, NIBOR1mIndex, NIBOR3mIndex, NIBOR6mIndex},
@@ -163,6 +164,8 @@ pub enum MarketIndex {
     // ── Other ────────────────────────────────────────────
     /// Indice camara promedio Index.
     ICP,
+    /// Overnight Indicador Bancario de Referencia (IBR) Index, COP.
+    IBR,
     /// VIX Index.
     VIX,
     /// Equity index or price. Used to identify volatilities.
@@ -254,6 +257,7 @@ impl Display for MarketIndex {
             Self::SWESTR => write!(f, "SWESTR"),
             // Other
             Self::ICP => write!(f, "ICP"),
+            Self::IBR => write!(f, "IBR"),
             Self::VIX => write!(f, "VIX"),
             Self::Equity(name) => write!(f, "EQ:{name}"),
             Self::FxPair(pair) => write!(f, "FX:{pair}"),
@@ -328,6 +332,7 @@ impl std::str::FromStr for MarketIndex {
             "NOWA" => Self::NOWA,
             "SWESTR" => Self::SWESTR,
             "ICP" => Self::ICP,
+            "IBR" => Self::IBR,
             "VIX" => Self::VIX,
             _ => return Self::parse_named(s),
         };
@@ -450,6 +455,7 @@ impl MarketIndex {
             Self::NOWA => Ok(Box::new(NOWAIndex)),
             Self::SWESTR => Ok(Box::new(SWESTRIndex)),
             Self::ICP => Ok(Box::new(ICPIndex)),
+            Self::IBR => Ok(Box::new(IBRIndex)),
             _ => Err(QSError::InvalidValueErr(
                 "Index does not contain market details".into(),
             )),
@@ -511,6 +517,7 @@ impl MarketIndex {
             Self::NOWA => Ok(Box::new(NOWAIndex)),
             Self::SWESTR => Ok(Box::new(SWESTRIndex)),
             Self::ICP => Ok(Box::new(ICPIndex)),
+            Self::IBR => Ok(Box::new(IBRIndex)),
             _ => Err(QSError::InvalidValueErr("Index is not rate index".into())),
         }
     }
