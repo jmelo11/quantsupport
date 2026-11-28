@@ -250,11 +250,10 @@ input and rejects an input that would take the other branch:
 ```rust
 # extern crate quantsupport;
 use quantsupport::prelude::*;
-use quantsupport::ad::CompileError;
 
 let program = CompiledProgram::trace(&[1.0], 1, |x| {
     let value = if x[0] > 0.0 { x[0] * x[0] } else { -x[0] };
-    Ok::<_, &str>((value, vec![value]))
+    Ok::<_, QSError>((value, vec![value]))
 })?;
 let mut outputs = vec![0.0; program.output_count()];
 let mut gradient = [0.0];
@@ -263,7 +262,7 @@ assert_eq!(outputs[0], 4.0);
 assert_eq!(gradient, [4.0]);
 assert!(matches!(
     program.evaluate(&[-1.0], &mut outputs, &mut gradient),
-    Err(CompileError::ComparisonChanged),
+    Err(QSError::ComparisonChanged),
 ));
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```

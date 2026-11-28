@@ -1,10 +1,13 @@
 //! Multi-output native programs with a selected reverse root and active inputs.
 
+use std::sync::Arc;
+
+use crate::utils::errors::{QSError, Result};
+
 use super::{
-    comparisonguard::ComparisonGuard, compileerror::CompileError, graph::Graph, jit,
-    nativekernel::NativeKernel, recorded::Recorded,
+    comparisonguard::ComparisonGuard, graph::Graph, jit, nativekernel::NativeKernel,
+    recorded::Recorded,
 };
-use std::{fmt::Display, sync::Arc};
 
 /// Reusable native program returning observations and one selected risk gradient.
 ///
@@ -29,17 +32,15 @@ impl CompiledProgram {
     ///
     /// # Errors
     /// Propagates capture, pricing, layout and native compilation errors.
+    /// Closure errors must convert into [`QSError`]; their category and cause
+    /// are preserved.
     ///
     /// # Panics
     /// Has the capture-lifetime requirements of [`Graph::try_trace`].
-    pub fn trace<F, E>(
-        samples: &[f64],
-        active_inputs: usize,
-        function: F,
-    ) -> Result<Self, CompileError>
+    pub fn trace<F, E>(samples: &[f64], active_inputs: usize, function: F) -> Result<Self>
     where
-        F: FnOnce(&[Recorded]) -> Result<(Recorded, Vec<Recorded>), E>,
-        E: Display,
+        F: FnOnce(&[Recorded]) -> std::result::Result<(Recorded, Vec<Recorded>), E>,
+        E: Into<QSError>,
     {
         Self::trace_reusing(samples, active_inputs, None, function)
     }
@@ -51,6 +52,8 @@ impl CompiledProgram {
     ///
     /// # Errors
     /// Propagates capture, pricing, layout and compilation errors.
+    /// Closure errors must convert into [`QSError`]; their category and cause
+    /// are preserved.
     ///
     /// # Panics
     /// Has the capture-lifetime requirements of [`Graph::try_trace`].
@@ -59,10 +62,10 @@ impl CompiledProgram {
         active_inputs: usize,
         previous: Option<&Self>,
         function: F,
-    ) -> Result<Self, CompileError>
+    ) -> Result<Self>
     where
-        F: FnOnce(&[Recorded]) -> Result<(Recorded, Vec<Recorded>), E>,
-        E: Display,
+        F: FnOnce(&[Recorded]) -> std::result::Result<(Recorded, Vec<Recorded>), E>,
+        E: Into<QSError>,
     {
         let mut outputs = Vec::new();
         let mut comparison_guards = Vec::new();
@@ -138,7 +141,7 @@ impl CompiledProgram {
         inputs: &[f64],
         outputs: &mut [f64],
         gradient: &mut [f64],
-    ) -> Result<(), CompileError> {
+    ) -> Result<()> {
         self.kernel.values_and_grad(inputs, outputs, gradient)?;
         let start = self.outputs - 2 * self.comparison_guards.len();
         for (operands, guard) in outputs[start..]
@@ -148,7 +151,7 @@ impl CompiledProgram {
             .zip(&self.comparison_guards)
         {
             if !guard.matches(operands[0], operands[1]) {
-                return Err(CompileError::ComparisonChanged);
+                return Err(QSError::ComparisonChanged);
             }
         }
         Ok(())
@@ -157,17 +160,18 @@ impl CompiledProgram {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::utils::errors::{QSError, Result};
+
+    use super::CompiledProgram;
 
     /// Checks market values change without recompiling but program changes do recompile.
     #[test]
-    fn market_values_change_without_recompiling_but_program_changes_do_recompile(
-    ) -> Result<(), CompileError> {
+    fn market_values_change_without_recompiling_but_program_changes_do_recompile() -> Result<()> {
         let first = CompiledProgram::trace(&[2.0], 1, |x| {
-            Ok::<_, &str>((x[0] * x[0], vec![x[0] * x[0]]))
+            Ok::<_, QSError>((x[0] * x[0], vec![x[0] * x[0]]))
         })?;
         let rebound = CompiledProgram::trace_reusing(&[3.0], 1, Some(&first), |x| {
-            Ok::<_, &str>((x[0] * x[0], vec![x[0] * x[0]]))
+            Ok::<_, QSError>((x[0] * x[0], vec![x[0] * x[0]]))
         })?;
         assert!(rebound.shares_code_with(&first));
         let mut values = [0.0];
@@ -176,7 +180,7 @@ mod tests {
         assert_eq!(values, [9.0]);
         assert_eq!(gradient, [6.0]);
         let changed = CompiledProgram::trace_reusing(&[3.0], 1, Some(&first), |x| {
-            Ok::<_, &str>((x[0] * 2.0, vec![x[0] * 2.0]))
+            Ok::<_, QSError>((x[0] * 2.0, vec![x[0] * 2.0]))
         })?;
         assert!(!changed.shares_code_with(&first));
         Ok(())
@@ -184,10 +188,12 @@ mod tests {
 
     /// Checks comparison traits guard every native execution.
     #[test]
-    fn comparison_traits_guard_every_native_execution() -> Result<(), CompileError> {
+    fn comparison_traits_guard_every_native_execution() -> Result<()> {
         let program = CompiledProgram::trace(&[1.0], 1, |x| {
             if !(x[0] > 0.0 && x[0] <= f64::MAX) {
-                return Err("discount must be finite and positive");
+                return Err(QSError::InvalidValueErr(
+                    "discount must be finite and positive".into(),
+                ));
             }
             Ok((x[0], vec![x[0]]))
         })?;
@@ -203,10 +209,9 @@ mod tests {
 
     /// Checks comparison guards allow changed ordering with the same boolean result.
     #[test]
-    fn comparison_guards_allow_changed_ordering_with_the_same_boolean_result(
-    ) -> Result<(), CompileError> {
+    fn comparison_guards_allow_changed_ordering_with_the_same_boolean_result() -> Result<()> {
         let program = CompiledProgram::trace(&[0.0], 1, |x| {
-            Ok::<_, &str>((if x[0] <= 0.0 { x[0] * 2.0 } else { x[0] * 3.0 }, vec![]))
+            Ok::<_, QSError>((if x[0] <= 0.0 { x[0] * 2.0 } else { x[0] * 3.0 }, vec![]))
         })?;
         let mut values = vec![0.0; program.output_count()];
         let mut gradient = [0.0];
@@ -215,7 +220,7 @@ mod tests {
         for input in [1.0, f64::NAN] {
             assert!(matches!(
                 program.evaluate(&[input], &mut values, &mut gradient),
-                Err(CompileError::ComparisonChanged)
+                Err(QSError::ComparisonChanged)
             ));
         }
         Ok(())
@@ -223,9 +228,9 @@ mod tests {
 
     /// Checks observations are separate from risk and noise is inactive.
     #[test]
-    fn observations_are_separate_from_risk_and_noise_is_inactive() -> Result<(), CompileError> {
+    fn observations_are_separate_from_risk_and_noise_is_inactive() -> Result<()> {
         let program = CompiledProgram::trace(&[2.0, 3.0, 4.0], 2, |x| {
-            Ok::<_, &str>((x[0] * x[1] + x[2] * x[0], vec![x[0] * x[0], x[1] * x[2]]))
+            Ok::<_, QSError>((x[0] * x[1] + x[2] * x[0], vec![x[0] * x[0], x[1] * x[2]]))
         })?;
         let mut output = [0.0; 2];
         let mut gradient = [0.0; 2];
@@ -238,7 +243,9 @@ mod tests {
         assert!(program
             .evaluate(&[2.0, 3.0, 4.0], &mut output, &mut [0.0; 3])
             .is_err());
-        assert!(CompiledProgram::trace(&[1.0], 2, |x| Ok::<_, &str>((x[0], vec![x[0]]))).is_err());
+        assert!(
+            CompiledProgram::trace(&[1.0], 2, |x| Ok::<_, QSError>((x[0], vec![x[0]]))).is_err()
+        );
         Ok(())
     }
 }

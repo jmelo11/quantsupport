@@ -75,7 +75,8 @@ impl<T: Scalar> AggregationPlan<T> {
 mod tests {
     use crate::{
         ad::CompiledProgram,
-        prelude::*,
+        time::date::Date,
+        utils::errors::{QSError, Result},
         xva::aggregator::{CvaAggregator, DvaAggregator, FvaAggregator, XvaAggregator},
     };
     /// Checks native plans match all builtin adjustment transforms.
@@ -97,16 +98,13 @@ mod tests {
             samples.extend_from_slice(&coefficients);
             let program = CompiledProgram::trace(&samples, samples.len(), |inputs| {
                 let value = plan.evaluate_with(&inputs[..3], &inputs[3..]);
-                Ok::<_, &str>((value, vec![value]))
-            })
-            .map_err(|error| QSError::EvaluationErr(error.to_string()))?;
+                Ok::<_, QSError>((value, vec![value]))
+            })?;
             for npvs in [[0.0, 100.0, -30.0], [0.0, -100.0, 30.0]] {
                 samples[..3].copy_from_slice(&npvs);
                 let mut value = [0.0];
                 let mut gradient = vec![0.0; samples.len()];
-                program
-                    .evaluate(&samples, &mut value, &mut gradient)
-                    .map_err(|error| QSError::EvaluationErr(error.to_string()))?;
+                program.evaluate(&samples, &mut value, &mut gradient)?;
                 let expected = aggregator.aggregate_path(&npvs, &dates);
                 assert!((value[0] - expected).abs() < 1e-12);
                 for i in 1..3 {

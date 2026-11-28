@@ -1,7 +1,15 @@
 //! Reusable native exposure and XVA execution with setup-time risk linearization.
 
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::Write,
+    hash::BuildHasher,
+};
+
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
 use crate::{
-    ad::{scalar::Scalar, CompileError, CompiledProgram, Recorded, Recording, RecordingScope},
+    ad::{scalar::Scalar, CompiledProgram, Recorded, Recording, RecordingScope},
     models::lgm::marketpathplan::MarketPathPlan,
     time::date::Date,
     utils::errors::{QSError, Result},
@@ -14,12 +22,6 @@ use crate::{
             ExposureResult, NpvCube, VariationMarginSimulation, XvaModelSetup, XvaValue,
         },
     },
-};
-use rayon::prelude::*;
-use std::{
-    collections::{BTreeMap, HashMap},
-    fmt::Write,
-    hash::BuildHasher,
 };
 
 /// Numerical execution owned and rebound by the existing `XvaEngine`.
@@ -207,7 +209,7 @@ impl XvaExecution {
                     Ok((total, observations))
                 },
             )
-            .map_err(|error| QSError::EvaluationErr(format!("compiled XVA capture: {error}")))?;
+            .map_err(|error| error.context("compiled XVA capture"))?;
             let parameters = samples[..coefficient_count].to_vec();
             let jacobian = active
                 .into_iter()
@@ -329,12 +331,7 @@ impl XvaExecution {
                 .fill_draws(path, &mut inputs[coefficients..], &mut scratch)?;
             self.program
                 .evaluate(&inputs, &mut output, &mut gradient)
-                .map_err(|error| match error {
-                    CompileError::ComparisonChanged => QSError::InvalidValueErr(
-                        "simulation input changed a recorded validation comparison".into(),
-                    ),
-                    other => QSError::EvaluationErr(format!("compiled XVA execution: {other}")),
-                })?;
+                .map_err(|error| error.context(format!("compiled XVA path {path}")))?;
             if output
                 .iter()
                 .chain(&gradient)

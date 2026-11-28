@@ -7,10 +7,9 @@
 
 use nalgebra::DMatrix;
 
-use super::{
-    compiledfunction::CompiledFunction, compileerror::CompileError,
-    derivativeorder::DerivativeOrder,
-};
+use crate::utils::errors::{QSError, Result};
+
+use super::{compiledfunction::CompiledFunction, derivativeorder::DerivativeOrder};
 
 /// AD derivatives through a converged calibration, without differentiating solver iterations.
 ///
@@ -44,15 +43,11 @@ impl ImplicitDerivatives {
     /// # Errors
     /// Rejects incompatible dimensions, nonfinite derivatives, a singular
     /// state Jacobian, and errors from the compiled numerical function.
-    pub fn evaluate(
-        function: &CompiledFunction,
-        inputs: &[f64],
-        states: usize,
-    ) -> Result<Self, CompileError> {
+    pub fn evaluate(function: &CompiledFunction, inputs: &[f64], states: usize) -> Result<Self> {
         let width = function.input_count();
         let outputs = function.output_count();
         if states == 0 || states > width || states > outputs {
-            return Err(CompileError::InvalidGraph(
+            return Err(QSError::InvalidGraph(
                 "implicit differentiation needs one residual per state and inputs [states, parameters]"
                     .into(),
             ));
@@ -76,7 +71,7 @@ impl ImplicitDerivatives {
                 .as_ref()
                 .is_some_and(|values| values.iter().any(|value| !value.is_finite()))
         {
-            return Err(CompileError::InvalidGraph(
+            return Err(QSError::InvalidGraph(
                 "nonfinite implicit calibration derivatives".into(),
             ));
         }
@@ -87,7 +82,7 @@ impl ImplicitDerivatives {
         });
         let lu = state_partials.lu();
         let state_jacobian = lu.solve(&negative_parameter_partials).ok_or_else(|| {
-            CompileError::InvalidGraph("singular implicit calibration Jacobian".into())
+            QSError::InvalidGraph("singular implicit calibration Jacobian".into())
         })?;
         let tangent = DMatrix::from_fn(width, parameters, |row, column| {
             if row < states {
@@ -104,7 +99,7 @@ impl ImplicitDerivatives {
             let contracted = contract_hessians(&second_partials, &tangent);
             let rhs = -contracted.rows(0, states).into_owned();
             let state_hessians = lu.solve(&rhs).ok_or_else(|| {
-                CompileError::InvalidGraph("singular implicit calibration Jacobian".into())
+                QSError::InvalidGraph("singular implicit calibration Jacobian".into())
             })?;
             let observation_hessians = contracted.rows(states, observations)
                 + observation_partials.columns(0, states) * &state_hessians;
@@ -132,7 +127,7 @@ impl ImplicitDerivatives {
             .chain(result.hessians.iter().flatten())
             .any(|value| !value.is_finite())
         {
-            return Err(CompileError::InvalidGraph(
+            return Err(QSError::InvalidGraph(
                 "nonfinite implicit calibration solve".into(),
             ));
         }
@@ -209,15 +204,20 @@ fn row_major(matrix: &DMatrix<f64>) -> Vec<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::{
+        ad::{CompiledFunction, DerivativeOrder},
+        utils::errors::{QSError, Result},
+    };
+
+    use super::ImplicitDerivatives;
 
     /// Checks inclusion of calibration curvature in observation hessians.
     #[test]
-    fn includes_calibration_curvature_in_observation_hessians() -> Result<(), CompileError> {
+    fn includes_calibration_curvature_in_observation_hessians() -> Result<()> {
         // x = sqrt(q), observation x^3 + q*x = 2*q^(3/2).
         let function =
             CompiledFunction::try_trace_with_order(&[2.0, 4.0], DerivativeOrder::Second, |v| {
-                Ok::<_, &str>(vec![v[0] * v[0] - v[1], v[0].powf(3.0) + v[0] * v[1]])
+                Ok::<_, QSError>(vec![v[0] * v[0] - v[1], v[0].powf(3.0) + v[0] * v[1]])
             })?;
         for x in [0.5, 2.0, 5.0] {
             let result = ImplicitDerivatives::evaluate(&function, &[x, x * x], 1)?;
@@ -231,15 +231,14 @@ mod tests {
 
     /// Checks coupled states and cross parameter curvature match closed form.
     #[test]
-    fn coupled_states_and_cross_parameter_curvature_match_closed_form() -> Result<(), CompileError>
-    {
+    fn coupled_states_and_cross_parameter_curvature_match_closed_form() -> Result<()> {
         // x0 = q0*q1, x1 = x0 + q1^2. This triangular residual system is
         // nonlinear in both state and parameters; observation = x0*x1.
         let function = CompiledFunction::try_trace_with_order(
             &[6.0, 15.0, 2.0, 3.0],
             DerivativeOrder::Second,
             |v| {
-                Ok::<_, &str>(vec![
+                Ok::<_, QSError>(vec![
                     v[0] - v[2] * v[3],
                     v[1] - v[0] - v[3] * v[3],
                     v[0] * v[1],
@@ -259,12 +258,12 @@ mod tests {
 
     /// Checks inclusion of mixed state parameter residual derivatives.
     #[test]
-    fn includes_mixed_state_parameter_residual_derivatives() -> Result<(), CompileError> {
+    fn includes_mixed_state_parameter_residual_derivatives() -> Result<()> {
         // (q + 1)*x = q^2, so x'' = 2/(q + 1)^3.
         let function = CompiledFunction::try_trace_with_order(
             &[4.0 / 3.0, 2.0],
             DerivativeOrder::Second,
-            |v| Ok::<_, &str>(vec![(v[1] + 1.0) * v[0] - v[1] * v[1]]),
+            |v| Ok::<_, QSError>(vec![(v[1] + 1.0) * v[0] - v[1] * v[1]]),
         )?;
         let result = ImplicitDerivatives::evaluate(&function, &[4.0 / 3.0, 2.0], 1)?;
         assert!((result.state_jacobian()[0] - 8.0 / 9.0).abs() < 1e-12);
@@ -275,7 +274,7 @@ mod tests {
 
     /// Checks first order has no hessian and invalid systems fail.
     #[test]
-    fn first_order_has_no_hessian_and_invalid_systems_fail() -> Result<(), CompileError> {
+    fn first_order_has_no_hessian_and_invalid_systems_fail() -> Result<()> {
         let function = CompiledFunction::trace(&[2.0, 4.0], |v| vec![v[0] * v[0] - v[1], v[0]])?;
         let first = ImplicitDerivatives::evaluate(&function, &[2.0, 4.0], 1)?;
         assert!(first.state_hessians().is_none());

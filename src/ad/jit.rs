@@ -5,20 +5,21 @@
 //! do not receive unnecessary derivative calculations. The generated function
 //! accepts only caller-owned buffers, making concurrent calls independent.
 
-use crate::math::probability::{norm_pdf::FRAC_1_SQRT_2PI, normcdf::NormCDF};
+use std::mem::{size_of, transmute};
+
 use cranelift_codegen::ir::{
     condcodes::FloatCC, types, AbiParam, FuncRef, InstBuilder, MemFlagsData, Value,
 };
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{default_libcall_names, FuncId, Linkage, Module};
-use std::{
-    fmt::Display,
-    mem::{size_of, transmute},
+use cranelift_module::{default_libcall_names, FuncId, Linkage, Module, ModuleError};
+
+use crate::{
+    math::probability::{norm_pdf::FRAC_1_SQRT_2PI, normcdf::NormCDF},
+    utils::errors::{QSError, Result},
 };
 
 use super::{
-    compileerror::CompileError,
     graph::Graph,
     nativekernel::{NativeKernel, RawKernel},
     operation::Operation as Op,
@@ -67,12 +68,12 @@ struct MathRefs {
 }
 
 /// Preserves native compiler diagnostics as a library compilation error.
-fn jit_err(e: impl Display) -> CompileError {
-    CompileError::Jit(e.to_string())
+fn jit_err(error: ModuleError) -> QSError {
+    QSError::Jit(Box::new(error))
 }
 
 /// Declares the imported host math functions with their native numerical signatures.
-fn math_ids(module: &mut JITModule) -> Result<MathIds, CompileError> {
+fn math_ids(module: &mut JITModule) -> Result<MathIds> {
     let mut unary = module.make_signature();
     unary.params.push(AbiParam::new(types::F64));
     unary.returns.push(AbiParam::new(types::F64));
@@ -126,11 +127,11 @@ fn min_max(builder: &mut FunctionBuilder<'_>, a: Value, b: Value, maximum: bool)
 }
 
 /// Converts scalar buffer indices to checked native byte offsets.
-fn offset(index: usize) -> Result<i32, CompileError> {
+fn offset(index: usize) -> Result<i32> {
     index
         .checked_mul(size_of::<f64>())
         .and_then(|x| i32::try_from(x).ok())
-        .ok_or(CompileError::OffsetOverflow)
+        .ok_or(QSError::OffsetOverflow)
 }
 
 /// Adds a symbolic derivative contribution to a live reverse accumulator.
@@ -150,7 +151,7 @@ fn accumulate(
 ///
 /// # Errors
 /// Returns a native compilation, relocation or address-layout error.
-pub fn compile(graph: &Graph) -> Result<NativeKernel, CompileError> {
+pub fn compile(graph: &Graph) -> Result<NativeKernel> {
     compile_outputs(graph, &[graph.output()], graph.input_count())
 }
 
@@ -164,7 +165,7 @@ pub fn compile_outputs(
     graph: &Graph,
     outputs: &[usize],
     active_inputs: usize,
-) -> Result<NativeKernel, CompileError> {
+) -> Result<NativeKernel> {
     compile_selected(graph, outputs, active_inputs, false)
 }
 
@@ -172,7 +173,7 @@ pub fn compile_outputs(
 ///
 /// # Errors
 /// Rejects invalid outputs, overflowing layouts and native compilation failures.
-pub fn compile_jacobian(graph: &Graph, outputs: &[usize]) -> Result<NativeKernel, CompileError> {
+pub fn compile_jacobian(graph: &Graph, outputs: &[usize]) -> Result<NativeKernel> {
     compile_selected(graph, outputs, graph.input_count(), true)
 }
 
@@ -183,13 +184,13 @@ fn compile_selected(
     outputs: &[usize],
     active_inputs: usize,
     jacobian: bool,
-) -> Result<NativeKernel, CompileError> {
+) -> Result<NativeKernel> {
     let (pruned, outputs) = graph.prune(outputs)?;
     let graph = &pruned;
     if active_inputs > graph.input_count()
         || outputs.iter().any(|&id| id >= graph.operation_count())
     {
-        return Err(CompileError::InvalidGraph(
+        return Err(QSError::InvalidGraph(
             "invalid output or active-input layout".into(),
         ));
     }
@@ -201,7 +202,7 @@ fn compile_selected(
     let gradient_count = roots
         .len()
         .checked_mul(active_inputs)
-        .ok_or(CompileError::OffsetOverflow)?;
+        .ok_or(QSError::OffsetOverflow)?;
     let mut jit_builder =
         JITBuilder::with_flags(&[("opt_level", "speed")], default_libcall_names())
             .map_err(jit_err)?;

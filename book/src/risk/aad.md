@@ -109,8 +109,9 @@ The gradient entries are in input order and in the units of each input.
   structure stay the same.
 - A different schedule, strike convention, or embedded constant may need a new
   graph.
-- `Graph::try_trace` passes on errors from a formula that can fail. Use
-  `Graph::trace` when the closure cannot fail.
+- `Graph::try_trace` passes on errors from a formula that can fail, preserving
+  their categories and causes. Closure errors must convert into `QSError`.
+  Use `Graph::trace` when the closure cannot fail.
 
 Recorded values belong to their recording. Use them only inside the closure,
 and keep the resulting graph or kernel if you want to reuse it.
@@ -127,7 +128,7 @@ need the other branch.
 
 `CompiledProgram` supports ordinary Rust comparisons with a guard. It records
 the result of each comparison and checks it again on every run. If a result
-changes, the run returns `CompileError::ComparisonChanged`, and you should
+changes, the run returns `QSError::ComparisonChanged`, and you should
 record the calculation again. These checks use the standard `PartialOrd` and
 `PartialEq` traits.
 

@@ -98,6 +98,11 @@ context about where the failure happened, such as the instrument being built,
 the script event, or the simulation path. Call `root_cause()` to get the
 original error category.
 
+Scripting, numerical recording, compilation, and execution use the same error
+type. For example, `QSError::ComparisonChanged` means that current inputs would
+take a different Rust branch from the recorded calculation. Record the
+calculation again for those inputs before reusing it.
+
 Propagate errors with `?` and handle them where your application reports them.
 
 Numerical solvers also report whether they converged. A successful return does
