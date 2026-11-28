@@ -1,6 +1,9 @@
 //! Native path execution owned by the existing scripting runtime.
 
-use super::runtime::{ExpectedCashflow, ParallelScriptEvaluation};
+use std::collections::HashMap;
+
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
 use crate::{
     ad::CompiledProgram,
     currencies::currency::Currency,
@@ -8,8 +11,8 @@ use crate::{
     time::date::Date,
     utils::errors::{QSError, Result},
 };
-use rayon::prelude::*;
-use std::collections::HashMap;
+
+use super::runtime::{ExpectedCashflow, ParallelScriptEvaluation};
 
 /// Stable output layout for one script's native numerical program.
 pub struct ScriptLayout {
@@ -112,9 +115,7 @@ impl ScriptExecution {
                     )?;
                     self.program
                         .evaluate(&inputs, &mut outputs, &mut gradient)
-                        .map_err(|error| {
-                            QSError::EvaluationErr(format!("native script path {path}: {error}"))
-                        })?;
+                        .map_err(|error| error.context(format!("native script path {path}")))?;
                     if outputs[..variable_count + 2 * flow_count]
                         .iter()
                         .chain(&gradient)

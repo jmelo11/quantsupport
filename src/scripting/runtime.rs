@@ -16,16 +16,16 @@ This attribution and license notice must be preserved at the top of this file.
 */
 
 //! Model-backed scripting runtime.
-use crate::utils::errors::{QSError, Result};
-use std::{collections::HashMap, ops::Range};
+use std::{
+    collections::HashMap,
+    ops::Range,
+    sync::{Mutex, PoisonError},
+};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use super::execution::{ScriptExecution, ScriptLayout};
-use std::sync::{Mutex, PoisonError};
-
 use crate::{
-    ad::{CompileError, CompiledProgram, Recorded, Recording, RecordingScope},
+    ad::{CompiledProgram, Recorded, Recording, RecordingScope},
     core::marketdatahandling::discountrequest::DiscountRequest,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -43,11 +43,14 @@ use crate::{
         },
     },
     time::date::Date,
+    utils::errors::{QSError, Result},
     xva::visitors::{
         marketmodel::{MarketModel, PathScenario, SimulationResponse},
         preprocessorexecutor::SimulationRequest,
     },
 };
+
+use super::execution::{ScriptExecution, ScriptLayout};
 
 #[derive(Clone, Copy)]
 struct ResponseRange {
@@ -673,7 +676,6 @@ impl ScriptEngine {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clone();
-            let mut capture_failure = None;
             let program = CompiledProgram::trace_reusing(
                 &samples,
                 if result_variable.is_some() {
@@ -682,81 +684,63 @@ impl ScriptEngine {
                     0
                 },
                 previous.as_ref(),
-                |inputs| {
-                    let result = (|| -> Result<_> {
-                        let path = numerical_market
-                            .replay(&inputs[..market_count], &inputs[values.len()..])?;
-                        let numeraires = &inputs[market_count..numeraire_end];
-                        let scenario = self.scenario_from_path(
+                |inputs| -> Result<_> {
+                    let path = numerical_market
+                        .replay(&inputs[..market_count], &inputs[values.len()..])?;
+                    let numeraires = &inputs[market_count..numeraire_end];
+                    let scenario = self.scenario_from_path(
+                        &path,
+                        numeraires,
+                        model.uses_compact_dated_requests(),
+                    )?;
+                    let evaluator = SingleScenarioEvaluator::new()
+                        .with_variables(self.n_variables)
+                        .with_simulation_path(&scenario)
+                        .with_cashflow_capture();
+                    let mut numeric: Vec<_> = evaluator
+                        .visit_events(&self.events, &self.variable_indexes)?
+                        .into_iter()
+                        .filter_map(|(name, value)| match value {
+                            Value::Number(value) => Some((name, value)),
+                            _ => None,
+                        })
+                        .collect();
+                    numeric.sort_by(|a, b| a.0.cmp(&b.0));
+                    if use_controls {
+                        let controls = self.path_controls(
                             &path,
                             numeraires,
                             model.uses_compact_dated_requests(),
                         )?;
-                        let evaluator = SingleScenarioEvaluator::new()
-                            .with_variables(self.n_variables)
-                            .with_simulation_path(&scenario)
-                            .with_cashflow_capture();
-                        let mut numeric: Vec<_> = evaluator
-                            .visit_events(&self.events, &self.variable_indexes)?
-                            .into_iter()
-                            .filter_map(|(name, value)| match value {
-                                Value::Number(value) => Some((name, value)),
-                                _ => None,
-                            })
-                            .collect();
-                        numeric.sort_by(|a, b| a.0.cmp(&b.0));
-                        if use_controls {
-                            let controls = self.path_controls(
-                                &path,
-                                numeraires,
-                                model.uses_compact_dated_requests(),
-                            )?;
-                            for (name, value) in &mut numeric {
-                                if result_variable == Some(name.as_str()) {
-                                    *value = *value
-                                        - (controls[0] - inputs[numeraire_end]) * control_betas[0]
-                                        - (controls[1] - inputs[numeraire_end + 1])
-                                            * control_betas[1];
-                                }
+                        for (name, value) in &mut numeric {
+                            if result_variable == Some(name.as_str()) {
+                                *value = *value
+                                    - (controls[0] - inputs[numeraire_end]) * control_betas[0]
+                                    - (controls[1] - inputs[numeraire_end + 1]) * control_betas[1];
                             }
                         }
-                        let root = result_variable
-                            .and_then(|name| {
-                                numeric
-                                    .iter()
-                                    .find(|(variable, _)| variable == name)
-                                    .map(|(_, value)| *value)
-                            })
-                            .unwrap_or_else(Recorded::zero);
-                        variables = numeric.iter().map(|(name, _)| name.clone()).collect();
-                        let mut outputs: Vec<_> =
-                            numeric.into_iter().map(|(_, value)| value).collect();
-                        for (date, currency, amount, present_value) in
-                            evaluator.captured_cashflows()
-                        {
-                            flows.push((date, currency.unwrap_or(self.local_currency)));
-                            outputs.extend([amount, present_value]);
-                        }
-                        Ok((root, outputs))
-                    })();
-                    result.map_err(|error| {
-                        let message = error.to_string();
-                        capture_failure = Some(error);
-                        message
-                    })
+                    }
+                    let root = result_variable
+                        .and_then(|name| {
+                            numeric
+                                .iter()
+                                .find(|(variable, _)| variable == name)
+                                .map(|(_, value)| *value)
+                        })
+                        .unwrap_or_else(Recorded::zero);
+                    variables = numeric.iter().map(|(name, _)| name.clone()).collect();
+                    let mut outputs: Vec<_> = numeric.into_iter().map(|(_, value)| value).collect();
+                    for (date, currency, amount, present_value) in evaluator.captured_cashflows() {
+                        flows.push((date, currency.unwrap_or(self.local_currency)));
+                        outputs.extend([amount, present_value]);
+                    }
+                    Ok((root, outputs))
                 },
             );
-            if let Some(error) = capture_failure {
-                return Err(error);
-            }
             let program = match program {
                 Ok(program) => program,
-                Err(CompileError::DynamicControlFlow) => return Ok(None),
-                Err(error) => {
-                    return Err(QSError::EvaluationErr(format!(
-                        "native script capture: {error}"
-                    )))
-                }
+                Err(QSError::DynamicControlFlow) => return Ok(None),
+                Err(error) => return Err(error.context("native script capture")),
             };
             *self
                 .native_code

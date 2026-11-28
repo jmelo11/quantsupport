@@ -17,6 +17,9 @@
 //! manage their own [`Recording`] scopes and market-input registration, so an
 //! application can request sensitivities through the existing pricing interface.
 //!
+//! Fallible operations return [`crate::utils::errors::Result`] and report
+//! recording, compilation and execution failures as [`crate::utils::errors::QSError`].
+//!
 //! ```
 //! use quantsupport::prelude::*;
 //! let graph = Graph::trace(&[2.0, 3.0], |x| x[0] * x[0] + x[0] * x[1])?;
@@ -39,8 +42,6 @@ pub mod compiledfunction;
 pub mod compiledkernel;
 /// Runs multiple native outputs with explicit active inputs and comparison guards.
 pub mod compiledprogram;
-/// Reports failures in capture, graph validation, native compilation and execution.
-pub mod compileerror;
 /// Selects whether a kernel provides first derivatives or also second derivatives.
 pub mod derivativeorder;
 /// Divides large derivative graphs into bounded native compilation units.
@@ -67,7 +68,6 @@ pub mod recording;
 pub use compiledfunction::CompiledFunction;
 pub use compiledkernel::CompiledKernel;
 pub use compiledprogram::CompiledProgram;
-pub use compileerror::CompileError;
 pub use derivativeorder::DerivativeOrder;
 pub use graph::Graph;
 pub use implicitderivatives::ImplicitDerivatives;

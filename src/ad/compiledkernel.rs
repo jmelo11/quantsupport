@@ -1,11 +1,15 @@
 //! Allocation-free first-order evaluation and opt-in second-order execution.
 
-use super::derivativeorder::DerivativeOrder;
-use super::{
-    compileerror::CompileError, graph::Graph, jit, nativekernel::NativeKernel, pathsums::PathSums,
-};
-use rayon::prelude::*;
 use std::sync::Arc;
+
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
+use crate::utils::errors::{QSError, Result};
+
+use super::{
+    derivativeorder::DerivativeOrder, graph::Graph, jit, nativekernel::NativeKernel,
+    pathsums::PathSums,
+};
 
 /// Reusable thread-safe compiled value-and-gradient kernel.
 ///
@@ -24,7 +28,7 @@ impl CompiledKernel {
     ///
     /// # Errors
     /// Returns a symbolic graph, buffer-layout or native compilation error.
-    pub fn compile(graph: &Graph, order: DerivativeOrder) -> Result<Self, CompileError> {
+    pub fn compile(graph: &Graph, order: DerivativeOrder) -> Result<Self> {
         let owner = Arc::new(jit::compile(graph)?);
         let second = match order {
             DerivativeOrder::First => None,
@@ -60,11 +64,7 @@ impl CompiledKernel {
     ///
     /// # Errors
     /// Returns an error when buffer lengths do not match the compiled layout.
-    pub fn value_and_grad(
-        &self,
-        inputs: &[f64],
-        gradients: &mut [f64],
-    ) -> Result<f64, CompileError> {
+    pub fn value_and_grad(&self, inputs: &[f64], gradients: &mut [f64]) -> Result<f64> {
         self.owner.value_and_grad(inputs, gradients)
     }
 
@@ -77,11 +77,11 @@ impl CompiledKernel {
         inputs: &[f64],
         direction: &[f64],
         product: &mut [f64],
-    ) -> Result<(), CompileError> {
+    ) -> Result<()> {
         let second = self
             .second
             .as_ref()
-            .ok_or(CompileError::SecondOrderUnavailable)?;
+            .ok_or(QSError::SecondOrderUnavailable)?;
         self.check_second_buffers(inputs, direction, product)?;
         let mut arguments = Vec::with_capacity(self.input_count * 2);
         arguments.extend_from_slice(inputs);
@@ -105,15 +105,15 @@ impl CompiledKernel {
         inputs: &[f64],
         gradient: &mut [f64],
         hessian: &mut [f64],
-    ) -> Result<f64, CompileError> {
+    ) -> Result<f64> {
         let second = self
             .second
             .as_ref()
-            .ok_or(CompileError::SecondOrderUnavailable)?;
+            .ok_or(QSError::SecondOrderUnavailable)?;
         let n = self.input_count;
-        let expected = n.checked_mul(n).ok_or(CompileError::OffsetOverflow)?;
+        let expected = n.checked_mul(n).ok_or(QSError::OffsetOverflow)?;
         if hessian.len() != expected {
-            return Err(CompileError::BufferCount {
+            return Err(QSError::BufferCount {
                 buffer: "Hessian",
                 expected,
                 actual: hessian.len(),
@@ -140,14 +140,14 @@ impl CompiledKernel {
         inputs: &[f64],
         direction: &[f64],
         product: &[f64],
-    ) -> Result<(), CompileError> {
+    ) -> Result<()> {
         for (buffer, actual) in [
             ("input", inputs.len()),
             ("direction", direction.len()),
             ("Hessian-vector product", product.len()),
         ] {
             if actual != self.input_count {
-                return Err(CompileError::BufferCount {
+                return Err(QSError::BufferCount {
                     buffer,
                     expected: self.input_count,
                     actual,
@@ -170,9 +170,9 @@ impl CompiledKernel {
     ///
     /// # Errors
     /// Propagates input-generation errors and compiled-kernel buffer errors.
-    pub fn sum_paths<F>(&self, count: usize, fill_inputs: F) -> Result<PathSums, CompileError>
+    pub fn sum_paths<F>(&self, count: usize, fill_inputs: F) -> Result<PathSums>
     where
-        F: Fn(usize, &mut [f64]) -> Result<(), CompileError> + Send + Sync,
+        F: Fn(usize, &mut [f64]) -> Result<()> + Send + Sync,
     {
         if count == 0 {
             return Ok(PathSums::new(self.input_count));
@@ -185,7 +185,7 @@ impl CompiledKernel {
             .map(|start| (start, count.min(start.saturating_add(chunk_size))))
             .collect();
 
-        let partials: Result<Vec<PathSums>, CompileError> = ranges
+        let partials: Result<Vec<PathSums>> = ranges
             .into_par_iter()
             .map(|(start, end)| {
                 let mut inputs = vec![0.0; self.input_count];
@@ -209,19 +209,20 @@ impl CompiledKernel {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::{
         ad::{
+            graph::Graph,
             recorded::Recorded,
             scalar::{InnerScalar, Scalar},
-            Recording,
+            DerivativeOrder, Recording,
         },
         math::probability::{norm_pdf::norm_pdf, normcdf::NormCDF},
+        utils::errors::{QSError, Result},
     };
 
     /// Checks second order polynomial and cross derivatives.
     #[test]
-    fn second_order_polynomial_and_cross_derivatives() -> Result<(), CompileError> {
+    fn second_order_polynomial_and_cross_derivatives() -> Result<()> {
         let graph = Graph::trace(&[2.0, 0.4, 7.0], |x| {
             x[0].powf(3.0) + x[0] * x[1].sin() + x[1] * x[1]
         })?;
@@ -229,7 +230,7 @@ mod tests {
         assert_eq!(first.derivative_order(), DerivativeOrder::First);
         assert!(matches!(
             first.hessian_vector_product(&[2.0, 0.4, 7.0], &[1.0; 3], &mut [0.0; 3]),
-            Err(CompileError::SecondOrderUnavailable)
+            Err(QSError::SecondOrderUnavailable)
         ));
         let second = graph.compile_with_order(DerivativeOrder::Second)?;
         assert_eq!(second.derivative_order(), DerivativeOrder::Second);
@@ -268,7 +269,7 @@ mod tests {
 
     /// Checks second derivatives match changes in first derivatives.
     #[test]
-    fn second_derivatives_match_changes_in_first_derivatives() -> Result<(), CompileError> {
+    fn second_derivatives_match_changes_in_first_derivatives() -> Result<()> {
         let graph = Graph::trace(&[1.2, 2.3], |x| {
             (x[0].exp() + x[1].ln() - x[0].sqrt()) / (x[0] * x[1] + 1.0)
                 + x[0].powf(2.5)
@@ -301,8 +302,7 @@ mod tests {
 
     /// Checks normal cdf and runtime selection have exact second derivatives.
     #[test]
-    fn normal_cdf_and_runtime_selection_have_exact_second_derivatives() -> Result<(), CompileError>
-    {
+    fn normal_cdf_and_runtime_selection_have_exact_second_derivatives() -> Result<()> {
         let graph = Graph::trace(&[1.0], |x| x[0].norm_cdf())?;
         let kernel = graph.compile_with_order(DerivativeOrder::Second)?;
         for x in [-2.0_f64, 0.0, 1.5] {
@@ -327,7 +327,7 @@ mod tests {
 
     /// Checks second order buffer errors and zero power.
     #[test]
-    fn second_order_buffer_errors_and_zero_power() -> Result<(), CompileError> {
+    fn second_order_buffer_errors_and_zero_power() -> Result<()> {
         let kernel = Graph::trace(&[0.0], |x| x[0].powf(0.0))?
             .compile_with_order(DerivativeOrder::Second)?;
         let mut gradient = [9.0];
@@ -355,7 +355,7 @@ mod tests {
 
     /// Checks value and gradient reuse.
     #[test]
-    fn value_and_gradient_reuse() -> Result<(), CompileError> {
+    fn value_and_gradient_reuse() -> Result<()> {
         let graph = Graph::trace(&[2.0, 3.0], |x| x[0] * x[0] + x[0] * x[1] + x[1].sin())?;
         let compiled = graph.compile()?;
         let mut gradient = vec![0.0; 2];
@@ -370,7 +370,7 @@ mod tests {
 
     /// Checks scalar frontend and explicit graph agree.
     #[test]
-    fn scalar_frontend_and_explicit_graph_agree() -> Result<(), CompileError> {
+    fn scalar_frontend_and_explicit_graph_agree() -> Result<()> {
         let graph = Graph::trace(&[2.0, 3.0], |x| x[0] * x[1] + x[0])?;
         let compiled = graph.compile()?;
         let mut gradients = [0.0; 2];
@@ -396,7 +396,7 @@ mod tests {
 
     /// Checks max derivative agrees with qs tie policy.
     #[test]
-    fn max_derivative_agrees_with_qs_tie_policy() -> Result<(), CompileError> {
+    fn max_derivative_agrees_with_qs_tie_policy() -> Result<()> {
         let graph = Graph::trace(&[3.0, 2.0], |x| x[0].max_val(x[1]))?;
         let compiled = graph.compile()?;
         let mut gradient = [0.0; 2];
@@ -409,7 +409,7 @@ mod tests {
 
     /// Checks rayon parallel sums are correct.
     #[test]
-    fn rayon_parallel_sums_are_correct() -> Result<(), CompileError> {
+    fn rayon_parallel_sums_are_correct() -> Result<()> {
         let graph = Graph::trace(&[2.0, 3.0], |x| x[0] * x[1])?;
         let compiled = graph.compile()?;
         let sums = compiled.sum_paths(10_000, |path, inputs| {
@@ -425,7 +425,7 @@ mod tests {
 
     /// Checks min max ignore nan like scalar.
     #[test]
-    fn min_max_ignore_nan_like_scalar() -> Result<(), CompileError> {
+    fn min_max_ignore_nan_like_scalar() -> Result<()> {
         for maximum in [false, true] {
             let graph = Graph::trace(&[1.0, 2.0], |x| {
                 if maximum {
@@ -456,7 +456,7 @@ mod tests {
 
     /// Checks scalar operations match finite differences.
     #[test]
-    fn scalar_operations_match_finite_differences() -> Result<(), CompileError> {
+    fn scalar_operations_match_finite_differences() -> Result<()> {
         /// Provides a nonlinear scalar expression for an independent derivative check.
         fn formula<T: InnerScalar>(x: &[T]) -> T {
             let a = x[0];
@@ -487,7 +487,7 @@ mod tests {
 
     /// Checks cloned kernel keeps executable memory alive.
     #[test]
-    fn cloned_kernel_keeps_executable_memory_alive() -> Result<(), CompileError> {
+    fn cloned_kernel_keeps_executable_memory_alive() -> Result<()> {
         let original = Graph::trace(&[1.0], |x| x[0] * x[0])?.compile()?;
         let cloned = original.clone();
         drop(original);
@@ -499,18 +499,18 @@ mod tests {
 
     /// Checks empty paths and buffer errors.
     #[test]
-    fn empty_paths_and_buffer_errors() -> Result<(), CompileError> {
+    fn empty_paths_and_buffer_errors() -> Result<()> {
         let kernel = Graph::trace(&[1.0], |x| x[0])?.compile()?;
         assert!(matches!(
             kernel.value_and_grad(&[], &mut [0.0]),
-            Err(CompileError::InputCount {
+            Err(QSError::InputCount {
                 expected: 1,
                 actual: 0
             })
         ));
         assert!(matches!(
             kernel.value_and_grad(&[1.0], &mut []),
-            Err(CompileError::GradientCount {
+            Err(QSError::GradientCount {
                 expected: 1,
                 actual: 0
             })

@@ -1,14 +1,16 @@
 //! Compiled vector functions and AD-generated Jacobians for solver residuals.
 
-use super::{
-    compiledkernel::CompiledKernel, compileerror::CompileError, derivativeorder::DerivativeOrder,
-    graph::Graph, jit, nativekernel::NativeKernel, recorded::Recorded,
-};
+use std::{convert::Infallible, sync::Arc};
+
 use crate::{
     math::solvers::solvertraits::{ContFunc, JacobianFunc, VectorFunc},
-    utils::errors::{QSError, Result as QSResult},
+    utils::errors::{QSError, Result},
 };
-use std::{convert::Infallible, fmt::Display, sync::Arc};
+
+use super::{
+    compiledkernel::CompiledKernel, derivativeorder::DerivativeOrder, graph::Graph, jit,
+    nativekernel::NativeKernel, recorded::Recorded,
+};
 
 /// A reusable vector-valued function with automatically generated derivatives.
 ///
@@ -35,7 +37,7 @@ impl CompiledFunction {
     ///
     /// # Panics
     /// Has the scalar-lifetime requirements of [`Graph::trace`].
-    pub fn trace<F>(samples: &[f64], function: F) -> Result<Self, CompileError>
+    pub fn trace<F>(samples: &[f64], function: F) -> Result<Self>
     where
         F: FnOnce(&[Recorded]) -> Vec<Recorded>,
     {
@@ -46,13 +48,15 @@ impl CompiledFunction {
     ///
     /// # Errors
     /// Propagates residual, capture, shape and native compilation errors.
+    /// Closure errors must convert into [`QSError`]; their category and cause
+    /// are preserved.
     ///
     /// # Panics
     /// Has the scalar-lifetime requirements of [`Graph::try_trace`].
-    pub fn try_trace<F, E>(samples: &[f64], function: F) -> Result<Self, CompileError>
+    pub fn try_trace<F, E>(samples: &[f64], function: F) -> Result<Self>
     where
-        F: FnOnce(&[Recorded]) -> Result<Vec<Recorded>, E>,
-        E: Display,
+        F: FnOnce(&[Recorded]) -> std::result::Result<Vec<Recorded>, E>,
+        E: Into<QSError>,
     {
         Self::try_trace_with_order(samples, DerivativeOrder::First, function)
     }
@@ -61,6 +65,8 @@ impl CompiledFunction {
     ///
     /// # Errors
     /// Propagates residual, capture, shape and native compilation errors.
+    /// Closure errors must convert into [`QSError`]; their category and cause
+    /// are preserved.
     ///
     /// # Panics
     /// Has the scalar-lifetime requirements of [`Graph::try_trace`].
@@ -68,10 +74,10 @@ impl CompiledFunction {
         samples: &[f64],
         order: DerivativeOrder,
         function: F,
-    ) -> Result<Self, CompileError>
+    ) -> Result<Self>
     where
-        F: FnOnce(&[Recorded]) -> Result<Vec<Recorded>, E>,
-        E: Display,
+        F: FnOnce(&[Recorded]) -> std::result::Result<Vec<Recorded>, E>,
+        E: Into<QSError>,
     {
         let mut outputs = Vec::new();
         let graph = Graph::try_trace(samples, |inputs| {
@@ -84,7 +90,7 @@ impl CompiledFunction {
             })
         })?;
         if outputs.is_empty() {
-            return Err(CompileError::InvalidGraph(
+            return Err(QSError::InvalidGraph(
                 "a vector function needs at least one output".into(),
             ));
         }
@@ -98,7 +104,7 @@ impl CompiledFunction {
                     Graph::new(graph.operations().to_vec(), samples.len(), output)?
                         .compile_with_order(order)
                 })
-                .collect::<Result<_, CompileError>>()?
+                .collect::<Result<_>>()?
         } else {
             Vec::new()
         };
@@ -131,20 +137,15 @@ impl CompiledFunction {
     }
 
     /// Checks the value, Jacobian and optional Hessian buffer dimensions.
-    fn validate(
-        &self,
-        inputs: &[f64],
-        outputs: &[f64],
-        jacobian: Option<&[f64]>,
-    ) -> Result<(), CompileError> {
+    fn validate(&self, inputs: &[f64], outputs: &[f64], jacobian: Option<&[f64]>) -> Result<()> {
         if inputs.len() != self.inputs {
-            return Err(CompileError::InputCount {
+            return Err(QSError::InputCount {
                 expected: self.inputs,
                 actual: inputs.len(),
             });
         }
         if outputs.len() != self.output_count() {
-            return Err(CompileError::BufferCount {
+            return Err(QSError::BufferCount {
                 buffer: "output",
                 expected: self.output_count(),
                 actual: outputs.len(),
@@ -154,9 +155,9 @@ impl CompiledFunction {
             let expected = self
                 .output_count()
                 .checked_mul(self.inputs)
-                .ok_or(CompileError::OffsetOverflow)?;
+                .ok_or(QSError::OffsetOverflow)?;
             if jacobian.len() != expected {
-                return Err(CompileError::BufferCount {
+                return Err(QSError::BufferCount {
                     buffer: "Jacobian",
                     expected,
                     actual: jacobian.len(),
@@ -170,7 +171,7 @@ impl CompiledFunction {
     ///
     /// # Errors
     /// Rejects mismatched input or output buffers before native execution.
-    pub fn values(&self, inputs: &[f64], outputs: &mut [f64]) -> Result<(), CompileError> {
+    pub fn values(&self, inputs: &[f64], outputs: &mut [f64]) -> Result<()> {
         self.values.values_and_grad(inputs, outputs, &mut [])
     }
 
@@ -183,7 +184,7 @@ impl CompiledFunction {
         inputs: &[f64],
         outputs: &mut [f64],
         jacobian: &mut [f64],
-    ) -> Result<(), CompileError> {
+    ) -> Result<()> {
         self.validate(inputs, outputs, Some(jacobian))?;
         self.jacobian.values_and_grad(inputs, outputs, jacobian)
     }
@@ -201,21 +202,21 @@ impl CompiledFunction {
         outputs: &mut [f64],
         jacobian: &mut [f64],
         hessians: &mut [f64],
-    ) -> Result<(), CompileError> {
+    ) -> Result<()> {
         self.validate(inputs, outputs, Some(jacobian))?;
         if self.derivative_order() != DerivativeOrder::Second {
-            return Err(CompileError::SecondOrderUnavailable);
+            return Err(QSError::SecondOrderUnavailable);
         }
         let square = self
             .inputs
             .checked_mul(self.inputs)
-            .ok_or(CompileError::OffsetOverflow)?;
+            .ok_or(QSError::OffsetOverflow)?;
         let expected = self
             .output_count()
             .checked_mul(square)
-            .ok_or(CompileError::OffsetOverflow)?;
+            .ok_or(QSError::OffsetOverflow)?;
         if hessians.len() != expected {
-            return Err(CompileError::BufferCount {
+            return Err(QSError::BufferCount {
                 buffer: "output Hessians",
                 expected,
                 actual: hessians.len(),
@@ -234,10 +235,10 @@ impl CompiledFunction {
 
 impl ContFunc<[f64], Vec<f64>> for CompiledFunction {
     /// Evaluates compiled residuals through the existing continuous-function solver trait.
-    fn call(&self, inputs: &[f64]) -> QSResult<Vec<f64>> {
+    fn call(&self, inputs: &[f64]) -> Result<Vec<f64>> {
         let mut values = vec![0.0; self.output_count()];
         self.values(inputs, &mut values)
-            .map_err(|error| QSError::SolverErr(format!("AD residual: {error}")))?;
+            .map_err(|error| error.context("evaluating AD residual"))?;
         Ok(values)
     }
 }
@@ -246,11 +247,11 @@ impl VectorFunc<f64, f64> for CompiledFunction {}
 
 impl JacobianFunc<f64, f64, f64> for CompiledFunction {
     /// Returns compiled residual partials through the existing Newton-solver Jacobian trait.
-    fn jacobian(&self, inputs: &[f64]) -> QSResult<Vec<Vec<f64>>> {
+    fn jacobian(&self, inputs: &[f64]) -> Result<Vec<Vec<f64>>> {
         let mut values = vec![0.0; self.output_count()];
         let mut jacobian = vec![0.0; self.output_count() * self.inputs];
         self.values_and_jacobian(inputs, &mut values, &mut jacobian)
-            .map_err(|error| QSError::SolverErr(format!("AD residual Jacobian: {error}")))?;
+            .map_err(|error| error.context("evaluating AD residual Jacobian"))?;
         if self.inputs == 0 {
             return Ok(vec![vec![]; self.output_count()]);
         }
@@ -263,17 +264,25 @@ impl JacobianFunc<f64, f64, f64> for CompiledFunction {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::math::solvers::vectornewton::VectorNewton;
     use std::f64::consts::E;
+
+    use crate::{
+        ad::{DerivativeOrder, Recorded},
+        math::solvers::{
+            solvertraits::{ContFunc, JacobianFunc},
+            vectornewton::VectorNewton,
+        },
+        utils::errors::{QSError, Result},
+    };
+
+    use super::CompiledFunction;
 
     /// Checks nonlinear residual jacobians and hessians are generated from one definition.
     #[test]
-    fn nonlinear_residual_jacobians_and_hessians_are_generated_from_one_definition(
-    ) -> Result<(), CompileError> {
+    fn nonlinear_residual_jacobians_and_hessians_are_generated_from_one_definition() -> Result<()> {
         let function =
             CompiledFunction::try_trace_with_order(&[2.0, 3.0], DerivativeOrder::Second, |x| {
-                Ok::<_, &str>(vec![x[0] * x[0] + x[0] * x[1], x[1].exp()])
+                Ok::<_, QSError>(vec![x[0] * x[0] + x[0] * x[1], x[1].exp()])
             })?;
         let mut values = [0.0; 2];
         let mut jacobian = [0.0; 4];
@@ -295,8 +304,7 @@ mod tests {
 
     /// Checks shared outputs keep independent jacobian rows and inactive columns.
     #[test]
-    fn shared_outputs_keep_independent_jacobian_rows_and_inactive_columns(
-    ) -> Result<(), CompileError> {
+    fn shared_outputs_keep_independent_jacobian_rows_and_inactive_columns() -> Result<()> {
         let function = CompiledFunction::trace(&[2.0, 3.0, 7.0], |x| {
             let common = x[0] * x[1];
             vec![common + 5.0, common * common, common, 4.0.into()]
@@ -317,19 +325,41 @@ mod tests {
 
     /// Checks existing newton solver uses ad without a handwritten jacobian.
     #[test]
-    fn existing_newton_solver_uses_ad_without_a_handwritten_jacobian() -> QSResult<()> {
+    fn existing_newton_solver_uses_ad_without_a_handwritten_jacobian() -> Result<()> {
         let function =
-            CompiledFunction::trace(&[1.0, 1.0], |x| vec![x[0] * x[0] - 4.0, x[1] * x[1] - 9.0])
-                .map_err(|error| QSError::SolverErr(error.to_string()))?;
+            CompiledFunction::trace(&[1.0, 1.0], |x| vec![x[0] * x[0] - 4.0, x[1] * x[1] - 9.0])?;
         let solution = VectorNewton::new(1e-12, 30).solve(&function, &[1.0, 1.0])?;
         assert!((solution.x[0] - 2.0).abs() < 1e-10);
         assert!((solution.x[1] - 3.0).abs() < 1e-10);
         Ok(())
     }
 
+    #[test]
+    fn solver_interfaces_preserve_compiled_error_categories() -> Result<()> {
+        let function = CompiledFunction::trace(&[1.0], |x| vec![x[0] * x[0]])?;
+        for (failure, context) in [
+            (function.call(&[]).map(|_| ()), "evaluating AD residual"),
+            (
+                function.jacobian(&[]).map(|_| ()),
+                "evaluating AD residual Jacobian",
+            ),
+        ] {
+            let error = failure.unwrap_err();
+            assert!(matches!(
+                error.root_cause(),
+                QSError::InputCount {
+                    expected: 1,
+                    actual: 0
+                }
+            ));
+            assert_eq!(error.contexts(), [context]);
+        }
+        Ok(())
+    }
+
     /// Checks rejection of invalid shapes and unprepared second order.
     #[test]
-    fn rejects_invalid_shapes_and_unprepared_second_order() -> Result<(), CompileError> {
+    fn rejects_invalid_shapes_and_unprepared_second_order() -> Result<()> {
         let function = CompiledFunction::trace(&[1.0], |x| vec![x[0].exp(), x[0] * x[0]])?;
         assert_eq!(function.derivative_order(), DerivativeOrder::First);
         assert!(function

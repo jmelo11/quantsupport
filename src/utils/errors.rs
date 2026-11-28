@@ -1,7 +1,11 @@
+//! Shared error categories, external causes and operation context for library failures.
+
+use std::error;
+
 use chrono::ParseError;
 use thiserror::Error;
 
-/// Errors shared by all library operations, including scripting.
+/// Errors shared by all library operations, including scripting and numerical compilation.
 ///
 /// Use [`QSError::context`] to identify the operation that failed while retaining
 /// its cause. Match [`QSError::root_cause`] to inspect the original variant even
@@ -67,6 +71,59 @@ pub enum QSError {
     /// A generic capture error.
     #[error("Compiler capture error: {0}")]
     CaptureError(String),
+    /// Current inputs take a different Rust branch from the recorded inputs.
+    #[error("a recorded comparison changed; prepare the calculation again for the current inputs")]
+    ComparisonChanged,
+    /// An operation refers to a missing or later value, or the input layout is invalid.
+    #[error("invalid numerical graph: {0}")]
+    InvalidGraph(String),
+    /// Second derivatives were requested from a first-order kernel.
+    #[error("compile with DerivativeOrder::Second before requesting second derivatives")]
+    SecondOrderUnavailable,
+    /// A numerical output, direction or Hessian buffer has the wrong length.
+    #[error("expected {expected} {buffer} slots, got {actual}")]
+    BufferCount {
+        /// Description of the incorrectly sized buffer.
+        buffer: &'static str,
+        /// Required number of slots.
+        expected: usize,
+        /// Supplied number of slots.
+        actual: usize,
+    },
+    /// Recording cannot be recursively nested on the same thread.
+    #[error("a QuantSupport compiler recording is already active")]
+    NestedCapture,
+    /// Internal recording state disappeared.
+    #[error("numerical capture was not active")]
+    CaptureMissing,
+    /// A scalar from another recording was returned.
+    #[error("the graph returned a value from a different recording")]
+    ForeignValue,
+    /// Data-dependent Rust branching or extracted values cannot be replayed.
+    #[error("the captured function observes a numerical value or branches on a traced value; use replay-safe numerical operations instead")]
+    DynamicControlFlow,
+    /// Input array length does not match the graph signature.
+    #[error("expected {expected} numerical inputs, got {actual}")]
+    InputCount {
+        /// Number of expected inputs.
+        expected: usize,
+        /// Number of supplied inputs.
+        actual: usize,
+    },
+    /// Gradient output array length does not match the graph signature.
+    #[error("expected {expected} gradient slots, got {actual}")]
+    GradientCount {
+        /// Number of expected gradient output slots.
+        expected: usize,
+        /// Number of supplied gradient slots.
+        actual: usize,
+    },
+    /// A graph input offset does not fit Cranelift's addressing format.
+    #[error("the graph input layout exceeds supported address offsets")]
+    OffsetOverflow,
+    /// Cranelift compilation or JIT code generation failed, retaining its cause.
+    #[error("Cranelift compilation failed: {0}")]
+    Jit(#[source] Box<dyn error::Error + Send + Sync>),
     /// A generic AD number error.
     #[error("AD Real error: {0}")]
     RecordedError(String),
@@ -129,6 +186,18 @@ impl QSError {
             Self::InterpolationErr(_) => ("interpolation", "InterpolationErr"),
             Self::NodeError(_) => ("node", "NodeError"),
             Self::CaptureError(_) => ("capture", "CaptureError"),
+            Self::ComparisonChanged => ("comparison_changed", "ComparisonChanged"),
+            Self::InvalidGraph(_) => ("invalid_graph", "InvalidGraph"),
+            Self::SecondOrderUnavailable => ("second_order_unavailable", "SecondOrderUnavailable"),
+            Self::BufferCount { .. } => ("buffer_count", "BufferCount"),
+            Self::NestedCapture => ("nested_capture", "NestedCapture"),
+            Self::CaptureMissing => ("capture_missing", "CaptureMissing"),
+            Self::ForeignValue => ("foreign_value", "ForeignValue"),
+            Self::DynamicControlFlow => ("dynamic_control_flow", "DynamicControlFlow"),
+            Self::InputCount { .. } => ("input_count", "InputCount"),
+            Self::GradientCount { .. } => ("gradient_count", "GradientCount"),
+            Self::OffsetOverflow => ("offset_overflow", "OffsetOverflow"),
+            Self::Jit(_) => ("jit", "Jit"),
             Self::RecordedError(_) => ("dual_forward", "RecordedError"),
             Self::ObservationNotInCaptureErr => ("node_not_indexed", "ObservationNotInCaptureErr"),
             Self::UnexpectedErr(_) => ("unexpected", "UnexpectedErr"),
@@ -190,8 +259,12 @@ pub type Result<T> = std::result::Result<T, QSError>;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::error::Error;
+
+    use chrono::ParseError;
+    use cranelift_module::ModuleError;
+
+    use super::QSError;
 
     #[test]
     fn structured_categories_survive_context_without_parsing_messages() {
@@ -218,6 +291,20 @@ mod tests {
                 QSError::EvaluationErr("inactive context".into()),
                 "evaluation",
                 "EvaluationErr",
+            ),
+            (
+                QSError::ComparisonChanged,
+                "comparison_changed",
+                "ComparisonChanged",
+            ),
+            (
+                QSError::BufferCount {
+                    buffer: "Hessian",
+                    expected: 4,
+                    actual: 2,
+                },
+                "buffer_count",
+                "BufferCount",
             ),
             (
                 QSError::DeserializationErr("quotes[1].mid".into()),
@@ -279,6 +366,21 @@ mod tests {
             .source()
             .ok_or("missing parser source")?
             .is::<ParseError>());
+        Ok(())
+    }
+
+    #[test]
+    fn context_retains_native_compiler_cause() -> std::result::Result<(), Box<dyn Error>> {
+        let error = QSError::Jit(Box::new(ModuleError::Undeclared("discount".into())))
+            .context("compiling discount calculation");
+        assert_eq!(error.kind(), ("jit", "Jit"));
+        let source = error
+            .root_cause()
+            .source()
+            .ok_or("missing native compiler source")?
+            .downcast_ref::<ModuleError>()
+            .ok_or("wrong native compiler source type")?;
+        assert!(matches!(source, ModuleError::Undeclared(name) if name == "discount"));
         Ok(())
     }
 }

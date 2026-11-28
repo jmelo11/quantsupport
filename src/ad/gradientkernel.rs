@@ -1,14 +1,15 @@
 //! Native first derivatives with bounded compilation units for large pricing graphs.
 
-use super::{
-    compileerror::CompileError, graph::Graph, jit, nativekernel::NativeKernel, operation::Operation,
-};
 use std::{
     collections::{hash_map::DefaultHasher, BTreeSet, HashMap},
     hash::{Hash, Hasher},
     mem::discriminant,
     sync::{Arc, Mutex, OnceLock, PoisonError},
 };
+
+use crate::utils::errors::{QSError, Result};
+
+use super::{graph::Graph, jit, nativekernel::NativeKernel, operation::Operation};
 
 const BLOCK_SIZE: usize = 384;
 const PARTITION_THRESHOLD: usize = 2048;
@@ -48,9 +49,9 @@ impl GradientKernel {
     /// # Errors
     /// Rejects invalid activity layouts and propagates native compilation errors.
     #[allow(clippy::too_many_lines)] // Forward and VJP block layouts are assembled together.
-    pub fn compile(graph: &Graph, active: usize) -> Result<Self, CompileError> {
+    pub fn compile(graph: &Graph, active: usize) -> Result<Self> {
         if active > graph.input_count() {
-            return Err(CompileError::InputCount {
+            return Err(QSError::InputCount {
                 expected: graph.input_count(),
                 actual: active,
             });
@@ -156,15 +157,15 @@ impl GradientKernel {
     ///
     /// # Errors
     /// Rejects input/gradient shapes and propagates native execution errors.
-    pub fn execute(&self, inputs: &[f64], gradient: &mut [f64]) -> Result<(), CompileError> {
+    pub fn execute(&self, inputs: &[f64], gradient: &mut [f64]) -> Result<()> {
         if inputs.len() != self.inputs {
-            return Err(CompileError::InputCount {
+            return Err(QSError::InputCount {
                 expected: self.inputs,
                 actual: inputs.len(),
             });
         }
         if gradient.len() != self.active {
-            return Err(CompileError::GradientCount {
+            return Err(QSError::GradientCount {
                 expected: self.active,
                 actual: gradient.len(),
             });
@@ -244,11 +245,7 @@ type SharedCache = Mutex<HashMap<u64, Vec<SharedProgram>>>;
 static SHARED: OnceLock<SharedCache> = OnceLock::new();
 
 /// Reuses an exactly matching native block within the shared bounded code cache.
-fn shared_native(
-    graph: &Graph,
-    outputs: &[usize],
-    active: usize,
-) -> Result<Arc<NativeKernel>, CompileError> {
+fn shared_native(graph: &Graph, outputs: &[usize], active: usize) -> Result<Arc<NativeKernel>> {
     shared_native_in(
         SHARED.get_or_init(|| Mutex::new(HashMap::new())),
         graph,
@@ -264,8 +261,8 @@ fn shared_native_in(
     graph: &Graph,
     outputs: &[usize],
     active: usize,
-    compile: impl FnOnce() -> Result<NativeKernel, CompileError>,
-) -> Result<Arc<NativeKernel>, CompileError> {
+    compile: impl FnOnce() -> Result<NativeKernel>,
+) -> Result<Arc<NativeKernel>> {
     let mut hasher = DefaultHasher::new();
     active.hash(&mut hasher);
     graph.output().hash(&mut hasher);
@@ -330,11 +327,26 @@ fn shared_native_in(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::{
+        collections::HashMap,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc, Mutex,
+        },
+    };
+
+    use cranelift_module::ModuleError;
+
+    use crate::{
+        ad::{graph::Graph, jit},
+        utils::errors::{QSError, Result},
+    };
+
+    use super::{shared_native_in, GradientKernel};
 
     /// Checks compiler work can access other entries and a resident block compiles once.
     #[test]
-    fn block_compilation_releases_cache_lock_and_reuses_code() -> Result<(), CompileError> {
+    fn block_compilation_releases_cache_lock_and_reuses_code() -> Result<()> {
         let cache = Mutex::new(HashMap::new());
         let graph = Graph::trace(&[2.0], |x| x[0] * x[0])?;
         let first = shared_native_in(&cache, &graph, &[], 1, || {
@@ -356,8 +368,7 @@ mod tests {
 
     /// Checks concurrent requests for the same block share one compilation.
     #[test]
-    fn concurrent_block_requests_compile_once() -> Result<(), CompileError> {
-        use std::sync::atomic::{AtomicUsize, Ordering};
+    fn concurrent_block_requests_compile_once() -> Result<()> {
         let cache = Mutex::new(HashMap::new());
         let graph = Graph::trace(&[2.0], |x| x[0] * x[0])?;
         let compilations = AtomicUsize::new(0);
@@ -379,7 +390,7 @@ mod tests {
                         .join()
                         .unwrap_or_else(|_| panic!("native compiler worker panicked"))
                 })
-                .collect::<Result<Vec<_>, _>>()
+                .collect::<Result<Vec<_>>>()
         })?;
         assert_eq!(compilations.load(Ordering::Relaxed), 1);
         assert!(kernels
@@ -390,11 +401,13 @@ mod tests {
 
     /// Checks a failed compilation leaves the entry available for a retry.
     #[test]
-    fn failed_block_compilation_can_be_retried() -> Result<(), CompileError> {
+    fn failed_block_compilation_can_be_retried() -> Result<()> {
         let cache = Mutex::new(HashMap::new());
         let graph = Graph::trace(&[2.0], |x| x[0] * x[0])?;
         assert!(shared_native_in(&cache, &graph, &[], 1, || {
-            Err(CompileError::Jit("injected compilation failure".into()))
+            Err(QSError::Jit(Box::new(ModuleError::Undeclared(
+                "injected compilation failure".into(),
+            ))))
         })
         .is_err());
         let kernel = shared_native_in(&cache, &graph, &[], 1, || {
@@ -407,8 +420,7 @@ mod tests {
     }
     /// Checks partitioned gradient composes shared boundaries and inactive draws.
     #[test]
-    fn partitioned_gradient_composes_shared_boundaries_and_inactive_draws(
-    ) -> Result<(), CompileError> {
+    fn partitioned_gradient_composes_shared_boundaries_and_inactive_draws() -> Result<()> {
         let graph = Graph::trace(&[2.0, 3.0], |x| {
             (0..2500).fold(x[0], |value, _| value * 0.999 + x[0] * x[1] * 0.001)
         })?;

@@ -25,12 +25,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::{
     ad::scalar::{InnerScalar, Scalar},
     math::probability::normcdf::NormCDF,
-    utils::errors::{QSError, Result as QSResult},
+    utils::errors::{QSError, Result},
 };
 
 use super::{
     comparisonguard::{Comparison, ComparisonGuard},
-    compileerror::CompileError,
     gradientkernel::GradientKernel,
     graph::Graph,
     operation::Operation as Op,
@@ -127,14 +126,14 @@ impl Recorded {
     /// # Panics
     /// Panics if a `Recorded` value from a different recording is mixed in,
     /// or if a numerical operation is attempted outside an active recording.
-    pub fn capture<F>(example_inputs: &[f64], f: F) -> Result<Graph, CompileError>
+    pub fn capture<F>(example_inputs: &[f64], f: F) -> Result<Graph>
     where
         F: FnOnce(&[Self]) -> Self,
     {
         let saved = CURRENT.with(|slot| {
             let mut current = slot.borrow_mut();
             if current.as_ref().is_some_and(|trace| trace.strict) {
-                return Err(CompileError::NestedCapture);
+                return Err(QSError::NestedCapture);
             }
             Ok(current.take())
         })?;
@@ -157,13 +156,12 @@ impl Recorded {
             })
             .collect();
         let output = f(&inputs);
-        let trace =
-            CURRENT.with(|slot| slot.borrow_mut().take().ok_or(CompileError::CaptureMissing))?;
+        let trace = CURRENT.with(|slot| slot.borrow_mut().take().ok_or(QSError::CaptureMissing))?;
         if output.token != token {
-            return Err(CompileError::ForeignValue);
+            return Err(QSError::ForeignValue);
         }
         if trace.observed_primal || !trace.comparison_guards.is_empty() {
-            return Err(CompileError::DynamicControlFlow);
+            return Err(QSError::DynamicControlFlow);
         }
         Graph::new(trace.ops, trace.inputs, output.id)
     }
@@ -647,7 +645,7 @@ impl Recorded {
     ///
     /// # Errors
     /// Rejects observations outside the active capture or non-input observations.
-    pub fn derivative(&self) -> QSResult<Self> {
+    pub fn derivative(&self) -> Result<Self> {
         CURRENT.with(|slot| {
             let state = slot.borrow();
             let trace = state
@@ -672,7 +670,7 @@ impl Recorded {
     ///
     /// # Errors
     /// Propagates capture, graph validation, compilation and buffer errors.
-    pub fn differentiate(&self) -> QSResult<()> {
+    pub fn differentiate(&self) -> Result<()> {
         Self::reset_derivatives();
         self.differentiate_accumulating()
     }
@@ -680,10 +678,10 @@ impl Recorded {
     ///
     /// # Errors
     /// Propagates capture, graph validation and native execution errors.
-    pub fn differentiate_accumulating(&self) -> QSResult<()> {
+    pub fn differentiate_accumulating(&self) -> Result<()> {
         let gradients = self
             .native_gradient()
-            .map_err(|error| QSError::EvaluationErr(error.to_string()))?;
+            .map_err(|error| error.context("differentiating recorded value"))?;
         CURRENT.with(|slot| {
             if let Some(trace) = slot.borrow_mut().as_mut() {
                 trace.gradients.resize(trace.inputs, 0.0);
@@ -695,15 +693,15 @@ impl Recorded {
         Ok(())
     }
     /// Exports the reachable expression and executes its cached native gradient.
-    fn native_gradient(&self) -> Result<Vec<f64>, CompileError> {
+    fn native_gradient(&self) -> Result<Vec<f64>> {
         let program = CURRENT.with(|slot| {
             let state = slot.borrow();
-            let trace = state.as_ref().ok_or(CompileError::CaptureMissing)?;
+            let trace = state.as_ref().ok_or(QSError::CaptureMissing)?;
             if self.token == 0 {
                 return Ok(None);
             }
             if trace.token != self.token {
-                return Err(CompileError::ForeignValue);
+                return Err(QSError::ForeignValue);
             }
             trace.export(self.id).map(Some)
         })?;
@@ -723,7 +721,7 @@ impl Recorded {
     ///
     /// # Errors
     /// Propagates graph and native differentiation errors.
-    pub fn jacobian(inputs: &[Self], outputs: &[Self]) -> QSResult<Vec<Vec<f64>>> {
+    pub fn jacobian(inputs: &[Self], outputs: &[Self]) -> Result<Vec<Vec<f64>>> {
         let indices = CURRENT.with(|slot| {
             let state = slot.borrow();
             inputs
@@ -752,7 +750,7 @@ impl Recorded {
                 }
                 let gradient = output
                     .native_gradient()
-                    .map_err(|error| QSError::EvaluationErr(error.to_string()))?;
+                    .map_err(|error| error.context("calculating recorded Jacobian"))?;
                 Ok(indices
                     .iter()
                     .map(|index| {
@@ -935,9 +933,9 @@ impl Recorded {
 impl Trace {
     /// Exports dependency-ordered IR with canonical active inputs and lifted inactive constants.
     #[allow(clippy::too_many_lines)] // Reachability and aliases share one canonical input layout.
-    fn export(&self, root: usize) -> Result<(Graph, Vec<f64>, usize), CompileError> {
+    fn export(&self, root: usize) -> Result<(Graph, Vec<f64>, usize)> {
         if root >= self.ops.len() {
-            return Err(CompileError::ForeignValue);
+            return Err(QSError::ForeignValue);
         }
         // Canonicalize interspersed input registration into the compiler's input prefix.
         // Literal values become inactive runtime inputs, so indexed random draws can
@@ -988,9 +986,7 @@ impl Trace {
                 }
                 states[index] = 2;
             } else if states[index] == 1 {
-                return Err(CompileError::InvalidGraph(
-                    "cyclic calibrated input map".into(),
-                ));
+                return Err(QSError::InvalidGraph("cyclic calibrated input map".into()));
             } else if !self.aliases.contains_key(&index) && mapping[index] != usize::MAX {
                 states[index] = 2;
             } else {
@@ -1018,7 +1014,7 @@ impl Trace {
 }
 
 /// Reuses structurally verified native code within the thread-local cache budget.
-fn cached_program(graph: &Graph, active: usize) -> Result<Arc<GradientKernel>, CompileError> {
+fn cached_program(graph: &Graph, active: usize) -> Result<Arc<GradientKernel>> {
     let mut hasher = DefaultHasher::new();
     active.hash(&mut hasher);
     graph.output().hash(&mut hasher);
@@ -1072,26 +1068,37 @@ fn cached_program(graph: &Graph, active: usize) -> Result<Arc<GradientKernel>, C
 
 impl Serialize for Recorded {
     /// Serializes the numerical value under the strict-capture observation rules.
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
         observe_primal(self);
         serializer.serialize_f64(self.primal)
     }
 }
 impl<'de> Deserialize<'de> for Recorded {
     /// Loads a detached numerical value without registering a market input.
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
         f64::deserialize(deserializer).map(Self::detached)
+    }
+}
+
+impl From<Recorded> for f64 {
+    /// Extracts a numerical primal under the strict-capture observation rules.
+    fn from(value: Recorded) -> Self {
+        value.value()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::panic::catch_unwind;
+
+    use crate::{
+        ad::Graph,
+        utils::errors::{QSError, Result},
+    };
 
     /// Checks capture state is cleared after unwinding.
     #[test]
-    fn capture_state_is_cleared_after_unwinding() -> Result<(), CompileError> {
+    fn capture_state_is_cleared_after_unwinding() -> Result<()> {
         let failed = catch_unwind(|| {
             let _ = Graph::trace(&[1.0], |_| panic!("numerical capture failed"));
         });
@@ -1105,7 +1112,7 @@ mod tests {
     #[test]
     fn rejects_input_dependent_branches() {
         let result = Graph::trace(&[1.0], |x| if x[0] > 0.0 { x[0] } else { -x[0] });
-        assert!(matches!(result, Err(CompileError::DynamicControlFlow)));
+        assert!(matches!(result, Err(QSError::DynamicControlFlow)));
     }
 
     /// Checks rejection of formatted primal values.
@@ -1115,18 +1122,11 @@ mod tests {
             let _ = x[0].to_string();
             x[0]
         });
-        assert!(matches!(result, Err(CompileError::DynamicControlFlow)));
+        assert!(matches!(result, Err(QSError::DynamicControlFlow)));
         let result = Graph::trace(&[1.0], |x| {
             let _ = format!("{:?}", x[0]);
             x[0]
         });
-        assert!(matches!(result, Err(CompileError::DynamicControlFlow)));
-    }
-}
-
-impl From<Recorded> for f64 {
-    /// Extracts a numerical primal under the strict-capture observation rules.
-    fn from(value: Recorded) -> Self {
-        value.value()
+        assert!(matches!(result, Err(QSError::DynamicControlFlow)));
     }
 }
