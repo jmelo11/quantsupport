@@ -4,6 +4,7 @@ use super::calendars::{
     canada::Canada,
     chile::Chile,
     china::China,
+    colombia::Colombia,
     denmark::Denmark,
     japan::Japan,
     jointcalendar::{JointCalendar, JointCalendarRule},
@@ -69,6 +70,8 @@ pub enum Calendar {
     Brazil(Brazil),
     /// A calendar for Chile.
     Chile(Chile),
+    /// A calendar for Colombia.
+    Colombia(Colombia),
     /// London settlement calendar.
     UnitedKingdom(UnitedKingdom),
     /// Japan bank calendar.
@@ -99,6 +102,7 @@ impl Serialize for Calendar {
             Self::UnitedStates(cal) => cal.impl_name(),
             Self::Brazil(cal) => cal.impl_name(),
             Self::Chile(cal) => cal.impl_name(),
+            Self::Colombia(cal) => cal.impl_name(),
             Self::UnitedKingdom(cal) => cal.impl_name(),
             Self::Japan(cal) => cal.impl_name(),
             Self::JointCalendar(cal) => cal.impl_name(),
@@ -190,6 +194,7 @@ impl TryFrom<String> for Calendar {
                 super::calendars::brazil::Market::Exchange,
             ))),
             "chile(sse)" => Ok(Self::Chile(Chile::default())),
+            "colombia(bvc)" | "colombia" => Ok(Self::Colombia(Colombia::default())),
             _ => Err(QSError::InvalidValueErr(format!("Invalid calendar: {s}"))),
         }
     }
@@ -260,6 +265,7 @@ impl ImplCalendar for Calendar {
             Self::UnitedStates(cal) => cal.impl_name(),
             Self::Brazil(cal) => cal.impl_name(),
             Self::Chile(cal) => cal.impl_name(),
+            Self::Colombia(cal) => cal.impl_name(),
             Self::UnitedKingdom(cal) => cal.impl_name(),
             Self::Japan(cal) => cal.impl_name(),
             Self::JointCalendar(cal) => cal.impl_name(),
@@ -284,6 +290,7 @@ impl ImplCalendar for Calendar {
             Self::UnitedStates(cal) => cal.impl_is_business_day(date),
             Self::Brazil(cal) => cal.impl_is_business_day(date),
             Self::Chile(cal) => cal.impl_is_business_day(date),
+            Self::Colombia(cal) => cal.impl_is_business_day(date),
             Self::UnitedKingdom(cal) => cal.impl_is_business_day(date),
             Self::Japan(cal) => cal.impl_is_business_day(date),
             Self::JointCalendar(cal) => cal.impl_is_business_day(date),
@@ -308,6 +315,7 @@ impl ImplCalendar for Calendar {
             Self::UnitedStates(cal) => cal.is_weekend(weekday),
             Self::Brazil(cal) => cal.is_weekend(weekday),
             Self::Chile(cal) => cal.is_weekend(weekday),
+            Self::Colombia(cal) => cal.is_weekend(weekday),
             Self::UnitedKingdom(cal) => cal.is_weekend(weekday),
             Self::Japan(cal) => cal.is_weekend(weekday),
             Self::JointCalendar(cal) => cal.is_weekend(weekday),
@@ -332,6 +340,7 @@ impl ImplCalendar for Calendar {
             Self::UnitedStates(cal) => cal.added_holidays(),
             Self::Brazil(cal) => cal.added_holidays(),
             Self::Chile(cal) => cal.added_holidays(),
+            Self::Colombia(cal) => cal.added_holidays(),
             Self::UnitedKingdom(cal) => cal.added_holidays(),
             Self::Japan(cal) => cal.added_holidays(),
             Self::JointCalendar(cal) => cal.added_holidays(),
@@ -356,6 +365,7 @@ impl ImplCalendar for Calendar {
             Self::UnitedStates(cal) => cal.removed_holidays(),
             Self::Brazil(cal) => cal.removed_holidays(),
             Self::Chile(cal) => cal.removed_holidays(),
+            Self::Colombia(cal) => cal.removed_holidays(),
             Self::UnitedKingdom(cal) => cal.removed_holidays(),
             Self::Japan(cal) => cal.removed_holidays(),
             Self::JointCalendar(cal) => cal.removed_holidays(),
@@ -380,6 +390,7 @@ impl ImplCalendar for Calendar {
             Self::UnitedStates(cal) => cal.add_holiday(date),
             Self::Brazil(cal) => cal.add_holiday(date),
             Self::Chile(cal) => cal.add_holiday(date),
+            Self::Colombia(cal) => cal.add_holiday(date),
             Self::UnitedKingdom(cal) => cal.add_holiday(date),
             Self::Japan(cal) => cal.add_holiday(date),
             Self::JointCalendar(cal) => cal.add_holiday(date),
@@ -404,6 +415,7 @@ impl ImplCalendar for Calendar {
             Self::UnitedStates(cal) => cal.remove_holiday(date),
             Self::Brazil(cal) => cal.remove_holiday(date),
             Self::Chile(cal) => cal.remove_holiday(date),
+            Self::Colombia(cal) => cal.remove_holiday(date),
             Self::UnitedKingdom(cal) => cal.remove_holiday(date),
             Self::Japan(cal) => cal.remove_holiday(date),
             Self::JointCalendar(cal) => cal.remove_holiday(date),
@@ -428,6 +440,7 @@ impl ImplCalendar for Calendar {
             Self::UnitedStates(cal) => cal.holiday_list(from, to, include_weekends),
             Self::Brazil(cal) => cal.holiday_list(from, to, include_weekends),
             Self::Chile(cal) => cal.holiday_list(from, to, include_weekends),
+            Self::Colombia(cal) => cal.holiday_list(from, to, include_weekends),
             Self::UnitedKingdom(cal) => cal.holiday_list(from, to, include_weekends),
             Self::Japan(cal) => cal.holiday_list(from, to, include_weekends),
             Self::JointCalendar(cal) => cal.holiday_list(from, to, include_weekends),
@@ -452,6 +465,7 @@ impl ImplCalendar for Calendar {
             Self::UnitedStates(cal) => cal.business_day_list(from, to),
             Self::Brazil(cal) => cal.business_day_list(from, to),
             Self::Chile(cal) => cal.business_day_list(from, to),
+            Self::Colombia(cal) => cal.business_day_list(from, to),
             Self::UnitedKingdom(cal) => cal.business_day_list(from, to),
             Self::Japan(cal) => cal.business_day_list(from, to),
             Self::JointCalendar(cal) => cal.business_day_list(from, to),
@@ -468,6 +482,7 @@ mod test {
         calendars::{
             brazil::Brazil,
             chile::Chile,
+            colombia::Colombia,
             nullcalendar::NullCalendar,
             target::TARGET,
             traits::{ImplCalendar, IsCalendar},
@@ -538,6 +553,8 @@ mod test {
         assert_eq!(calendar.impl_name(), "Brazil(Settlement)");
         let calendar = Calendar::Chile(Chile::default());
         assert_eq!(calendar.impl_name(), "Chile(SSE)");
+        let calendar = Calendar::Colombia(Colombia::default());
+        assert_eq!(calendar.impl_name(), "Colombia(BVC)");
     }
 
     #[test]
@@ -556,6 +573,7 @@ mod test {
             "Brazil(Settlement)",
             "Brazil(Exchange)",
             "Chile(SSE)",
+            "Colombia(BVC)",
             "Japan",
             "UnitedKingdom(Settlement)",
             "JointCalendar(JoinHolidays,UnitedKingdom(Settlement),Japan)",
@@ -569,6 +587,7 @@ mod test {
         for spelling in [
             "target",
             "TaRgEt",
+            "colombia",
             "jointcalendar(joinholidays,target,japan)",
         ] {
             assert!(Calendar::try_from(spelling.to_string()).is_ok());

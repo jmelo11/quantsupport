@@ -10,7 +10,7 @@ use crate::{
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
         calendar::Calendar,
-        calendars::nullcalendar::NullCalendar,
+        calendars::colombia::Colombia,
         daycounter::DayCounter,
         enums::{BusinessDayConvention, Frequency, TimeUnit},
         period::Period,
@@ -37,12 +37,12 @@ const fn ibr_fixed_frequency(tenor: Period) -> Frequency {
 rate_index! {
     /// Details for the overnight IBR (Indicador Bancario de Referencia, COP) index.
     ///
-    /// IBR overnight swaps compound daily fixings in arrears. No Colombian
-    /// holiday calendar is available yet, so only weekends are skipped.
+    /// IBR overnight swaps compound daily fixings in arrears on the Colombian
+    /// (BVC) business-day calendar.
     IBRIndex {
         market_index: IBR,
         currency: COP,
-        calendar: Calendar::NullCalendar(NullCalendar::new()),
+        calendar: Calendar::Colombia(Colombia::default()),
         fixing_lag: 0,
         day_counter: Actual360,
         compounding: Simple,
@@ -91,6 +91,7 @@ mod tests {
                 .fixed_frequency(),
             Frequency::Quarterly
         );
+        assert_eq!(details.calendar(), Calendar::Colombia(Colombia::default()));
         Ok(())
     }
 }

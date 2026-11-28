@@ -2,6 +2,8 @@
 pub mod brazil;
 /// Provides the Chilean holiday calendar implementation.
 pub mod chile;
+/// Provides the Colombian holiday calendar implementation.
+pub mod colombia;
 /// Provides the null calendar implementation.
 pub mod nullcalendar;
 /// Provides the TARGET holiday calendar implementation.
